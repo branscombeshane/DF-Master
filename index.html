@@ -118,6 +118,7 @@
     color: var(--text-primary);
     font-size: 15px;
   }
+  .field .hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .btn {
     display: inline-flex;
     align-items: center;
@@ -138,6 +139,8 @@
     color: var(--text-primary);
     border: 1px solid var(--border);
   }
+  .btn.danger { background: var(--critical); }
+  .btn.small { padding: 6px 12px; font-size: 12px; }
   .btn.block { width: 100%; }
   .error-text {
     color: var(--critical);
@@ -166,6 +169,12 @@
   }
   nav.tabs button.active { background: var(--page); color: var(--text-primary); }
   .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .who { font-size: 12px; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .role-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    padding: 2px 7px; border-radius: 999px; background: var(--series-total); color: #fff;
+  }
+  .role-badge.staff { background: var(--series-veg); }
   select#month-picker {
     padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--page); color: var(--text-primary); font-size: 13px; font-weight: 600;
@@ -219,6 +228,7 @@
   }
   .panel h2 { font-size: 14px; margin: 0 0 14px; }
   .panel .panel-sub { font-size: 12px; color: var(--text-muted); margin: -8px 0 14px; }
+  .panel .panel-note { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; font-style: italic; }
 
   .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
   .legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
@@ -240,6 +250,7 @@
   }
   table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
   table.data-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  table.data-table tr.inactive td { opacity: 0.45; }
 
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
   .entity-picker { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -263,9 +274,38 @@
   .save-status.ok { color: var(--good); }
   .save-status.err { color: var(--critical); }
 
-  .cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gridline); }
-  .cat-row input[type=text] { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
-  .cat-row .toggle { font-size: 12px; }
+  .cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gridline); flex-wrap: wrap; }
+  .cat-row input[type=text] { flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+  .cat-row .toggle { font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+  .cat-row .toggle.sensitive { color: var(--critical); }
+
+  .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 4px; }
+  .checkbox-grid label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+
+  .pill-list { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--gridline); color: var(--text-secondary); white-space: nowrap; }
+
+  .dept-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .dept-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .dept-card .dept-name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .dept-card .dept-row { font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; }
+
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .toolbar input[type=text], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
+  .toolbar input[type=text] { flex: 1; min-width: 160px; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px 26px; width: 100%; max-width: 380px;
+  }
+  .modal-card h2 { margin: 0 0 4px; font-size: 16px; }
+  .modal-card p.sub { color: var(--text-secondary); font-size: 12px; margin: 0 0 18px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
 
   @media (max-width: 640px) {
     header.topbar { flex-wrap: wrap; padding: 12px 16px; }
@@ -279,17 +319,38 @@
 <div id="login-screen">
   <div class="login-card">
     <h1>Daily Fruit Financials</h1>
-    <p class="sub">Owner dashboard — Daily Fruit JHB · Daily Fruit Veg · Pyroca 79</p>
+    <p class="sub">Daily Fruit JHB &middot; Daily Fruit Veg &middot; Pyroca 79</p>
     <div class="field">
       <label for="login-name">Name</label>
-      <input id="login-name" type="text" autocomplete="off" placeholder="Your name">
+      <input id="login-name" type="text" autocomplete="username" placeholder="Your name">
     </div>
     <div class="field">
-      <label for="login-pin">PIN</label>
-      <input id="login-pin" type="password" inputmode="numeric" placeholder="••••">
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="Password">
     </div>
     <button class="btn block" id="login-btn">Log in</button>
     <div class="error-text" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ==================== CHANGE PASSWORD MODAL ==================== -->
+<div class="modal-overlay" id="password-modal">
+  <div class="modal-card">
+    <h2>Change password</h2>
+    <p class="sub">At least 8 characters.</p>
+    <div class="field">
+      <label for="cp-old">Current password</label>
+      <input id="cp-old" type="password" autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label for="cp-new">New password</label>
+      <input id="cp-new" type="password" autocomplete="new-password">
+    </div>
+    <div class="error-text" id="cp-error"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="cp-cancel">Cancel</button>
+      <button class="btn" id="cp-save">Save</button>
+    </div>
   </div>
 </div>
 
@@ -297,26 +358,23 @@
 <div id="app">
   <header class="topbar">
     <h1>Daily Fruit Financials</h1>
-    <nav class="tabs">
-      <button data-view="dashboard" class="active">Dashboard</button>
-      <button data-view="entry">Entry</button>
-      <button data-view="history">History</button>
-      <button data-view="settings">Settings</button>
-    </nav>
+    <nav class="tabs" id="nav-tabs"></nav>
     <div class="topbar-right">
       <select id="month-picker"></select>
-      <button class="btn secondary" id="logout-btn">Log out</button>
+      <span class="who" id="who-label"></span>
+      <button class="btn secondary small" id="account-btn">Password</button>
+      <button class="btn secondary small" id="logout-btn">Log out</button>
     </div>
   </header>
 
   <main>
     <!-- ---------- Dashboard ---------- -->
-    <section class="view active" id="view-dashboard">
+    <section class="view" id="view-dashboard">
       <div class="kpi-grid" id="kpi-grid"></div>
 
       <div class="panel">
-        <h2>Turnover trend — last 24 months</h2>
-        <p class="panel-sub">Bank turnover per entity, by month</p>
+        <h2>Turnover trend</h2>
+        <p class="panel-sub" id="turnover-trend-sub">Bank turnover per entity, by month</p>
         <div class="legend" id="legend-turnover"></div>
         <div class="chart-wrap" id="chart-turnover"></div>
       </div>
@@ -332,6 +390,7 @@
         <h2>Expense breakdown</h2>
         <p class="panel-sub" id="expense-breakdown-sub"></p>
         <div id="expense-breakdown-chart"></div>
+        <p class="panel-note" id="expense-breakdown-note" style="display:none;">Some expense categories are hidden from your account and are not included above.</p>
       </div>
     </section>
 
@@ -353,9 +412,9 @@
           </div>
         </div>
         <div class="summary-strip">
-          <div class="item"><div class="label">Gross Profit</div><div class="value" id="entry-gp-preview">—</div></div>
-          <div class="item"><div class="label">GP %</div><div class="value" id="entry-gpp-preview">—</div></div>
-          <div class="item"><div class="label">Target GP %</div><div class="value" id="entry-target-preview">—</div></div>
+          <div class="item"><div class="label">Gross Profit</div><div class="value" id="entry-gp-preview">&mdash;</div></div>
+          <div class="item"><div class="label">GP %</div><div class="value" id="entry-gpp-preview">&mdash;</div></div>
+          <div class="item"><div class="label">Target GP %</div><div class="value" id="entry-target-preview">&mdash;</div></div>
         </div>
         <div style="margin-top:16px;">
           <button class="btn" id="save-turnover-btn">Save Turnover</button>
@@ -368,9 +427,10 @@
         <p class="panel-sub" id="entry-expenses-sub"></p>
         <div id="expense-form"></div>
         <div class="summary-strip">
-          <div class="item"><div class="label">Total Expenses</div><div class="value" id="entry-total-expenses">—</div></div>
-          <div class="item"><div class="label">Nett Profit</div><div class="value" id="entry-nett-preview">—</div></div>
+          <div class="item"><div class="label" id="entry-total-expenses-label">Total Expenses</div><div class="value" id="entry-total-expenses">&mdash;</div></div>
+          <div class="item"><div class="label" id="entry-nett-label">Nett Profit</div><div class="value" id="entry-nett-preview">&mdash;</div></div>
         </div>
+        <p class="panel-note" id="entry-hidden-note" style="display:none;">One or more expense categories (e.g. Salaries) are hidden from your account. Totals above exclude them.</p>
         <div style="margin-top:16px;">
           <button class="btn" id="save-expenses-btn">Save Expenses</button>
           <span class="save-status" id="save-expenses-status"></span>
@@ -381,14 +441,83 @@
     <!-- ---------- History ---------- -->
     <section class="view" id="view-history">
       <div class="panel">
-        <h2>Monthly history — combined</h2>
+        <h2 id="history-title">Monthly history</h2>
+        <p class="panel-sub" id="history-sub"></p>
         <div style="overflow-x:auto;">
           <table class="data-table" id="history-table"></table>
         </div>
       </div>
     </section>
 
-    <!-- ---------- Settings ---------- -->
+    <!-- ---------- Payroll ---------- -->
+    <section class="view" id="view-payroll">
+      <div class="kpi-grid" id="payroll-kpi-grid"></div>
+
+      <div class="panel">
+        <h2>Departments</h2>
+        <div class="dept-grid" id="payroll-dept-grid"></div>
+      </div>
+
+      <div class="panel">
+        <h2 id="payroll-form-title">Add employee</h2>
+        <input type="hidden" id="payroll-edit-id">
+        <div class="form-grid">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" id="payroll-name">
+          </div>
+          <div class="field">
+            <label>Department</label>
+            <input type="text" id="payroll-department" list="payroll-dept-list">
+            <datalist id="payroll-dept-list"></datalist>
+          </div>
+          <div class="field">
+            <label>Employee number</label>
+            <input type="text" id="payroll-empnum">
+          </div>
+          <div class="field">
+            <label>Days per week</label>
+            <input type="number" step="0.5" id="payroll-days">
+            <div class="hint">Leave blank for a fixed monthly salary (e.g. Directors) — no day/hour rate is calculated.</div>
+          </div>
+          <div class="field">
+            <label>Monthly amount (R)</label>
+            <input type="number" step="0.01" id="payroll-amount">
+          </div>
+          <div class="field">
+            <label>Date employed</label>
+            <input type="text" id="payroll-date" placeholder="YYYY-MM-DD">
+          </div>
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <input type="text" id="payroll-notes">
+        </div>
+        <div class="field" id="payroll-active-field" style="display:none;">
+          <label><input type="checkbox" id="payroll-active" checked style="width:auto; margin-right:6px;">Active</label>
+        </div>
+        <div class="error-text" id="payroll-error"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="payroll-save-btn">Save employee</button>
+          <button class="btn secondary" id="payroll-cancel-btn" style="display:none;">Cancel edit</button>
+          <span class="save-status" id="payroll-save-status"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Roster</h2>
+        <div class="toolbar">
+          <input type="text" id="payroll-search" placeholder="Search by name...">
+          <select id="payroll-dept-filter"><option value="">All departments</option></select>
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show inactive</label>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="payroll-table"></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Settings (Owner only) ---------- -->
     <section class="view" id="view-settings">
       <div class="panel">
         <h2>Target GP % per entity</h2>
@@ -397,7 +526,7 @@
       </div>
       <div class="panel">
         <h2>Expense categories</h2>
-        <p class="panel-sub">Deactivating a category hides it from new entries without touching past months.</p>
+        <p class="panel-sub">Deactivating a category hides it from new entries without touching past months. Marking a category <strong>Sensitive</strong> hides it (name and amount) from every Staff account, everywhere in the app.</p>
         <div id="settings-categories"></div>
         <div style="margin-top:14px; display:flex; gap:10px;">
           <input type="text" id="new-category-name" placeholder="New category name" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
@@ -406,6 +535,48 @@
         <div style="margin-top:16px;">
           <button class="btn" id="save-categories-btn">Save Categories</button>
           <span class="save-status" id="save-categories-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Users (Owner only) ---------- -->
+    <section class="view" id="view-users">
+      <div class="panel">
+        <h2 id="users-form-title">Add staff account</h2>
+        <input type="hidden" id="user-edit-name">
+        <div class="form-grid">
+          <div class="field">
+            <label id="user-name-label">Name</label>
+            <input type="text" id="user-name">
+          </div>
+          <div class="field">
+            <label id="user-password-label">Password</label>
+            <input type="text" id="user-password" placeholder="Min. 8 characters" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <label>Sections this account can access</label>
+          <div class="checkbox-grid" id="user-sections-grid"></div>
+        </div>
+        <div class="field">
+          <label>Entities this account can access</label>
+          <div class="checkbox-grid" id="user-entities-grid"></div>
+        </div>
+        <div class="field" id="user-active-field" style="display:none;">
+          <label><input type="checkbox" id="user-active" checked style="width:auto; margin-right:6px;">Active</label>
+        </div>
+        <div class="error-text" id="user-error"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="user-save-btn">Add staff account</button>
+          <button class="btn secondary" id="user-cancel-btn" style="display:none;">Cancel edit</button>
+          <span class="save-status" id="user-save-status"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>All accounts</h2>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="users-table"></table>
         </div>
       </div>
     </section>
@@ -418,32 +589,48 @@
 
   // ================= CONFIG =================
   // Paste your Apps Script Web App /exec URL here after deploying (see SETUP.md).
-  var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDFlyMTptoQ48Q3yZW7PZN6YlDBpfnJLYCuRe6fQaMdDunYwe-l6kHIg2njb5jSQxwQA/exec';
+  var WEB_APP_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
+  var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll' };
+  var ALL_ENTITIES_COUNT = 3;
 
   // ================= STATE =================
   var state = {
-    user: null,
+    token: null,
+    name: null,
+    role: null,
+    sections: [],
     entities: [],
+    permittedEntities: [],
     categories: [],
     history: [],
     currentMonth: null,
     selectedMonth: null,
     monthData: null,
-    entryEntity: null
+    entryEntity: null,
+    payroll: null,
+    users: null,
+    activeTab: null
   };
 
   // ================= API =================
   function callApi(action, params) {
     params = params || {};
+    if (state.token && action !== 'login') params = Object.assign({ token: state.token }, params);
     var qs = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }).join('&');
     var url = WEB_APP_URL + '?action=' + encodeURIComponent(action) +
       (qs ? '&' + qs : '') + '&_=' + Date.now();
     return fetch(url, { method: 'GET', cache: 'no-store' })
-      .then(function (r) { return r.json(); });
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.ok === false && /session expired/i.test(res.error || '')) {
+          forceLogout();
+        }
+        return res;
+      });
   }
 
   // ================= FORMATTING =================
@@ -465,26 +652,30 @@
     var varName = ENTITY_COLOR_VAR[key] || '--series-total';
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
 
   // ================= LOGIN =================
   document.getElementById('login-btn').addEventListener('click', doLogin);
-  document.getElementById('login-pin').addEventListener('keydown', function (e) {
+  document.getElementById('login-password').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') doLogin();
   });
 
   function doLogin() {
     var name = document.getElementById('login-name').value.trim();
-    var pin = document.getElementById('login-pin').value.trim();
+    var password = document.getElementById('login-password').value;
     var errEl = document.getElementById('login-error');
     errEl.textContent = '';
-    if (!name || !pin) { errEl.textContent = 'Enter your name and PIN.'; return; }
+    if (!name || !password) { errEl.textContent = 'Enter your name and password.'; return; }
     var btn = document.getElementById('login-btn');
     btn.disabled = true;
-    callApi('login', { name: name, pin: pin }).then(function (res) {
+    callApi('login', { name: name, password: password }).then(function (res) {
       btn.disabled = false;
       if (res.ok) {
-        state.user = res.name;
-        sessionStorage.setItem('dff_user', res.name);
+        sessionStorage.setItem('dff_token', res.token);
+        applyBootstrap(res);
         enterApp();
       } else {
         errEl.textContent = res.error || 'Login failed.';
@@ -495,31 +686,116 @@
     });
   }
 
-  document.getElementById('logout-btn').addEventListener('click', function () {
-    sessionStorage.removeItem('dff_user');
+  function forceLogout() {
+    sessionStorage.removeItem('dff_token');
     location.reload();
+  }
+
+  document.getElementById('logout-btn').addEventListener('click', function () {
+    callApi('logout', {}).catch(function () {}).then(forceLogout);
+  });
+
+  // ================= CHANGE PASSWORD =================
+  document.getElementById('account-btn').addEventListener('click', function () {
+    document.getElementById('cp-old').value = '';
+    document.getElementById('cp-new').value = '';
+    document.getElementById('cp-error').textContent = '';
+    document.getElementById('password-modal').classList.add('active');
+  });
+  document.getElementById('cp-cancel').addEventListener('click', function () {
+    document.getElementById('password-modal').classList.remove('active');
+  });
+  document.getElementById('cp-save').addEventListener('click', function () {
+    var oldPassword = document.getElementById('cp-old').value;
+    var newPassword = document.getElementById('cp-new').value;
+    var errEl = document.getElementById('cp-error');
+    if (newPassword.length < 8) { errEl.textContent = 'New password must be at least 8 characters.'; return; }
+    callApi('changePassword', { oldPassword: oldPassword, newPassword: newPassword }).then(function (res) {
+      if (res.ok) {
+        document.getElementById('password-modal').classList.remove('active');
+      } else {
+        errEl.textContent = res.error || 'Could not change password.';
+      }
+    });
   });
 
   // ================= APP BOOTSTRAP =================
+  function applyBootstrap(res) {
+    if (res.token) state.token = res.token;
+    state.name = res.name;
+    state.role = res.role;
+    state.sections = res.sections || [];
+    state.entities = res.entities || [];
+    state.permittedEntities = res.permittedEntities || [];
+    state.categories = res.categories || [];
+    state.history = res.history || [];
+    state.currentMonth = res.currentMonth;
+    state.selectedMonth = state.selectedMonth || res.currentMonth;
+    if (!state.entryEntity || state.entities.every(function (e) { return e.key !== state.entryEntity; })) {
+      state.entryEntity = state.entities[0] ? state.entities[0].key : null;
+    }
+  }
+
   function enterApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
-    callApi('bootstrap').then(function (res) {
-      if (!res.ok) { alert(res.error || 'Failed to load'); return; }
-      state.entities = res.entities;
-      state.categories = res.categories;
-      state.history = res.history;
-      state.currentMonth = res.currentMonth;
-      state.selectedMonth = res.currentMonth;
-      populateMonthPicker();
-      state.entryEntity = state.entities[0] ? state.entities[0].key : null;
-      loadMonth(state.selectedMonth).then(function () {
-        renderDashboard();
-        renderEntry();
-        renderHistory();
-        renderSettings();
-      });
+
+    var who = document.getElementById('who-label');
+    who.innerHTML = esc(state.name) + ' <span class="role-badge ' + (state.role === 'owner' ? '' : 'staff') + '">' + state.role + '</span>';
+
+    renderNav();
+    populateMonthPicker();
+
+    var needsMonth = hasAnySection(['dashboard', 'entry', 'history']);
+    var chain = needsMonth ? loadMonth(state.selectedMonth) : Promise.resolve();
+    chain.then(function () {
+      if (hasSection('dashboard')) renderDashboard();
+      if (hasSection('entry')) renderEntry();
+      if (hasSection('history')) renderHistory();
+      if (hasSection('payroll')) loadPayroll();
+      if (state.role === 'owner') { renderSettings(); loadUsers(); }
+      showTab(state.activeTab);
     });
+  }
+
+  function hasSection(s) { return state.sections.indexOf(s) !== -1; }
+  function hasAnySection(list) { return list.some(hasSection); }
+
+  // ================= NAV =================
+  function renderNav() {
+    var tabs = [
+      { key: 'dashboard', label: 'Dashboard', show: hasSection('dashboard') },
+      { key: 'entry', label: 'Entry', show: hasSection('entry') },
+      { key: 'history', label: 'History', show: hasSection('history') },
+      { key: 'payroll', label: 'Payroll', show: hasSection('payroll') },
+      { key: 'settings', label: 'Settings', show: state.role === 'owner' },
+      { key: 'users', label: 'Users', show: state.role === 'owner' }
+    ];
+    var nav = document.getElementById('nav-tabs');
+    nav.innerHTML = '';
+    var firstKey = null;
+    tabs.forEach(function (t) {
+      if (!t.show) return;
+      if (!firstKey) firstKey = t.key;
+      var btn = document.createElement('button');
+      btn.textContent = t.label;
+      btn.setAttribute('data-view', t.key);
+      btn.addEventListener('click', function () { showTab(t.key); });
+      nav.appendChild(btn);
+    });
+    document.getElementById('month-picker').style.display = hasAnySection(['dashboard', 'entry', 'history']) ? '' : 'none';
+    state.activeTab = state.activeTab && tabs.some(function (t) { return t.key === state.activeTab && t.show; }) ? state.activeTab : firstKey;
+  }
+
+  function showTab(key) {
+    if (!key) return;
+    state.activeTab = key;
+    Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === key);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.remove('active'); });
+    var view = document.getElementById('view-' + key);
+    if (view) view.classList.add('active');
   }
 
   function populateMonthPicker() {
@@ -541,13 +817,13 @@
       if (mo === state.selectedMonth) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.addEventListener('change', function () {
+    sel.onchange = function () {
       state.selectedMonth = sel.value;
       loadMonth(state.selectedMonth).then(function () {
-        renderDashboard();
-        renderEntry();
+        if (hasSection('dashboard')) renderDashboard();
+        if (hasSection('entry')) renderEntry();
       });
-    });
+    };
   }
 
   function loadMonth(month) {
@@ -557,16 +833,8 @@
     });
   }
 
-  // ================= TAB NAV =================
-  Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function (btn) {
-    btn.addEventListener('click', function () {
-      Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      var view = btn.getAttribute('data-view');
-      Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.remove('active'); });
-      document.getElementById('view-' + view).classList.add('active');
-    });
-  });
+  function isPartialEntitySet() { return state.entities.length < ALL_ENTITIES_COUNT; }
+  function salariesHidden() { return !!(state.monthData && state.monthData.salariesHidden); }
 
   // ================= DASHBOARD =================
   function renderDashboard() {
@@ -584,10 +852,11 @@
 
     state.entities.forEach(function (ent) {
       var e = d.entities[ent.key];
-      grid.appendChild(kpiCard(ent.key, ent.name, e));
+      grid.appendChild(kpiCard(ent.key, ent.name, e, false));
     });
 
-    grid.appendChild(kpiCard('total', 'Combined', d.totals, true));
+    var totalLabel = isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined';
+    grid.appendChild(kpiCard('total', totalLabel, d.totals, true));
   }
 
   function kpiCard(key, name, e, isTotal) {
@@ -597,6 +866,7 @@
 
     var onTarget = e.gpPercent >= (e.targetGpPercent || 0);
     var nettPos = e.nettProfit >= 0;
+    var hiddenSuffix = salariesHidden() ? ' <span style="color:var(--text-muted); font-weight:400;">(excl. hidden)</span>' : '';
 
     var badgeHtml = (e.targetGpPercent !== undefined)
       ? '<span class="badge ' + (onTarget ? 'good' : 'critical') + '">' +
@@ -604,12 +874,12 @@
       : '';
 
     card.innerHTML =
-      '<div class="kpi-head"><span class="name">' + name + '</span>' + badgeHtml + '</div>' +
+      '<div class="kpi-head"><span class="name">' + esc(name) + '</span>' + badgeHtml + '</div>' +
       '<div class="kpi-row"><span>Turnover</span><span class="val">' + money(e.turnover) + '</span></div>' +
       '<div class="kpi-row"><span>Cost of Sales</span><span class="val">' + money(e.cos) + '</span></div>' +
       '<div class="kpi-row"><span>GP%' + (e.targetGpPercent !== undefined ? ' <span style="color:var(--text-muted)">(target ' + pct(e.targetGpPercent) + ')</span>' : '') + '</span><span class="val">' + pct(e.gpPercent) + '</span></div>' +
-      '<div class="kpi-row"><span>Total Expenses</span><span class="val">' + money(e.totalExpenses) + '</span></div>' +
-      '<div class="kpi-row hero"><span>Nett Profit</span><span class="val ' + (nettPos ? 'pos' : 'neg') + '">' + money(e.nettProfit) + '</span></div>';
+      '<div class="kpi-row"><span>Total Expenses' + hiddenSuffix + '</span><span class="val">' + money(e.totalExpenses) + '</span></div>' +
+      '<div class="kpi-row hero"><span>Nett Profit' + hiddenSuffix + '</span><span class="val ' + (nettPos ? 'pos' : 'neg') + '">' + money(e.nettProfit) + '</span></div>';
 
     return card;
   }
@@ -632,7 +902,7 @@
       var ent = state.entities.filter(function (e) { return e.key === key; })[0];
       var item = document.createElement('div');
       item.className = 'item';
-      item.innerHTML = '<span class="dot" style="background:' + colorFor(key) + '"></span>' + ent.name;
+      item.innerHTML = '<span class="dot" style="background:' + colorFor(key) + '"></span>' + esc(ent.name);
       legendEl.appendChild(item);
     });
 
@@ -660,7 +930,7 @@
       container.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No entity-level history yet for this range.</p>';
       return;
     }
-    var minV = metric === 'gpp' ? 0 : 0;
+    var minV = 0;
     var maxV = Math.max.apply(null, allVals) * 1.15 || 1;
 
     function x(i) { return padL + (i / Math.max(history.length - 1, 1)) * plotW; }
@@ -744,7 +1014,7 @@
     container.appendChild(tooltip);
 
     Array.prototype.forEach.call(svg.querySelectorAll('circle'), function (c) {
-      c.addEventListener('mouseenter', function (ev) {
+      c.addEventListener('mouseenter', function () {
         var key = c.getAttribute('data-key');
         var ent = state.entities.filter(function (e) { return e.key === key; })[0];
         var val = Number(c.getAttribute('data-val'));
@@ -761,8 +1031,10 @@
   function renderExpenseBreakdown() {
     var sub = document.getElementById('expense-breakdown-sub');
     var chart = document.getElementById('expense-breakdown-chart');
+    var note = document.getElementById('expense-breakdown-note');
     var d = state.monthData;
-    sub.textContent = monthLabel(state.selectedMonth) + ' — combined across all entities';
+    sub.textContent = monthLabel(state.selectedMonth) + (isPartialEntitySet() ? ' — across your entities' : ' — combined across all entities');
+    note.style.display = salariesHidden() ? '' : 'none';
     chart.innerHTML = '';
 
     var totals = {};
@@ -787,7 +1059,7 @@
       var pctW = Math.max((e.amt / max) * 100, 2);
       row.innerHTML =
         '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">' +
-        '<span>' + e.cat + '</span><span style="font-weight:600;">' + money(e.amt) + '</span></div>' +
+        '<span>' + esc(e.cat) + '</span><span style="font-weight:600;">' + money(e.amt) + '</span></div>' +
         '<div style="background:var(--gridline); border-radius:6px; height:8px;">' +
         '<div style="background:var(--series-total); width:' + pctW + '%; height:100%; border-radius:6px;"></div></div>';
       chart.appendChild(row);
@@ -807,7 +1079,7 @@
       } else {
         pill.style.color = colorFor(ent.key);
       }
-      pill.innerHTML = '<span class="dot"></span>' + ent.name;
+      pill.innerHTML = '<span class="dot"></span>' + esc(ent.name);
       pill.addEventListener('click', function () {
         state.entryEntity = ent.key;
         renderEntry();
@@ -815,14 +1087,18 @@
       picker.appendChild(pill);
     });
 
-    if (!state.monthData) return;
+    if (!state.monthData || !state.entryEntity) return;
     var e = state.monthData.entities[state.entryEntity];
     var ent = state.entities.filter(function (x) { return x.key === state.entryEntity; })[0];
+    if (!e || !ent) return;
 
     document.getElementById('entry-turnover-sub').textContent = ent.name + ' — ' + monthLabel(state.selectedMonth);
     document.getElementById('entry-expenses-sub').textContent = ent.name + ' — ' + monthLabel(state.selectedMonth);
     document.getElementById('entry-turnover').value = e.turnover || '';
     document.getElementById('entry-cos').value = e.cos || '';
+    document.getElementById('entry-total-expenses-label').textContent = 'Total Expenses' + (salariesHidden() ? ' (excl. hidden)' : '');
+    document.getElementById('entry-nett-label').textContent = 'Nett Profit' + (salariesHidden() ? ' (excl. hidden)' : '');
+    document.getElementById('entry-hidden-note').style.display = salariesHidden() ? '' : 'none';
     updateEntryPreview();
 
     var form = document.getElementById('expense-form');
@@ -831,7 +1107,7 @@
       var row = document.createElement('div');
       row.className = 'exp-row';
       var val = (e.expenses && e.expenses[cat.name] !== undefined) ? e.expenses[cat.name] : 0;
-      row.innerHTML = '<label>' + cat.name + '</label><input type="number" step="0.01" data-cat="' + cat.name + '" value="' + val + '">';
+      row.innerHTML = '<label>' + esc(cat.name) + '</label><input type="number" step="0.01" data-cat="' + esc(cat.name) + '" value="' + val + '">';
       form.appendChild(row);
     });
     Array.prototype.forEach.call(form.querySelectorAll('input'), function (inp) {
@@ -869,7 +1145,6 @@
     var nett = gp - total;
     var nettEl = document.getElementById('entry-nett-preview');
     nettEl.textContent = money(nett);
-    nettEl.className = 'value ' + (nett >= 0 ? '' : '');
     nettEl.style.color = nett >= 0 ? 'var(--good)' : 'var(--critical)';
   }
 
@@ -883,7 +1158,7 @@
         if (res.ok) {
           status.textContent = 'Saved'; status.className = 'save-status ok';
           state.monthData = res.data;
-          renderDashboard();
+          if (hasSection('dashboard')) renderDashboard();
         } else {
           status.textContent = res.error || 'Failed'; status.className = 'save-status err';
         }
@@ -905,7 +1180,7 @@
         if (res.ok) {
           status.textContent = 'Saved'; status.className = 'save-status ok';
           state.monthData = res.data;
-          renderDashboard();
+          if (hasSection('dashboard')) renderDashboard();
         } else {
           status.textContent = res.error || 'Failed'; status.className = 'save-status err';
         }
@@ -916,6 +1191,12 @@
 
   // ================= HISTORY =================
   function renderHistory() {
+    var title = document.getElementById('history-title');
+    var sub = document.getElementById('history-sub');
+    title.textContent = isPartialEntitySet() ? 'Monthly history — your entities' : 'Monthly history — combined';
+    sub.textContent = isPartialEntitySet()
+      ? 'Combined across: ' + state.entities.map(function (e) { return e.name; }).join(', ')
+      : '';
     var table = document.getElementById('history-table');
     var rows = state.history.slice().reverse();
     var head = '<thead><tr><th>Month</th><th>Turnover</th><th>COS</th><th>GP</th><th>GP%</th></tr></thead>';
@@ -925,14 +1206,182 @@
     table.innerHTML = head + body;
   }
 
-  // ================= SETTINGS =================
+  // ================= PAYROLL =================
+  function loadPayroll() {
+    return callApi('getPayroll', {}).then(function (res) {
+      if (res.ok) {
+        state.payroll = res.payroll;
+        renderPayroll();
+      }
+      return res;
+    });
+  }
+
+  function renderPayroll() {
+    if (!state.payroll) return;
+    var kpiGrid = document.getElementById('payroll-kpi-grid');
+    kpiGrid.innerHTML =
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Headcount (active)</span></div>' +
+      '<div class="kpi-row hero"><span>Employees</span><span class="val">' + state.payroll.headcount + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Monthly Cost</span></div>' +
+      '<div class="kpi-row hero"><span>Payroll</span><span class="val">' + money(state.payroll.totalMonthlyCost) + '</span></div></div>';
+
+    var deptGrid = document.getElementById('payroll-dept-grid');
+    deptGrid.innerHTML = '';
+    state.payroll.departments.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (d) {
+      var card = document.createElement('div');
+      card.className = 'dept-card';
+      card.innerHTML = '<div class="dept-name">' + esc(d.department) + '</div>' +
+        '<div class="dept-row"><span>Headcount</span><span>' + d.count + '</span></div>' +
+        '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>';
+      deptGrid.appendChild(card);
+    });
+
+    var deptList = document.getElementById('payroll-dept-list');
+    var deptFilter = document.getElementById('payroll-dept-filter');
+    var deptNames = Array.from(new Set(state.payroll.employees.map(function (e) { return e.department; }))).sort();
+    deptList.innerHTML = deptNames.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
+    var currentFilter = deptFilter.value;
+    deptFilter.innerHTML = '<option value="">All departments</option>' +
+      deptNames.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
+    deptFilter.value = currentFilter;
+
+    renderPayrollTable();
+  }
+
+  function renderPayrollTable() {
+    var search = document.getElementById('payroll-search').value.trim().toLowerCase();
+    var deptFilterVal = document.getElementById('payroll-dept-filter').value;
+    var showInactive = document.getElementById('payroll-show-inactive').checked;
+
+    var rows = state.payroll.employees.filter(function (e) {
+      if (!showInactive && !e.active) return false;
+      if (deptFilterVal && e.department !== deptFilterVal) return false;
+      if (search && e.name.toLowerCase().indexOf(search) === -1) return false;
+      return true;
+    }).sort(function (a, b) {
+      if (a.department !== b.department) return a.department < b.department ? -1 : 1;
+      return a.name < b.name ? -1 : 1;
+    });
+
+    var table = document.getElementById('payroll-table');
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th></th></tr></thead>';
+    var body = '<tbody>' + rows.map(function (e) {
+      return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
+        '<td style="text-align:left;">' + esc(e.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(e.department) + '</td>' +
+        '<td>' + esc(e.employeeNumber) + '</td>' +
+        '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
+        '<td>' + money(e.amount) + '</td>' +
+        '<td>' + (e.dayRate === null ? '—' : money(e.dayRate)) + '</td>' +
+        '<td>' + (e.hourRate === null ? '—' : money(e.hourRate)) + '</td>' +
+        '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
+        '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
+        '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
+        '</tr>';
+    }).join('') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-edit-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        startEditEmployee(btn.getAttribute('data-edit-id'));
+      });
+    });
+  }
+
+  document.getElementById('payroll-search').addEventListener('input', renderPayrollTable);
+  document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
+  document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
+
+  function startEditEmployee(id) {
+    var e = state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!e) return;
+    document.getElementById('payroll-form-title').textContent = 'Edit employee — ' + e.name;
+    document.getElementById('payroll-edit-id').value = e.id;
+    document.getElementById('payroll-name').value = e.name;
+    document.getElementById('payroll-department').value = e.department;
+    document.getElementById('payroll-empnum').value = e.employeeNumber || '';
+    document.getElementById('payroll-days').value = e.days === null ? '' : e.days;
+    document.getElementById('payroll-amount').value = e.amount;
+    document.getElementById('payroll-date').value = e.dateEmployed || '';
+    document.getElementById('payroll-notes').value = e.notes || '';
+    document.getElementById('payroll-active').checked = e.active;
+    document.getElementById('payroll-active-field').style.display = '';
+    document.getElementById('payroll-save-btn').textContent = 'Update employee';
+    document.getElementById('payroll-cancel-btn').style.display = '';
+    document.getElementById('payroll-error').textContent = '';
+    document.getElementById('view-payroll').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function resetEmployeeForm() {
+    document.getElementById('payroll-form-title').textContent = 'Add employee';
+    document.getElementById('payroll-edit-id').value = '';
+    document.getElementById('payroll-name').value = '';
+    document.getElementById('payroll-department').value = '';
+    document.getElementById('payroll-empnum').value = '';
+    document.getElementById('payroll-days').value = '';
+    document.getElementById('payroll-amount').value = '';
+    document.getElementById('payroll-date').value = '';
+    document.getElementById('payroll-notes').value = '';
+    document.getElementById('payroll-active-field').style.display = 'none';
+    document.getElementById('payroll-save-btn').textContent = 'Save employee';
+    document.getElementById('payroll-cancel-btn').style.display = 'none';
+    document.getElementById('payroll-error').textContent = '';
+  }
+
+  document.getElementById('payroll-cancel-btn').addEventListener('click', resetEmployeeForm);
+
+  document.getElementById('payroll-save-btn').addEventListener('click', function () {
+    var id = document.getElementById('payroll-edit-id').value;
+    var errEl = document.getElementById('payroll-error');
+    var status = document.getElementById('payroll-save-status');
+    var name = document.getElementById('payroll-name').value.trim();
+    var department = document.getElementById('payroll-department').value.trim();
+    if (!name || !department) { errEl.textContent = 'Name and department are required.'; return; }
+    errEl.textContent = '';
+
+    var payload = {
+      name: name,
+      department: department,
+      employeeNumber: document.getElementById('payroll-empnum').value.trim(),
+      days: document.getElementById('payroll-days').value,
+      amount: document.getElementById('payroll-amount').value,
+      dateEmployed: document.getElementById('payroll-date').value.trim(),
+      notes: document.getElementById('payroll-notes').value.trim()
+    };
+
+    var action, extra;
+    if (id) {
+      action = 'updateEmployee';
+      extra = { id: id, active: document.getElementById('payroll-active').checked };
+    } else {
+      action = 'addEmployee';
+      extra = {};
+    }
+
+    status.textContent = 'Saving…'; status.className = 'save-status';
+    callApi(action, Object.assign(payload, extra)).then(function (res) {
+      if (res.ok) {
+        status.textContent = 'Saved'; status.className = 'save-status ok';
+        state.payroll = res.payroll;
+        renderPayroll();
+        resetEmployeeForm();
+      } else {
+        status.textContent = ''; errEl.textContent = res.error || 'Failed to save.';
+      }
+    }).catch(function () {
+      status.textContent = ''; errEl.textContent = 'Network error.';
+    });
+  });
+
+  // ================= SETTINGS (Owner only) =================
   function renderSettings() {
     var container = document.getElementById('settings-entities');
     container.innerHTML = '';
     state.entities.forEach(function (ent) {
       var row = document.createElement('div');
       row.className = 'exp-row';
-      row.innerHTML = '<label>' + ent.name + '</label><input type="number" step="0.1" min="0" max="100" value="' + (ent.targetGpPercent * 100).toFixed(1) + '" data-entity="' + ent.key + '">';
+      row.innerHTML = '<label>' + esc(ent.name) + '</label><input type="number" step="0.1" min="0" max="100" value="' + (ent.targetGpPercent * 100).toFixed(1) + '" data-entity="' + esc(ent.key) + '">';
       container.appendChild(row);
       var input = row.querySelector('input');
       input.addEventListener('change', function () {
@@ -953,8 +1402,9 @@
       var row = document.createElement('div');
       row.className = 'cat-row';
       row.innerHTML =
-        '<input type="text" value="' + cat.name + '" data-idx="' + i + '" data-field="name">' +
-        '<label class="toggle"><input type="checkbox" ' + (cat.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>';
+        '<input type="text" value="' + esc(cat.name) + '" data-idx="' + i + '" data-field="name">' +
+        '<label class="toggle"><input type="checkbox" ' + (cat.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>' +
+        '<label class="toggle sensitive"><input type="checkbox" ' + (cat.sensitive ? 'checked' : '') + ' data-idx="' + i + '" data-field="sensitive"> Sensitive (hide from Staff)</label>';
       container.appendChild(row);
     });
   }
@@ -963,7 +1413,7 @@
     var input = document.getElementById('new-category-name');
     var name = input.value.trim();
     if (!name) return;
-    state.categories.push({ name: name, active: true, sortOrder: state.categories.length + 1 });
+    state.categories.push({ name: name, active: true, sensitive: false, sortOrder: state.categories.length + 1 });
     input.value = '';
     renderCategorySettings();
   });
@@ -974,7 +1424,8 @@
     Array.prototype.forEach.call(container.querySelectorAll('.cat-row'), function (row, i) {
       var nameInput = row.querySelector('[data-field="name"]');
       var activeInput = row.querySelector('[data-field="active"]');
-      updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sortOrder: i + 1 });
+      var sensitiveInput = row.querySelector('[data-field="sensitive"]');
+      updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sensitive: sensitiveInput.checked, sortOrder: i + 1 });
     });
     var status = document.getElementById('save-categories-status');
     status.textContent = 'Saving…'; status.className = 'save-status';
@@ -982,18 +1433,163 @@
       if (res.ok) {
         state.categories = res.categories;
         status.textContent = 'Saved'; status.className = 'save-status ok';
-        renderEntry();
+        if (hasSection('entry')) renderEntry();
       } else {
         status.textContent = res.error || 'Failed'; status.className = 'save-status err';
       }
     });
   });
 
+  // ================= USERS (Owner only) =================
+  function loadUsers() {
+    return callApi('listUsers', {}).then(function (res) {
+      if (res.ok) {
+        state.users = res.users;
+        renderUserForm();
+        renderUsersTable();
+      }
+      return res;
+    });
+  }
+
+  function renderUserForm() {
+    var sectionsGrid = document.getElementById('user-sections-grid');
+    sectionsGrid.innerHTML = SECTION_KEYS_LOCAL().map(function (s) {
+      return '<label><input type="checkbox" value="' + s + '" class="user-section-cb" style="width:auto;">' + SECTION_LABELS[s] + '</label>';
+    }).join('');
+
+    var entitiesGrid = document.getElementById('user-entities-grid');
+    entitiesGrid.innerHTML = state.entities.map(function (e) {
+      return '<label><input type="checkbox" value="' + esc(e.key) + '" class="user-entity-cb" style="width:auto;">' + esc(e.name) + '</label>';
+    }).join('');
+  }
+
+  function SECTION_KEYS_LOCAL() { return ['dashboard', 'entry', 'history', 'payroll']; }
+
+  function renderUsersTable() {
+    var table = document.getElementById('users-table');
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Role</th><th>Sections</th><th>Entities</th><th>Active</th><th></th></tr></thead>';
+    var body = '<tbody>' + state.users.map(function (u) {
+      var chips = function (list) {
+        return '<div class="pill-list">' + (list.length ? list.map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') : '<span class="chip">—</span>') + '</div>';
+      };
+      var actions = (u.role === 'owner')
+        ? '<span style="font-size:11px; color:var(--text-muted);">Managed in Sheet</span>'
+        : '<button class="btn secondary small" data-manage="' + esc(u.name) + '">Manage</button>';
+      return '<tr class="' + (u.active ? '' : 'inactive') + '">' +
+        '<td style="text-align:left;">' + esc(u.name) + '</td>' +
+        '<td style="text-align:left; text-transform:capitalize;">' + esc(u.role) + '</td>' +
+        '<td>' + chips(u.sections) + '</td>' +
+        '<td>' + chips(u.entities) + '</td>' +
+        '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
+        '<td>' + actions + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-manage]'), function (btn) {
+      btn.addEventListener('click', function () { startEditUser(btn.getAttribute('data-manage')); });
+    });
+  }
+
+  function startEditUser(name) {
+    var u = state.users.filter(function (x) { return x.name === name; })[0];
+    if (!u) return;
+    document.getElementById('users-form-title').textContent = 'Manage — ' + u.name;
+    document.getElementById('user-edit-name').value = u.name;
+    document.getElementById('user-name-label').textContent = 'Name (cannot be changed)';
+    document.getElementById('user-name').value = u.name;
+    document.getElementById('user-name').disabled = true;
+    document.getElementById('user-password-label').textContent = 'Reset password (leave blank to keep current)';
+    document.getElementById('user-password').value = '';
+    Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) {
+      cb.checked = u.sections.indexOf(cb.value) !== -1;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) {
+      cb.checked = u.entities.indexOf(cb.value) !== -1;
+    });
+    document.getElementById('user-active').checked = u.active;
+    document.getElementById('user-active-field').style.display = '';
+    document.getElementById('user-save-btn').textContent = 'Save changes';
+    document.getElementById('user-cancel-btn').style.display = '';
+    document.getElementById('user-error').textContent = '';
+    document.getElementById('view-users').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function resetUserForm() {
+    document.getElementById('users-form-title').textContent = 'Add staff account';
+    document.getElementById('user-edit-name').value = '';
+    document.getElementById('user-name-label').textContent = 'Name';
+    document.getElementById('user-name').value = '';
+    document.getElementById('user-name').disabled = false;
+    document.getElementById('user-password-label').textContent = 'Password';
+    document.getElementById('user-password').value = '';
+    Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) { cb.checked = false; });
+    Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) { cb.checked = false; });
+    document.getElementById('user-active-field').style.display = 'none';
+    document.getElementById('user-save-btn').textContent = 'Add staff account';
+    document.getElementById('user-cancel-btn').style.display = 'none';
+    document.getElementById('user-error').textContent = '';
+  }
+
+  document.getElementById('user-cancel-btn').addEventListener('click', resetUserForm);
+
+  document.getElementById('user-save-btn').addEventListener('click', function () {
+    var editName = document.getElementById('user-edit-name').value;
+    var errEl = document.getElementById('user-error');
+    var status = document.getElementById('user-save-status');
+    errEl.textContent = '';
+
+    var sections = Array.prototype.filter.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
+    var entities = Array.prototype.filter.call(document.querySelectorAll('.user-entity-cb'), function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
+
+    if (editName) {
+      var password = document.getElementById('user-password').value;
+      var active = document.getElementById('user-active').checked;
+      status.textContent = 'Saving…'; status.className = 'save-status';
+      var updateReq = callApi('updateUser', { name: editName, sections: sections.join(','), entities: entities.join(','), active: active });
+      var chain = password ? updateReq.then(function () { return callApi('resetPassword', { name: editName, newPassword: password }); }) : updateReq;
+      chain.then(function (res) {
+        if (res.ok) {
+          status.textContent = 'Saved'; status.className = 'save-status ok';
+          loadUsers().then(resetUserForm);
+        } else {
+          status.textContent = ''; errEl.textContent = res.error || 'Failed to save.';
+        }
+      }).catch(function () { status.textContent = ''; errEl.textContent = 'Network error.'; });
+    } else {
+      var name = document.getElementById('user-name').value.trim();
+      var newPassword = document.getElementById('user-password').value;
+      if (!name) { errEl.textContent = 'Name is required.'; return; }
+      if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+      status.textContent = 'Saving…'; status.className = 'save-status';
+      callApi('addUser', { name: name, password: newPassword, sections: sections.join(','), entities: entities.join(',') }).then(function (res) {
+        if (res.ok) {
+          status.textContent = 'Added'; status.className = 'save-status ok';
+          state.users = res.users;
+          renderUsersTable();
+          resetUserForm();
+        } else {
+          status.textContent = ''; errEl.textContent = res.error || 'Failed to add.';
+        }
+      }).catch(function () { status.textContent = ''; errEl.textContent = 'Network error.'; });
+    }
+  });
+
   // ================= AUTO-RESUME SESSION =================
-  var savedUser = sessionStorage.getItem('dff_user');
-  if (savedUser) {
-    state.user = savedUser;
-    enterApp();
+  var savedToken = sessionStorage.getItem('dff_token');
+  if (savedToken) {
+    state.token = savedToken;
+    callApi('bootstrap', {}).then(function (res) {
+      if (res.ok) {
+        applyBootstrap(res);
+        enterApp();
+      } else {
+        sessionStorage.removeItem('dff_token');
+      }
+    });
   }
 })();
 </script>
