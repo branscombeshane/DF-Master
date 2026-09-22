@@ -500,12 +500,14 @@
         <div style="display:flex; gap:10px; align-items:center;">
           <button class="btn" id="payroll-save-btn">Save employee</button>
           <button class="btn secondary" id="payroll-cancel-btn" style="display:none;">Cancel edit</button>
+          <button class="btn danger" id="payroll-delete-btn" style="display:none;">Delete employee</button>
           <span class="save-status" id="payroll-save-status"></span>
         </div>
       </div>
 
       <div class="panel">
         <h2>Roster</h2>
+        <p class="panel-sub" id="payroll-roster-sub"></p>
         <div class="toolbar">
           <input type="text" id="payroll-search" placeholder="Search by name...">
           <select id="payroll-dept-filter"><option value="">All departments</option></select>
@@ -588,8 +590,10 @@
   'use strict';
 
   // ================= CONFIG =================
-  // Paste your Apps Script Web App /exec URL here after deploying (see SETUP.md).
-  var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzX03XJ-3i3RwdhqKWHl-y-XKAwoAc18VFBZdFTabttyyvdaq-IjRGpVwmOq7J7J4q18A/exec';
+  // Apps Script Web App /exec URL (see SETUP.md if you ever need to redeploy
+  // and get a new one — Deploy > Manage deployments > New version keeps this
+  // same URL working, so you should rarely need to change this).
+  var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDFlyMTptoQ48Q3yZW7PZN6YlDBpfnJLYCuRe6fQaMdDunYwe-l6kHIg2njb5jSQxwQA/exec';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll' };
@@ -655,6 +659,22 @@
   function esc(s) {
     return String(s === undefined || s === null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Sets a save-status span's text/class, then clears it after a delay so
+  // "Saved" (and similar) don't sit on screen forever. Pass ms=0 to leave it
+  // showing (used only while a save is still in flight).
+  function flashStatus(status, text, cls, ms) {
+    if (status._flashTimer) { clearTimeout(status._flashTimer); status._flashTimer = null; }
+    status.textContent = text;
+    status.className = cls;
+    if (ms) {
+      status._flashTimer = setTimeout(function () {
+        status.textContent = '';
+        status.className = 'save-status';
+        status._flashTimer = null;
+      }, ms);
+    }
   }
 
   // ================= LOGIN =================
@@ -823,6 +843,7 @@
         if (hasSection('dashboard')) renderDashboard();
         if (hasSection('entry')) renderEntry();
       });
+      if (hasSection('payroll')) loadPayroll();
     };
   }
 
@@ -1152,18 +1173,18 @@
     var status = document.getElementById('save-turnover-status');
     var turnover = Number(document.getElementById('entry-turnover').value) || 0;
     var cos = Number(document.getElementById('entry-cos').value) || 0;
-    status.textContent = 'Saving…'; status.className = 'save-status';
+    flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveTurnover', { month: state.selectedMonth, entity: state.entryEntity, turnover: turnover, cos: cos })
       .then(function (res) {
         if (res.ok) {
-          status.textContent = 'Saved'; status.className = 'save-status ok';
+          flashStatus(status, 'Saved', 'save-status ok', 3000);
           state.monthData = res.data;
           if (hasSection('dashboard')) renderDashboard();
         } else {
-          status.textContent = res.error || 'Failed'; status.className = 'save-status err';
+          flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
         }
       }).catch(function () {
-        status.textContent = 'Network error'; status.className = 'save-status err';
+        flashStatus(status, 'Network error', 'save-status err', 5000);
       });
   });
 
@@ -1174,18 +1195,18 @@
     Array.prototype.forEach.call(form.querySelectorAll('input'), function (inp) {
       expenses[inp.getAttribute('data-cat')] = Number(inp.value) || 0;
     });
-    status.textContent = 'Saving…'; status.className = 'save-status';
+    flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveExpenses', { month: state.selectedMonth, entity: state.entryEntity, expenses: JSON.stringify(expenses) })
       .then(function (res) {
         if (res.ok) {
-          status.textContent = 'Saved'; status.className = 'save-status ok';
+          flashStatus(status, 'Saved', 'save-status ok', 3000);
           state.monthData = res.data;
           if (hasSection('dashboard')) renderDashboard();
         } else {
-          status.textContent = res.error || 'Failed'; status.className = 'save-status err';
+          flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
         }
       }).catch(function () {
-        status.textContent = 'Network error'; status.className = 'save-status err';
+        flashStatus(status, 'Network error', 'save-status err', 5000);
       });
   });
 
@@ -1208,7 +1229,7 @@
 
   // ================= PAYROLL =================
   function loadPayroll() {
-    return callApi('getPayroll', {}).then(function (res) {
+    return callApi('getPayroll', { month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         state.payroll = res.payroll;
         renderPayroll();
@@ -1219,12 +1240,15 @@
 
   function renderPayroll() {
     if (!state.payroll) return;
+    document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — tick off each payslip as you process it; resets fresh each month.';
     var kpiGrid = document.getElementById('payroll-kpi-grid');
     kpiGrid.innerHTML =
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Headcount (active)</span></div>' +
       '<div class="kpi-row hero"><span>Employees</span><span class="val">' + state.payroll.headcount + '</span></div></div>' +
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Monthly Cost</span></div>' +
-      '<div class="kpi-row hero"><span>Payroll</span><span class="val">' + money(state.payroll.totalMonthlyCost) + '</span></div></div>';
+      '<div class="kpi-row hero"><span>Payroll</span><span class="val">' + money(state.payroll.totalMonthlyCost) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Payslips Processed</span></div>' +
+      '<div class="kpi-row hero"><span>' + monthLabel(state.selectedMonth) + '</span><span class="val">' + state.payroll.processedCount + ' / ' + state.payroll.headcount + '</span></div></div>';
 
     var deptGrid = document.getElementById('payroll-dept-grid');
     deptGrid.innerHTML = '';
@@ -1265,7 +1289,7 @@
     });
 
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
@@ -1277,6 +1301,7 @@
         '<td>' + (e.hourRate === null ? '—' : money(e.hourRate)) + '</td>' +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
+        '<td><input type="checkbox" class="payroll-done-cb" data-done-id="' + esc(e.id) + '" ' + (e.done ? 'checked' : '') + ' style="width:auto;"></td>' +
         '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
         '</tr>';
     }).join('') + '</tbody>';
@@ -1285,6 +1310,29 @@
     Array.prototype.forEach.call(table.querySelectorAll('[data-edit-id]'), function (btn) {
       btn.addEventListener('click', function () {
         startEditEmployee(btn.getAttribute('data-edit-id'));
+      });
+    });
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-done-id]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-done-id');
+        var done = cb.checked;
+        cb.disabled = true;
+        callApi('setPayrollDone', { month: state.selectedMonth, id: id, done: done }).then(function (res) {
+          cb.disabled = false;
+          if (res.ok) {
+            state.payroll = res.payroll;
+            var kpiGrid = document.getElementById('payroll-kpi-grid');
+            kpiGrid.querySelector('.kpi-card:nth-child(3) .val').textContent = state.payroll.processedCount + ' / ' + state.payroll.headcount;
+          } else {
+            cb.checked = !done;
+            window.alert(res.error || 'Could not update payslip status.');
+          }
+        }).catch(function () {
+          cb.disabled = false;
+          cb.checked = !done;
+          window.alert('Network error — could not update payslip status.');
+        });
       });
     });
   }
@@ -1309,6 +1357,7 @@
     document.getElementById('payroll-active-field').style.display = '';
     document.getElementById('payroll-save-btn').textContent = 'Update employee';
     document.getElementById('payroll-cancel-btn').style.display = '';
+    document.getElementById('payroll-delete-btn').style.display = '';
     document.getElementById('payroll-error').textContent = '';
     document.getElementById('view-payroll').scrollIntoView({ behavior: 'smooth' });
   }
@@ -1326,6 +1375,7 @@
     document.getElementById('payroll-active-field').style.display = 'none';
     document.getElementById('payroll-save-btn').textContent = 'Save employee';
     document.getElementById('payroll-cancel-btn').style.display = 'none';
+    document.getElementById('payroll-delete-btn').style.display = 'none';
     document.getElementById('payroll-error').textContent = '';
   }
 
@@ -1359,18 +1409,42 @@
       extra = {};
     }
 
-    status.textContent = 'Saving…'; status.className = 'save-status';
+    flashStatus(status, 'Saving…', 'save-status', 0);
     callApi(action, Object.assign(payload, extra)).then(function (res) {
       if (res.ok) {
-        status.textContent = 'Saved'; status.className = 'save-status ok';
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
         state.payroll = res.payroll;
         renderPayroll();
         resetEmployeeForm();
       } else {
-        status.textContent = ''; errEl.textContent = res.error || 'Failed to save.';
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to save.';
       }
     }).catch(function () {
-      status.textContent = ''; errEl.textContent = 'Network error.';
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
+    });
+  });
+
+  document.getElementById('payroll-delete-btn').addEventListener('click', function () {
+    var id = document.getElementById('payroll-edit-id').value;
+    if (!id) return;
+    var e = state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
+    var label = e ? e.name : 'this employee';
+    if (!window.confirm('Delete ' + label + '? This permanently removes their record from the roster and cannot be undone.\n\nIf they might come back, consider unticking Active instead of deleting.')) return;
+
+    var errEl = document.getElementById('payroll-error');
+    var status = document.getElementById('payroll-save-status');
+    flashStatus(status, 'Deleting…', 'save-status', 0);
+    callApi('deleteEmployee', { id: id }).then(function (res) {
+      if (res.ok) {
+        flashStatus(status, 'Deleted', 'save-status ok', 3000);
+        state.payroll = res.payroll;
+        renderPayroll();
+        resetEmployeeForm();
+      } else {
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to delete.';
+      }
+    }).catch(function () {
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
     });
   });
 
@@ -1428,14 +1502,14 @@
       updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sensitive: sensitiveInput.checked, sortOrder: i + 1 });
     });
     var status = document.getElementById('save-categories-status');
-    status.textContent = 'Saving…'; status.className = 'save-status';
+    flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveCategories', { categories: JSON.stringify(updated) }).then(function (res) {
       if (res.ok) {
         state.categories = res.categories;
-        status.textContent = 'Saved'; status.className = 'save-status ok';
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
         if (hasSection('entry')) renderEntry();
       } else {
-        status.textContent = res.error || 'Failed'; status.className = 'save-status err';
+        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
       }
     });
   });
@@ -1548,33 +1622,33 @@
     if (editName) {
       var password = document.getElementById('user-password').value;
       var active = document.getElementById('user-active').checked;
-      status.textContent = 'Saving…'; status.className = 'save-status';
+      flashStatus(status, 'Saving…', 'save-status', 0);
       var updateReq = callApi('updateUser', { name: editName, sections: sections.join(','), entities: entities.join(','), active: active });
       var chain = password ? updateReq.then(function () { return callApi('resetPassword', { name: editName, newPassword: password }); }) : updateReq;
       chain.then(function (res) {
         if (res.ok) {
-          status.textContent = 'Saved'; status.className = 'save-status ok';
+          flashStatus(status, 'Saved', 'save-status ok', 3000);
           loadUsers().then(resetUserForm);
         } else {
-          status.textContent = ''; errEl.textContent = res.error || 'Failed to save.';
+          flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to save.';
         }
-      }).catch(function () { status.textContent = ''; errEl.textContent = 'Network error.'; });
+      }).catch(function () { flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.'; });
     } else {
       var name = document.getElementById('user-name').value.trim();
       var newPassword = document.getElementById('user-password').value;
       if (!name) { errEl.textContent = 'Name is required.'; return; }
       if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
-      status.textContent = 'Saving…'; status.className = 'save-status';
+      flashStatus(status, 'Saving…', 'save-status', 0);
       callApi('addUser', { name: name, password: newPassword, sections: sections.join(','), entities: entities.join(',') }).then(function (res) {
         if (res.ok) {
-          status.textContent = 'Added'; status.className = 'save-status ok';
+          flashStatus(status, 'Added', 'save-status ok', 3000);
           state.users = res.users;
           renderUsersTable();
           resetUserForm();
         } else {
-          status.textContent = ''; errEl.textContent = res.error || 'Failed to add.';
+          flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to add.';
         }
-      }).catch(function () { status.textContent = ''; errEl.textContent = 'Network error.'; });
+      }).catch(function () { flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.'; });
     }
   });
 
