@@ -496,6 +496,41 @@
         <div class="field" id="payroll-active-field" style="display:none;">
           <label><input type="checkbox" id="payroll-active" checked style="width:auto; margin-right:6px;">Active</label>
         </div>
+
+        <h3 style="margin:20px 0 4px; font-size:14px; color:var(--text-muted);">SARS &amp; payroll tax details</h3>
+        <p class="panel-sub" style="margin-top:0;">Used to calculate PAYE, UIF, ETI and the medical tax credit correctly — leave blank if unknown and it degrades safely (age unknown = no age-related rebate beyond the standard one; no ETI without a date of birth).</p>
+        <div class="form-grid">
+          <div class="field">
+            <label>ID number</label>
+            <input type="text" id="payroll-id-number">
+          </div>
+          <div class="field">
+            <label>Income tax number</label>
+            <input type="text" id="payroll-tax-number">
+          </div>
+          <div class="field">
+            <label>Date of birth</label>
+            <input type="text" id="payroll-dob" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="field">
+            <label>Medical aid — lives covered</label>
+            <input type="number" step="1" min="0" id="payroll-medical-members">
+            <div class="hint">Member + dependants, e.g. 3 for member + spouse + 1 child. Leave 0/blank for no medical aid.</div>
+          </div>
+          <div class="field">
+            <label>Medical aid contribution (R/month)</label>
+            <input type="number" step="0.01" id="payroll-medical-contribution">
+          </div>
+          <div class="field">
+            <label>Retirement fund contribution (R/month)</label>
+            <input type="number" step="0.01" id="payroll-retirement">
+            <div class="hint">Deducted from taxable income, capped at 27.5% of gross or R350,000/year, whichever is lower.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="payroll-uif-exempt" style="width:auto; margin-right:6px;">UIF exempt</label>
+          <div class="hint">Typically only directors/members not under a contract of employment — confirm with your accountant before ticking this.</div>
+        </div>
         <div class="error-text" id="payroll-error"></div>
         <div style="display:flex; gap:10px; align-items:center;">
           <button class="btn" id="payroll-save-btn">Save employee</button>
@@ -515,6 +550,35 @@
         </div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="payroll-table"></table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Run Payroll &amp; SARS (EMP201)</h2>
+        <p class="panel-sub" id="payrollrun-sub"></p>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
+          <span class="save-status" id="payrollrun-status"></span>
+        </div>
+        <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
+        <div style="overflow-x:auto; margin-top:16px;">
+          <table class="data-table" id="payslips-table"></table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>IRP5 / Tax Certificates</h2>
+        <p class="panel-sub" id="irp5-sub"></p>
+        <div class="hint" style="margin-bottom:12px;">
+          This gives you the correctly-coded figures for each employee's annual certificate — it does not submit anything
+          to SARS or generate a SARS e@syFile bulk-import file. Capture these into e@syFile/eFiling yourself, or hand the
+          CSV to whoever does your SARS submissions.
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button class="btn secondary" id="irp5-download-btn">Download IRP5 data (CSV)</button>
+        </div>
+        <div style="overflow-x:auto; margin-top:16px;">
+          <table class="data-table" id="irp5-table"></table>
         </div>
       </div>
     </section>
@@ -853,7 +917,7 @@
       if (hasSection('dashboard')) renderDashboard();
       if (hasSection('entry')) renderEntry();
       if (hasSection('history')) renderHistory();
-      if (hasSection('payroll')) loadPayroll();
+      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); }
       if (hasSection('vehicles')) loadVehicles();
       if (state.role === 'owner') { renderSettings(); loadUsers(); }
       showTab(state.activeTab);
@@ -926,7 +990,7 @@
         if (hasSection('dashboard')) renderDashboard();
         if (hasSection('entry')) renderEntry();
       });
-      if (hasSection('payroll')) loadPayroll();
+      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); }
     };
   }
 
@@ -1424,6 +1488,147 @@
   document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
   document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
 
+  // ================= RUN PAYROLL / SARS (EMP201) =================
+  function loadPayrollRun() {
+    return callApi('getPayrollRun', { month: state.selectedMonth }).then(function (res) {
+      if (res.ok) {
+        state.payrollRun = res.payrollRun;
+        renderPayrollRun();
+      }
+      return res;
+    });
+  }
+
+  function renderPayrollRun() {
+    if (!state.payrollRun) return;
+    var pr = state.payrollRun;
+    document.getElementById('payrollrun-sub').textContent = monthLabel(state.selectedMonth) +
+      (pr.hasRun ? ' — figures below are as of the last time payroll was run for this month.' : ' — payroll has not been run for this month yet.');
+
+    var e = pr.emp201 || { paye: 0, uifTotal: 0, sdl: 0, eti: 0, netToSars: 0, grossPayroll: 0 };
+    var kpiGrid = document.getElementById('emp201-kpi-grid');
+    kpiGrid.innerHTML =
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">PAYE</span></div>' +
+      '<div class="kpi-row hero"><span>Code 4102 total</span><span class="val">' + money(e.paye) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">UIF</span></div>' +
+      '<div class="kpi-row hero"><span>Employee + employer</span><span class="val">' + money(e.uifTotal) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">SDL</span></div>' +
+      '<div class="kpi-row hero"><span>Employer levy</span><span class="val">' + money(e.sdl) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">ETI</span></div>' +
+      '<div class="kpi-row hero"><span>Incentive claimed</span><span class="val">' + money(e.eti) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Net payable to SARS</span></div>' +
+      '<div class="kpi-row hero"><span>PAYE + UIF + SDL − ETI</span><span class="val">' + money(e.netToSars) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Gross payroll</span></div>' +
+      '<div class="kpi-row hero"><span>All active employees</span><span class="val">' + money(e.grossPayroll) + '</span></div></div>';
+
+    var table = document.getElementById('payslips-table');
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th>' +
+      '<th>Gross</th><th>PAYE</th><th>UIF (ee)</th><th>Retirement</th><th>Medical credit</th><th>ETI</th><th>Net pay</th></tr></thead>';
+    var rows = pr.payslips || [];
+    var body = '<tbody>' + (rows.length ? rows.map(function (ps) {
+      return '<tr>' +
+        '<td style="text-align:left;">' + esc(ps.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(ps.department || '') + '</td>' +
+        '<td>' + money(ps.gross) + '</td>' +
+        '<td>' + money(ps.paye) + '</td>' +
+        '<td>' + money(ps.uifEmployee) + '</td>' +
+        '<td>' + money(ps.retirementDeduction) + '</td>' +
+        '<td>' + money(ps.medicalCredit) + '</td>' +
+        '<td>' + money(ps.eti) + '</td>' +
+        '<td>' + money(ps.net) + '</td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="9" style="text-align:center; color:var(--text-muted);">No payroll run recorded for this month yet — click "Run payroll for this month" above.</td></tr>') + '</tbody>';
+    table.innerHTML = head + body;
+  }
+
+  document.getElementById('payrollrun-run-btn').addEventListener('click', function () {
+    var status = document.getElementById('payrollrun-status');
+    flashStatus(status, 'Running…', 'save-status', 0);
+    callApi('runPayroll', { month: state.selectedMonth }).then(function (res) {
+      if (res.ok) {
+        state.payrollRun = res.payrollRun;
+        renderPayrollRun();
+        flashStatus(status, 'Done', 'save-status ok', 3000);
+        loadIrp5();
+      } else {
+        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
+      }
+    }).catch(function () {
+      flashStatus(status, 'Network error', 'save-status err', 5000);
+    });
+  });
+
+  // ================= IRP5 / TAX CERTIFICATES =================
+  function loadIrp5() {
+    return callApi('getIrp5', { month: state.selectedMonth }).then(function (res) {
+      if (res.ok) {
+        state.irp5 = res;
+        renderIrp5();
+      }
+      return res;
+    });
+  }
+
+  function renderIrp5() {
+    if (!state.irp5) return;
+    var certs = state.irp5.certificates || [];
+    document.getElementById('irp5-sub').textContent = 'Tax year ' + state.irp5.taxYear +
+      ' — built from every payroll run recorded across that tax year (March–February). Run payroll for any missing months above before relying on these figures.';
+
+    var table = document.getElementById('irp5-table');
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">ID number</th>' +
+      '<th style="text-align:left;">Tax number</th><th>Type</th><th>Months paid</th><th>Gross (3601)</th>' +
+      '<th>PAYE (4102)</th><th>UIF (4141)</th><th>SDL (4142)</th><th>Retirement (4001)</th><th>Medical (4005)</th></tr></thead>';
+    var body = '<tbody>' + (certs.length ? certs.map(function (c) {
+      return '<tr>' +
+        '<td style="text-align:left;">' + esc(c.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(c.idNumber || '') + '</td>' +
+        '<td style="text-align:left;">' + esc(c.taxNumber || '') + '</td>' +
+        '<td>' + esc(c.certificateType) + '</td>' +
+        '<td>' + c.monthsPaid + '</td>' +
+        '<td>' + money(c.grossIncome_3601) + '</td>' +
+        '<td>' + money(c.payeDeducted_4102) + '</td>' +
+        '<td>' + money(c.uifContribution_4141) + '</td>' +
+        '<td>' + money(c.sdlContribution_4142) + '</td>' +
+        '<td>' + money(c.retirementContribution_4001) + '</td>' +
+        '<td>' + money(c.medicalContribution_4005) + '</td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="11" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
+    table.innerHTML = head + body;
+  }
+
+  document.getElementById('irp5-download-btn').addEventListener('click', function () {
+    if (!state.irp5 || !state.irp5.certificates || !state.irp5.certificates.length) {
+      window.alert('No IRP5 data to download yet for this tax year.');
+      return;
+    }
+    var cols = ['name', 'idNumber', 'taxNumber', 'certificateType', 'monthsPaid',
+      'grossIncome_3601', 'payeDeducted_4102', 'uifContribution_4141', 'sdlContribution_4142',
+      'retirementContribution_4001', 'medicalContribution_4005'];
+    var headerLabels = ['Name', 'ID Number', 'Tax Number', 'Certificate Type', 'Months Paid',
+      'Gross Income (3601)', 'PAYE Deducted (4102)', 'UIF Contribution (4141)', 'SDL Contribution (4142)',
+      'Retirement Contribution (4001)', 'Medical Contribution (4005)'];
+    function csvCell(v) {
+      v = (v === null || v === undefined) ? '' : String(v);
+      if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
+      return v;
+    }
+    var lines = [headerLabels.map(csvCell).join(',')];
+    state.irp5.certificates.forEach(function (c) {
+      lines.push(cols.map(function (k) { return csvCell(c[k]); }).join(','));
+    });
+    var csv = lines.join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'IRP5_data_' + String(state.irp5.taxYear).replace('/', '-') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
   function startEditEmployee(id) {
     var e = state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!e) return;
@@ -1438,6 +1643,13 @@
     document.getElementById('payroll-notes').value = e.notes || '';
     document.getElementById('payroll-active').checked = e.active;
     document.getElementById('payroll-active-field').style.display = '';
+    document.getElementById('payroll-id-number').value = e.idNumber || '';
+    document.getElementById('payroll-tax-number').value = e.taxNumber || '';
+    document.getElementById('payroll-dob').value = e.dateOfBirth || '';
+    document.getElementById('payroll-medical-members').value = e.medicalMembers || '';
+    document.getElementById('payroll-medical-contribution').value = e.medicalContribution || '';
+    document.getElementById('payroll-retirement').value = e.retirementContribution || '';
+    document.getElementById('payroll-uif-exempt').checked = !!e.uifExempt;
     document.getElementById('payroll-save-btn').textContent = 'Update employee';
     document.getElementById('payroll-cancel-btn').style.display = '';
     document.getElementById('payroll-delete-btn').style.display = '';
@@ -1455,6 +1667,13 @@
     document.getElementById('payroll-amount').value = '';
     document.getElementById('payroll-date').value = '';
     document.getElementById('payroll-notes').value = '';
+    document.getElementById('payroll-id-number').value = '';
+    document.getElementById('payroll-tax-number').value = '';
+    document.getElementById('payroll-dob').value = '';
+    document.getElementById('payroll-medical-members').value = '';
+    document.getElementById('payroll-medical-contribution').value = '';
+    document.getElementById('payroll-retirement').value = '';
+    document.getElementById('payroll-uif-exempt').checked = false;
     document.getElementById('payroll-active-field').style.display = 'none';
     document.getElementById('payroll-save-btn').textContent = 'Save employee';
     document.getElementById('payroll-cancel-btn').style.display = 'none';
@@ -1480,7 +1699,14 @@
       days: document.getElementById('payroll-days').value,
       amount: document.getElementById('payroll-amount').value,
       dateEmployed: document.getElementById('payroll-date').value.trim(),
-      notes: document.getElementById('payroll-notes').value.trim()
+      notes: document.getElementById('payroll-notes').value.trim(),
+      idNumber: document.getElementById('payroll-id-number').value.trim(),
+      taxNumber: document.getElementById('payroll-tax-number').value.trim(),
+      dateOfBirth: document.getElementById('payroll-dob').value.trim(),
+      medicalMembers: document.getElementById('payroll-medical-members').value,
+      medicalContribution: document.getElementById('payroll-medical-contribution').value,
+      retirementContribution: document.getElementById('payroll-retirement').value,
+      uifExempt: document.getElementById('payroll-uif-exempt').checked
     };
 
     var action, extra;
