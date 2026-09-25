@@ -519,6 +519,87 @@
       </div>
     </section>
 
+    <!-- ---------- Vehicles ---------- -->
+    <section class="view" id="view-vehicles">
+      <div class="kpi-grid" id="vehicles-kpi-grid"></div>
+
+      <div class="panel">
+        <h2>Fleet by type</h2>
+        <div class="dept-grid" id="vehicles-type-grid"></div>
+      </div>
+
+      <div class="panel">
+        <h2 id="vehicles-form-title">Add vehicle</h2>
+        <input type="hidden" id="vehicles-edit-id">
+        <div class="form-grid">
+          <div class="field">
+            <label>Vehicle code</label>
+            <input type="text" id="vehicles-code" placeholder="e.g. 12 or CPT 3">
+          </div>
+          <div class="field">
+            <label>License</label>
+            <input type="text" id="vehicles-license">
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <input type="text" id="vehicles-type" list="vehicles-type-list">
+            <datalist id="vehicles-type-list"></datalist>
+          </div>
+          <div class="field">
+            <label>VIN</label>
+            <input type="text" id="vehicles-vin">
+          </div>
+          <div class="field">
+            <label>Engine number</label>
+            <input type="text" id="vehicles-engine">
+          </div>
+          <div class="field">
+            <label>Finance cost (R/month)</label>
+            <input type="number" step="0.01" id="vehicles-finance-cost">
+          </div>
+          <div class="field">
+            <label>Finance term expiry</label>
+            <input type="text" id="vehicles-finance-expiry" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="field">
+            <label>Schedule number</label>
+            <input type="text" id="vehicles-schedule">
+          </div>
+          <div class="field">
+            <label>Invoice date</label>
+            <input type="text" id="vehicles-invoice-date" placeholder="YYYY-MM-DD">
+          </div>
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <input type="text" id="vehicles-notes">
+        </div>
+        <div class="field" id="vehicles-active-field" style="display:none;">
+          <label><input type="checkbox" id="vehicles-active" checked style="width:auto; margin-right:6px;">Active</label>
+        </div>
+        <div class="error-text" id="vehicles-error"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="vehicles-save-btn">Save vehicle</button>
+          <button class="btn secondary" id="vehicles-cancel-btn" style="display:none;">Cancel edit</button>
+          <button class="btn danger" id="vehicles-delete-btn" style="display:none;">Delete vehicle</button>
+          <span class="save-status" id="vehicles-save-status"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Fleet register</h2>
+        <p class="panel-sub">Months left is calculated from the finance term expiry date, so it's always current.</p>
+        <div class="toolbar">
+          <input type="text" id="vehicles-search" placeholder="Search by license, code or VIN...">
+          <select id="vehicles-type-filter"><option value="">All types</option></select>
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="vehicles-show-inactive" style="width:auto;">Show sold/inactive</label>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="vehicles-table"></table>
+        </div>
+      </div>
+    </section>
+
     <!-- ---------- Settings (Owner only) ---------- -->
     <section class="view" id="view-settings">
       <div class="panel">
@@ -593,10 +674,10 @@
   // Apps Script Web App /exec URL (see SETUP.md if you ever need to redeploy
   // and get a new one — Deploy > Manage deployments > New version keeps this
   // same URL working, so you should rarely need to change this).
-  var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzX03XJ-3i3RwdhqKWHl-y-XKAwoAc18VFBZdFTabttyyvdaq-IjRGpVwmOq7J7J4q18A/exec';
+  var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzDFlyMTptoQ48Q3yZW7PZN6YlDBpfnJLYCuRe6fQaMdDunYwe-l6kHIg2njb5jSQxwQA/exec';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
-  var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll' };
+  var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
   var ALL_ENTITIES_COUNT = 3;
 
   // ================= STATE =================
@@ -773,6 +854,7 @@
       if (hasSection('entry')) renderEntry();
       if (hasSection('history')) renderHistory();
       if (hasSection('payroll')) loadPayroll();
+      if (hasSection('vehicles')) loadVehicles();
       if (state.role === 'owner') { renderSettings(); loadUsers(); }
       showTab(state.activeTab);
     });
@@ -788,6 +870,7 @@
       { key: 'entry', label: 'Entry', show: hasSection('entry') },
       { key: 'history', label: 'History', show: hasSection('history') },
       { key: 'payroll', label: 'Payroll', show: hasSection('payroll') },
+      { key: 'vehicles', label: 'Vehicles', show: hasSection('vehicles') },
       { key: 'settings', label: 'Settings', show: state.role === 'owner' },
       { key: 'users', label: 'Users', show: state.role === 'owner' }
     ];
@@ -1448,6 +1531,219 @@
     });
   });
 
+  // ================= VEHICLES =================
+  function loadVehicles() {
+    return callApi('getVehicles', {}).then(function (res) {
+      if (res.ok) {
+        state.vehicles = res.vehicles;
+        renderVehicles();
+      }
+      return res;
+    });
+  }
+
+  function monthsLeftLabel(v) {
+    if (v.monthsLeft === null || v.monthsLeft === undefined) return '—';
+    if (v.monthsLeft < 0) return 'Expired';
+    return v.monthsLeft;
+  }
+
+  function renderVehicles() {
+    if (!state.vehicles) return;
+    var kpiGrid = document.getElementById('vehicles-kpi-grid');
+    kpiGrid.innerHTML =
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Fleet (active)</span></div>' +
+      '<div class="kpi-row hero"><span>Vehicles</span><span class="val">' + state.vehicles.fleetCount + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Finance Cost</span></div>' +
+      '<div class="kpi-row hero"><span>Per month</span><span class="val">' + money(state.vehicles.totalFinanceCost) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Contracts Ending Soon</span></div>' +
+      '<div class="kpi-row hero"><span>Within 3 months</span><span class="val">' + state.vehicles.endingSoonCount + '</span></div></div>';
+
+    var typeGrid = document.getElementById('vehicles-type-grid');
+    typeGrid.innerHTML = '';
+    state.vehicles.types.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (t) {
+      var card = document.createElement('div');
+      card.className = 'dept-card';
+      card.innerHTML = '<div class="dept-name">' + esc(t.type) + '</div>' +
+        '<div class="dept-row"><span>Count</span><span>' + t.count + '</span></div>' +
+        '<div class="dept-row"><span>Finance/mo</span><span>' + money(t.total) + '</span></div>';
+      typeGrid.appendChild(card);
+    });
+
+    var typeList = document.getElementById('vehicles-type-list');
+    var typeFilter = document.getElementById('vehicles-type-filter');
+    var typeNames = Array.from(new Set(state.vehicles.vehicles.map(function (v) { return v.type; }).filter(Boolean))).sort();
+    typeList.innerHTML = typeNames.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+    var currentFilter = typeFilter.value;
+    typeFilter.innerHTML = '<option value="">All types</option>' +
+      typeNames.map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
+    typeFilter.value = currentFilter;
+
+    renderVehicleTable();
+  }
+
+  function renderVehicleTable() {
+    var search = document.getElementById('vehicles-search').value.trim().toLowerCase();
+    var typeFilterVal = document.getElementById('vehicles-type-filter').value;
+    var showInactive = document.getElementById('vehicles-show-inactive').checked;
+
+    var rows = state.vehicles.vehicles.filter(function (v) {
+      if (!showInactive && !v.active) return false;
+      if (typeFilterVal && v.type !== typeFilterVal) return false;
+      if (search) {
+        var hay = (v.license + ' ' + v.code + ' ' + v.vin).toLowerCase();
+        if (hay.indexOf(search) === -1) return false;
+      }
+      return true;
+    }).sort(function (a, b) {
+      if (a.type !== b.type) return a.type < b.type ? -1 : 1;
+      return String(a.code) < String(b.code) ? -1 : 1;
+    });
+
+    var table = document.getElementById('vehicles-table');
+    var head = '<thead><tr><th>Code</th><th style="text-align:left;">License</th><th style="text-align:left;">Type</th><th style="text-align:left;">VIN</th><th>Finance/mo</th><th>Term expiry</th><th>Months left</th><th style="text-align:left;">Notes</th><th></th></tr></thead>';
+    var body = '<tbody>' + rows.map(function (v) {
+      return '<tr class="' + (v.active ? '' : 'inactive') + '">' +
+        '<td>' + esc(v.code) + '</td>' +
+        '<td style="text-align:left;">' + esc(v.license) + '</td>' +
+        '<td style="text-align:left;">' + esc(v.type) + '</td>' +
+        '<td style="text-align:left;">' + esc(v.vin) + '</td>' +
+        '<td>' + (v.financeCost ? money(v.financeCost) : '—') + '</td>' +
+        '<td style="text-align:left;">' + esc(v.financeTermExpiry) + '</td>' +
+        '<td>' + monthsLeftLabel(v) + '</td>' +
+        '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(v.notes) + '</td>' +
+        '<td><button class="btn secondary small" data-edit-id="' + esc(v.id) + '">Edit</button></td>' +
+        '</tr>';
+    }).join('') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-edit-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        startEditVehicle(btn.getAttribute('data-edit-id'));
+      });
+    });
+  }
+
+  document.getElementById('vehicles-search').addEventListener('input', renderVehicleTable);
+  document.getElementById('vehicles-type-filter').addEventListener('change', renderVehicleTable);
+  document.getElementById('vehicles-show-inactive').addEventListener('change', renderVehicleTable);
+
+  function startEditVehicle(id) {
+    var v = state.vehicles.vehicles.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!v) return;
+    document.getElementById('vehicles-form-title').textContent = 'Edit vehicle — ' + (v.license || v.code || v.type);
+    document.getElementById('vehicles-edit-id').value = v.id;
+    document.getElementById('vehicles-code').value = v.code || '';
+    document.getElementById('vehicles-license').value = v.license || '';
+    document.getElementById('vehicles-type').value = v.type || '';
+    document.getElementById('vehicles-vin').value = v.vin || '';
+    document.getElementById('vehicles-engine').value = v.engineNumber || '';
+    document.getElementById('vehicles-finance-cost').value = v.financeCost || '';
+    document.getElementById('vehicles-finance-expiry').value = v.financeTermExpiry || '';
+    document.getElementById('vehicles-schedule').value = v.scheduleNumber || '';
+    document.getElementById('vehicles-invoice-date').value = v.invoiceDate || '';
+    document.getElementById('vehicles-notes').value = v.notes || '';
+    document.getElementById('vehicles-active').checked = v.active;
+    document.getElementById('vehicles-active-field').style.display = '';
+    document.getElementById('vehicles-save-btn').textContent = 'Update vehicle';
+    document.getElementById('vehicles-cancel-btn').style.display = '';
+    document.getElementById('vehicles-delete-btn').style.display = '';
+    document.getElementById('vehicles-error').textContent = '';
+    document.getElementById('view-vehicles').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function resetVehicleForm() {
+    document.getElementById('vehicles-form-title').textContent = 'Add vehicle';
+    document.getElementById('vehicles-edit-id').value = '';
+    document.getElementById('vehicles-code').value = '';
+    document.getElementById('vehicles-license').value = '';
+    document.getElementById('vehicles-type').value = '';
+    document.getElementById('vehicles-vin').value = '';
+    document.getElementById('vehicles-engine').value = '';
+    document.getElementById('vehicles-finance-cost').value = '';
+    document.getElementById('vehicles-finance-expiry').value = '';
+    document.getElementById('vehicles-schedule').value = '';
+    document.getElementById('vehicles-invoice-date').value = '';
+    document.getElementById('vehicles-notes').value = '';
+    document.getElementById('vehicles-active-field').style.display = 'none';
+    document.getElementById('vehicles-save-btn').textContent = 'Save vehicle';
+    document.getElementById('vehicles-cancel-btn').style.display = 'none';
+    document.getElementById('vehicles-delete-btn').style.display = 'none';
+    document.getElementById('vehicles-error').textContent = '';
+  }
+
+  document.getElementById('vehicles-cancel-btn').addEventListener('click', resetVehicleForm);
+
+  document.getElementById('vehicles-save-btn').addEventListener('click', function () {
+    var id = document.getElementById('vehicles-edit-id').value;
+    var errEl = document.getElementById('vehicles-error');
+    var status = document.getElementById('vehicles-save-status');
+    var license = document.getElementById('vehicles-license').value.trim();
+    var type = document.getElementById('vehicles-type').value.trim();
+    if (!license && !type) { errEl.textContent = 'License or type is required.'; return; }
+    errEl.textContent = '';
+
+    var payload = {
+      code: document.getElementById('vehicles-code').value.trim(),
+      license: license,
+      type: type,
+      vin: document.getElementById('vehicles-vin').value.trim(),
+      engineNumber: document.getElementById('vehicles-engine').value.trim(),
+      financeCost: document.getElementById('vehicles-finance-cost').value,
+      financeTermExpiry: document.getElementById('vehicles-finance-expiry').value.trim(),
+      scheduleNumber: document.getElementById('vehicles-schedule').value.trim(),
+      invoiceDate: document.getElementById('vehicles-invoice-date').value.trim(),
+      notes: document.getElementById('vehicles-notes').value.trim()
+    };
+
+    var action, extra;
+    if (id) {
+      action = 'updateVehicle';
+      extra = { id: id, active: document.getElementById('vehicles-active').checked };
+    } else {
+      action = 'addVehicle';
+      extra = {};
+    }
+
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi(action, Object.assign(payload, extra)).then(function (res) {
+      if (res.ok) {
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        state.vehicles = res.vehicles;
+        renderVehicles();
+        resetVehicleForm();
+      } else {
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to save.';
+      }
+    }).catch(function () {
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
+    });
+  });
+
+  document.getElementById('vehicles-delete-btn').addEventListener('click', function () {
+    var id = document.getElementById('vehicles-edit-id').value;
+    if (!id) return;
+    var v = state.vehicles.vehicles.filter(function (x) { return String(x.id) === String(id); })[0];
+    var label = v ? (v.license || v.code || v.type) : 'this vehicle';
+    if (!window.confirm('Delete ' + label + '? This permanently removes it from the fleet register and cannot be undone.\n\nIf it might come back, consider unticking Active instead of deleting.')) return;
+
+    var errEl = document.getElementById('vehicles-error');
+    var status = document.getElementById('vehicles-save-status');
+    flashStatus(status, 'Deleting…', 'save-status', 0);
+    callApi('deleteVehicle', { id: id }).then(function (res) {
+      if (res.ok) {
+        flashStatus(status, 'Deleted', 'save-status ok', 3000);
+        state.vehicles = res.vehicles;
+        renderVehicles();
+        resetVehicleForm();
+      } else {
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to delete.';
+      }
+    }).catch(function () {
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
+    });
+  });
+
   // ================= SETTINGS (Owner only) =================
   function renderSettings() {
     var container = document.getElementById('settings-entities');
@@ -1538,7 +1834,7 @@
     }).join('');
   }
 
-  function SECTION_KEYS_LOCAL() { return ['dashboard', 'entry', 'history', 'payroll']; }
+  function SECTION_KEYS_LOCAL() { return ['dashboard', 'entry', 'history', 'payroll', 'vehicles']; }
 
   function renderUsersTable() {
     var table = document.getElementById('users-table');
