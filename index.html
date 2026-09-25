@@ -684,6 +684,19 @@
           <span class="save-status" id="save-categories-status"></span>
         </div>
       </div>
+      <div class="panel">
+        <h2>Employee departments</h2>
+        <p class="panel-sub">Managed here so everyone adding/editing an employee on the Payroll tab picks from the same list. Deactivating a department hides it from the suggestions without changing any employee already assigned to it — and renaming one here does not rename it on existing employees, so their payroll history stays correctly labelled.</p>
+        <div id="settings-departments"></div>
+        <div style="margin-top:14px; display:flex; gap:10px;">
+          <input type="text" id="new-department-name" placeholder="New department name" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
+          <button class="btn secondary" id="add-department-btn">Add</button>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn" id="save-departments-btn">Save Departments</button>
+          <span class="save-status" id="save-departments-status"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ---------- Users (Owner only) ---------- -->
@@ -753,6 +766,7 @@
     entities: [],
     permittedEntities: [],
     categories: [],
+    departments: [],
     history: [],
     currentMonth: null,
     selectedMonth: null,
@@ -893,6 +907,7 @@
     state.entities = res.entities || [];
     state.permittedEntities = res.permittedEntities || [];
     state.categories = res.categories || [];
+    state.departments = res.departments || [];
     state.history = res.history || [];
     state.currentMonth = res.currentMonth;
     state.selectedMonth = state.selectedMonth || res.currentMonth;
@@ -1410,8 +1425,13 @@
 
     var deptList = document.getElementById('payroll-dept-list');
     var deptFilter = document.getElementById('payroll-dept-filter');
+    // The add/edit form's suggestions come from the managed department list
+    // (Settings), so data entry is steered toward the canonical set; the
+    // filter dropdown reflects whatever's actually on the roster today,
+    // including a stray name from before departments were managed here.
+    var managedDeptNames = state.departments.filter(function (d) { return d.active; }).map(function (d) { return d.name; });
+    deptList.innerHTML = managedDeptNames.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
     var deptNames = Array.from(new Set(state.payroll.employees.map(function (e) { return e.department; }))).sort();
-    deptList.innerHTML = deptNames.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
     var currentFilter = deptFilter.value;
     deptFilter.innerHTML = '<option value="">All departments</option>' +
       deptNames.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
@@ -1989,6 +2009,7 @@
     });
 
     renderCategorySettings();
+    renderDepartmentSettings();
   }
 
   function renderCategorySettings() {
@@ -2012,6 +2033,51 @@
     state.categories.push({ name: name, active: true, sensitive: false, sortOrder: state.categories.length + 1 });
     input.value = '';
     renderCategorySettings();
+  });
+
+  function renderDepartmentSettings() {
+    var container = document.getElementById('settings-departments');
+    container.innerHTML = '';
+    state.departments.forEach(function (dep, i) {
+      var row = document.createElement('div');
+      row.className = 'cat-row';
+      row.innerHTML =
+        '<input type="text" value="' + esc(dep.name) + '" data-idx="' + i + '" data-field="name">' +
+        '<label class="toggle"><input type="checkbox" ' + (dep.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>';
+      container.appendChild(row);
+    });
+  }
+
+  document.getElementById('add-department-btn').addEventListener('click', function () {
+    var input = document.getElementById('new-department-name');
+    var name = input.value.trim();
+    if (!name) return;
+    state.departments.push({ name: name, active: true, sortOrder: state.departments.length + 1 });
+    input.value = '';
+    renderDepartmentSettings();
+  });
+
+  document.getElementById('save-departments-btn').addEventListener('click', function () {
+    var container = document.getElementById('settings-departments');
+    var updated = [];
+    Array.prototype.forEach.call(container.querySelectorAll('.cat-row'), function (row, i) {
+      var nameInput = row.querySelector('[data-field="name"]');
+      var activeInput = row.querySelector('[data-field="active"]');
+      updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sortOrder: i + 1 });
+    });
+    var status = document.getElementById('save-departments-status');
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('saveDepartments', { departments: JSON.stringify(updated) }).then(function (res) {
+      if (res.ok) {
+        state.departments = res.departments;
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        if (hasSection('payroll') && state.payroll) renderPayroll();
+      } else {
+        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
+      }
+    }).catch(function () {
+      flashStatus(status, 'Network error', 'save-status err', 5000);
+    });
   });
 
   document.getElementById('save-categories-btn').addEventListener('click', function () {
