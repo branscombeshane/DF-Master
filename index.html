@@ -686,7 +686,7 @@
       </div>
       <div class="panel">
         <h2>Employee departments</h2>
-        <p class="panel-sub">Managed here so everyone adding/editing an employee on the Payroll tab picks from the same list. Deactivating a department hides it from the suggestions without changing any employee already assigned to it — and renaming one here does not rename it on existing employees, so their payroll history stays correctly labelled.</p>
+        <p class="panel-sub">Managed here so everyone adding/editing an employee on the Payroll tab picks from the same list. Renaming a department here updates every employee currently assigned to it (active or inactive) to match. Deactivating one just hides it from the suggestions without relabelling anyone, and removing one from the list entirely leaves existing employees exactly as they are, since there's no new name to move them to.</p>
         <div id="settings-departments"></div>
         <div style="margin-top:14px; display:flex; gap:10px;">
           <input type="text" id="new-department-name" placeholder="New department name" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
@@ -2042,7 +2042,7 @@
       var row = document.createElement('div');
       row.className = 'cat-row';
       row.innerHTML =
-        '<input type="text" value="' + esc(dep.name) + '" data-idx="' + i + '" data-field="name">' +
+        '<input type="text" value="' + esc(dep.name) + '" data-original-name="' + esc(dep.name) + '" data-idx="' + i + '" data-field="name">' +
         '<label class="toggle"><input type="checkbox" ' + (dep.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>';
       container.appendChild(row);
     });
@@ -2060,18 +2060,27 @@
   document.getElementById('save-departments-btn').addEventListener('click', function () {
     var container = document.getElementById('settings-departments');
     var updated = [];
+    var renames = [];
     Array.prototype.forEach.call(container.querySelectorAll('.cat-row'), function (row, i) {
       var nameInput = row.querySelector('[data-field="name"]');
       var activeInput = row.querySelector('[data-field="active"]');
-      updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sortOrder: i + 1 });
+      var newName = nameInput.value.trim();
+      var originalName = nameInput.getAttribute('data-original-name') || '';
+      if (originalName && newName && originalName !== newName) {
+        renames.push({ from: originalName, to: newName });
+      }
+      updated.push({ name: newName, active: activeInput.checked, sortOrder: i + 1 });
     });
     var status = document.getElementById('save-departments-status');
     flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('saveDepartments', { departments: JSON.stringify(updated) }).then(function (res) {
+    callApi('saveDepartments', { departments: JSON.stringify(updated), renames: JSON.stringify(renames) }).then(function (res) {
       if (res.ok) {
         state.departments = res.departments;
         flashStatus(status, 'Saved', 'save-status ok', 3000);
-        if (hasSection('payroll') && state.payroll) renderPayroll();
+        // A rename relabels employees on the backend — re-fetch Payroll
+        // rather than just re-rendering, so the roster reflects the new
+        // department name immediately instead of the stale cached one.
+        if (hasSection('payroll') && state.payroll) loadPayroll();
       } else {
         flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
       }
