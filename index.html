@@ -15,13 +15,13 @@
      URL to the browser, forcing a fresh fetch. Bump this string (it doesn't
      need to match FRONTEND_BUILD/BACKEND_BUILD — it's independent of those)
      whenever the icon files themselves change. -->
-<link rel="icon" href="icons/favicon.ico?v=2026-09-26.1" sizes="any">
-<link rel="icon" href="icons/favicon-16.png?v=2026-09-26.1" sizes="16x16" type="image/png">
-<link rel="icon" href="icons/favicon-32.png?v=2026-09-26.1" sizes="32x32" type="image/png">
-<link rel="icon" href="icons/icon-192.png?v=2026-09-26.1" sizes="192x192" type="image/png">
+<link rel="icon" href="icons/favicon.ico?v=2026-09-26.2" sizes="any">
+<link rel="icon" href="icons/favicon-16.png?v=2026-09-26.2" sizes="16x16" type="image/png">
+<link rel="icon" href="icons/favicon-32.png?v=2026-09-26.2" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png?v=2026-09-26.2" sizes="192x192" type="image/png">
 
 <!-- Add to Home Screen / installable app icons -->
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026-09-26.1">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2026-09-26.2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -316,8 +316,13 @@
 
   .cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gridline); flex-wrap: wrap; }
   .cat-row input[type=text] { flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+  .cat-row select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; min-width: 160px; }
   .cat-row .toggle { font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
   .cat-row .toggle.sensitive { color: var(--critical); }
+
+  .company-row { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .company-row .form-grid { margin-bottom: 10px; }
+  .company-row .toggle { font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 
   .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 4px; }
   .checkbox-grid label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
@@ -346,6 +351,33 @@
   .modal-card h2 { margin: 0 0 4px; font-size: 16px; }
   .modal-card p.sub { color: var(--text-secondary); font-size: 12px; margin: 0 0 18px; }
   .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .modal-card.wide { max-width: 640px; }
+
+  /* ---------- Payslip ---------- */
+  #payslip-content { font-size: 13px; }
+  #payslip-content .ps-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid var(--text-primary); padding-bottom: 12px; margin-bottom: 16px; }
+  #payslip-content .ps-company { font-weight: 700; font-size: 15px; }
+  #payslip-content .ps-company-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.6; }
+  #payslip-content .ps-title { text-align: right; }
+  #payslip-content .ps-title h3 { margin: 0; font-size: 16px; }
+  #payslip-content .ps-title .period { font-size: 12px; color: var(--text-secondary); }
+  #payslip-content .ps-emp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; font-size: 12px; margin-bottom: 18px; }
+  #payslip-content .ps-emp-grid .lbl { color: var(--text-secondary); display: block; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+  #payslip-content table.ps-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+  #payslip-content table.ps-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--gridline); padding: 6px 4px; }
+  #payslip-content table.ps-table th.amt, #payslip-content table.ps-table td.amt { text-align: right; font-variant-numeric: tabular-nums; }
+  #payslip-content table.ps-table td { padding: 6px 4px; border-bottom: 1px solid var(--gridline); }
+  #payslip-content .ps-net-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; padding-top: 10px; border-top: 2px solid var(--text-primary); }
+  #payslip-content .ps-note { font-size: 11px; color: var(--text-muted); margin-top: 14px; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #payslip-content, #payslip-content * { visibility: visible; }
+    #payslip-content { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+    #payslip-modal-controls { display: none !important; }
+    .modal-overlay { position: absolute; background: none; padding: 0; }
+    .modal-card { box-shadow: none; border: none; padding: 0; max-width: none; }
+  }
 
   @media (max-width: 640px) {
     header.topbar { flex-wrap: wrap; padding: 12px 16px; }
@@ -391,6 +423,16 @@
       <button class="btn secondary" id="cp-cancel">Cancel</button>
       <button class="btn" id="cp-save">Save</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="payslip-modal">
+  <div class="modal-card wide">
+    <div id="payslip-modal-controls" style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">
+      <button class="btn secondary small" id="payslip-close-btn">Close</button>
+      <button class="btn small" id="payslip-print-btn">Print / Save as PDF</button>
+    </div>
+    <div id="payslip-content"></div>
   </div>
 </div>
 
@@ -604,6 +646,11 @@
         <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
         <div class="form-grid">
           <div class="field">
+            <label>Department</label>
+            <select id="adj-dept-filter"><option value="">All departments</option></select>
+            <div class="hint">Filters the Employee list below — handy for working through payroll one department at a time.</div>
+          </div>
+          <div class="field">
             <label>Employee</label>
             <select id="adj-employee"></select>
           </div>
@@ -781,8 +828,20 @@
         </div>
       </div>
       <div class="panel">
+        <h2>Companies (for payslips)</h2>
+        <p class="panel-sub">Each registered company you actually pay employees out of, with its own SARS payroll reference numbers. Add and save your companies here first, then link each department to one below in Employee departments — that's what decides which company's letterhead shows up on a given employee's payslip.</p>
+        <div id="settings-companies"></div>
+        <div style="margin-top:14px;">
+          <button class="btn secondary" id="add-company-btn">Add company</button>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn" id="save-companies-btn">Save Companies</button>
+          <span class="save-status" id="save-companies-status"></span>
+        </div>
+      </div>
+      <div class="panel">
         <h2>Employee departments</h2>
-        <p class="panel-sub">Managed here so everyone adding/editing an employee on the Payroll tab picks from the same list. Renaming a department here updates every employee currently assigned to it (active or inactive) to match. Deactivating one just hides it from the suggestions without relabelling anyone, and removing one from the list entirely leaves existing employees exactly as they are, since there's no new name to move them to.</p>
+        <p class="panel-sub">Managed here so everyone adding/editing an employee on the Payroll tab picks from the same list. Renaming a department here updates every employee currently assigned to it (active or inactive) to match. Deactivating one just hides it from the suggestions without relabelling anyone, and removing one from the list entirely leaves existing employees exactly as they are, since there's no new name to move them to. Link a department to a Company (above) to control which company's PAYE/UIF/SDL numbers appear on that department's payslips.</p>
         <div id="settings-departments"></div>
         <div style="margin-top:14px; display:flex; gap:10px;">
           <input type="text" id="new-department-name" placeholder="New department name" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
@@ -853,7 +912,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.3-brand-theme';
+  var FRONTEND_BUILD = '2026-09-26.5-payslips-companies';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -869,6 +928,7 @@
     permittedEntities: [],
     categories: [],
     departments: [],
+    companies: [],
     history: [],
     currentMonth: null,
     selectedMonth: null,
@@ -1011,6 +1071,7 @@
     state.permittedEntities = res.permittedEntities || [];
     state.categories = res.categories || [];
     state.departments = res.departments || [];
+    state.companies = res.companies || [];
     state.history = res.history || [];
     state.currentMonth = res.currentMonth;
     state.selectedMonth = state.selectedMonth || res.currentMonth;
@@ -1579,7 +1640,7 @@
     });
 
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
@@ -1592,6 +1653,7 @@
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
         '<td><input type="checkbox" class="payroll-done-cb" data-done-id="' + esc(e.id) + '" ' + (e.done ? 'checked' : '') + ' style="width:auto;"></td>' +
+        '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
         '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
         '</tr>';
     }).join('') + '</tbody>';
@@ -1600,6 +1662,12 @@
     Array.prototype.forEach.call(table.querySelectorAll('[data-edit-id]'), function (btn) {
       btn.addEventListener('click', function () {
         startEditEmployee(btn.getAttribute('data-edit-id'));
+      });
+    });
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-payslip-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        openPayslip(btn.getAttribute('data-payslip-id'));
       });
     });
 
@@ -1631,6 +1699,97 @@
   document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
   document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
 
+  // ================= PAYSLIP =================
+  function openPayslip(employeeId) {
+    var modal = document.getElementById('payslip-modal');
+    var content = document.getElementById('payslip-content');
+    content.innerHTML = '<p class="hint">Loading…</p>';
+    modal.classList.add('active');
+    callApi('getPayslip', { month: state.selectedMonth, employeeId: employeeId }).then(function (res) {
+      if (!res.ok) {
+        content.innerHTML = '<p class="error-text">' + esc(res.error || 'Could not load payslip.') + '</p>';
+        return;
+      }
+      content.innerHTML = renderPayslipHtml(res);
+    }).catch(function () {
+      content.innerHTML = '<p class="error-text">Network error — could not load payslip.</p>';
+    });
+  }
+
+  function renderPayslipHtml(res) {
+    var emp = res.employee, co = res.company, c = res.calc;
+
+    var companyBlock = co
+      ? '<div class="ps-company">' + esc(co.name || 'Company') + '</div>' +
+        '<div class="ps-company-meta">' +
+          (co.address ? esc(co.address) + '<br>' : '') +
+          'PAYE: ' + esc(co.payeNumber || '—') + ' &nbsp;&nbsp; UIF: ' + esc(co.uifNumber || '—') + ' &nbsp;&nbsp; SDL: ' + esc(co.sdlNumber || '—') +
+        '</div>'
+      : '<div class="ps-company">Daily Fruit</div>' +
+        '<div class="ps-company-meta error-text">No company linked to the "' + esc(emp.department) + '" department yet — set this in Settings &rarr; Companies.</div>';
+
+    var earningsRows = [
+      ['Basic pay', c.baseAmount],
+      c.adjustments.Commission ? ['Commission', c.adjustments.Commission] : null,
+      c.adjustments.Bonus ? ['Bonus', c.adjustments.Bonus] : null,
+      c.adjustments.Overtime ? ['Overtime', c.adjustments.Overtime] : null,
+      c.adjustments.Other ? ['Other taxable addition', c.adjustments.Other] : null
+    ].filter(Boolean);
+
+    var deductionRows = [
+      ['PAYE', c.paye],
+      c.uifEmployee ? ['UIF', c.uifEmployee] : null,
+      c.retirementDeduction ? ['Retirement contribution', c.retirementDeduction] : null,
+      c.medicalContribution ? ['Medical aid contribution', c.medicalContribution] : null,
+      c.adjustments.Deduction ? ['Deduction', c.adjustments.Deduction] : null,
+      c.adjustments.AdvanceRepayment ? ['Advance repayment', c.adjustments.AdvanceRepayment] : null
+    ].filter(Boolean);
+
+    var deductionsTotal = deductionRows.reduce(function (sum, r) { return sum + r[1]; }, 0);
+    var advanceGiven = c.adjustments.AdvanceGiven || 0;
+
+    function tableRows(rows) {
+      return rows.map(function (r) {
+        return '<tr><td>' + esc(r[0]) + '</td><td class="amt">' + money(r[1]) + '</td></tr>';
+      }).join('');
+    }
+
+    return '' +
+      '<div class="ps-header">' +
+        '<div>' + companyBlock + '</div>' +
+        '<div class="ps-title"><h3>Payslip</h3><div class="period">' + esc(monthLabel(res.month)) +
+          (res.isFinal ? '' : ' <span class="hint" style="margin:0;">(preview — payroll not yet run)</span>') +
+        '</div></div>' +
+      '</div>' +
+      '<div class="ps-emp-grid">' +
+        '<div><span class="lbl">Employee</span>' + esc(emp.name) + '</div>' +
+        '<div><span class="lbl">Employee #</span>' + esc(emp.employeeNumber || '—') + '</div>' +
+        '<div><span class="lbl">Department</span>' + esc(emp.department) + '</div>' +
+        '<div><span class="lbl">ID number</span>' + esc(emp.idNumber || '—') + '</div>' +
+        '<div><span class="lbl">Date employed</span>' + esc(emp.dateEmployed || '—') + '</div>' +
+        '<div><span class="lbl">Days / week</span>' + (res.days === null ? '—' : res.days) + '</div>' +
+      '</div>' +
+      '<table class="ps-table"><thead><tr><th>Earnings</th><th class="amt">Amount</th></tr></thead><tbody>' +
+        tableRows(earningsRows) +
+        '<tr><td><strong>Gross pay</strong></td><td class="amt"><strong>' + money(c.gross) + '</strong></td></tr>' +
+      '</tbody></table>' +
+      '<table class="ps-table"><thead><tr><th>Deductions</th><th class="amt">Amount</th></tr></thead><tbody>' +
+        tableRows(deductionRows) +
+        '<tr><td><strong>Total deductions</strong></td><td class="amt"><strong>' + money(deductionsTotal) + '</strong></td></tr>' +
+      '</tbody></table>' +
+      (advanceGiven ? '<p class="hint">Advance paid out this month: ' + money(advanceGiven) + ' (added to net pay, to be repaid later)</p>' : '') +
+      '<div class="ps-net-row"><span>Net pay</span><span>' + money(c.net) + '</span></div>' +
+      '<p class="ps-note">Generated ' + esc(new Date().toLocaleDateString('en-ZA')) +
+        (res.isFinal ? '' : ' — figures are a live preview and may change until payroll is run for this month.') + '</p>';
+  }
+
+  document.getElementById('payslip-close-btn').addEventListener('click', function () {
+    document.getElementById('payslip-modal').classList.remove('active');
+  });
+  document.getElementById('payslip-print-btn').addEventListener('click', function () {
+    window.print();
+  });
+
   // ================= PAY ADJUSTMENTS =================
   var ADJ_TYPE_LABELS = {
     Commission: 'Commission', Bonus: 'Bonus', Overtime: 'Overtime', Other: 'Other taxable addition',
@@ -1657,11 +1816,29 @@
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
       ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; deductions and advances only affect Net pay.';
 
-    // Employee dropdown — active employees, from the roster already loaded.
+    // Department filter — lets Shane work through payroll one department at
+    // a time instead of hunting for each name in one long combined list.
+    // Options are rebuilt from the managed department list every render, but
+    // the current selection is preserved across re-renders (same pattern as
+    // the Employee dropdown just below).
+    var deptFilterSelect = document.getElementById('adj-dept-filter');
+    var currentDeptFilter = deptFilterSelect.value;
+    var activeDeptNames = state.departments.filter(function (d) { return d.active; })
+      .map(function (d) { return d.name; }).sort();
+    deptFilterSelect.innerHTML = '<option value="">All departments</option>' +
+      activeDeptNames.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
+    if (currentDeptFilter && activeDeptNames.indexOf(currentDeptFilter) !== -1) deptFilterSelect.value = currentDeptFilter;
+    var deptFilterVal = deptFilterSelect.value;
+
+    // Employee dropdown — active employees, from the roster already loaded,
+    // narrowed to the department filter above (when one is selected).
     var empSelect = document.getElementById('adj-employee');
     var currentEmpVal = empSelect.value;
-    var activeEmployees = (state.payroll ? state.payroll.employees : []).filter(function (e) { return e.active; })
-      .slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+    var activeEmployees = (state.payroll ? state.payroll.employees : []).filter(function (e) {
+      if (!e.active) return false;
+      if (deptFilterVal && e.department !== deptFilterVal) return false;
+      return true;
+    }).slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     empSelect.innerHTML = activeEmployees.map(function (e) {
       return '<option value="' + esc(e.id) + '">' + esc(e.name) + (e.department ? ' — ' + esc(e.department) : '') + '</option>';
     }).join('');
@@ -1779,6 +1956,8 @@
       });
     });
   }
+
+  document.getElementById('adj-dept-filter').addEventListener('change', renderAdjustments);
 
   document.getElementById('adj-add-btn').addEventListener('click', function () {
     var errEl = document.getElementById('adj-error');
@@ -2337,6 +2516,7 @@
     });
 
     renderCategorySettings();
+    renderCompanySettings();
     renderDepartmentSettings();
   }
 
@@ -2363,14 +2543,90 @@
     renderCategorySettings();
   });
 
+  function renderCompanySettings() {
+    var container = document.getElementById('settings-companies');
+    container.innerHTML = '';
+    (state.companies || []).forEach(function (co, i) {
+      var row = document.createElement('div');
+      row.className = 'company-row';
+      row.innerHTML =
+        '<div class="form-grid">' +
+          '<div class="field"><label>Company name</label><input type="text" data-idx="' + i + '" data-field="name" value="' + esc(co.name) + '"></div>' +
+          '<div class="field"><label>PAYE number</label><input type="text" data-idx="' + i + '" data-field="payeNumber" value="' + esc(co.payeNumber) + '"></div>' +
+          '<div class="field"><label>UIF number</label><input type="text" data-idx="' + i + '" data-field="uifNumber" value="' + esc(co.uifNumber) + '"></div>' +
+          '<div class="field"><label>SDL number</label><input type="text" data-idx="' + i + '" data-field="sdlNumber" value="' + esc(co.sdlNumber) + '"></div>' +
+          '<div class="field"><label>Address (optional — shown on payslips)</label><input type="text" data-idx="' + i + '" data-field="address" value="' + esc(co.address) + '"></div>' +
+        '</div>' +
+        '<input type="hidden" data-field="id" value="' + esc(co.id || '') + '">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+          '<label class="toggle"><input type="checkbox" data-idx="' + i + '" data-field="active" ' + (co.active !== false ? 'checked' : '') + '> Active</label>' +
+          '<button type="button" class="btn secondary small" data-remove-company="' + i + '">Remove</button>' +
+        '</div>';
+      container.appendChild(row);
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('[data-remove-company]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = Number(btn.getAttribute('data-remove-company'));
+        state.companies.splice(idx, 1);
+        renderCompanySettings();
+        // Any department row currently linked to the removed company needs
+        // its dropdown rebuilt too, so the option disappears immediately.
+        renderDepartmentSettings();
+      });
+    });
+  }
+
+  document.getElementById('add-company-btn').addEventListener('click', function () {
+    state.companies = state.companies || [];
+    state.companies.push({ id: '', name: '', payeNumber: '', uifNumber: '', sdlNumber: '', address: '', active: true });
+    renderCompanySettings();
+  });
+
+  document.getElementById('save-companies-btn').addEventListener('click', function () {
+    var container = document.getElementById('settings-companies');
+    var updated = [];
+    Array.prototype.forEach.call(container.querySelectorAll('.company-row'), function (row) {
+      updated.push({
+        id: row.querySelector('[data-field="id"]').value,
+        name: row.querySelector('[data-field="name"]').value.trim(),
+        payeNumber: row.querySelector('[data-field="payeNumber"]').value.trim(),
+        uifNumber: row.querySelector('[data-field="uifNumber"]').value.trim(),
+        sdlNumber: row.querySelector('[data-field="sdlNumber"]').value.trim(),
+        address: row.querySelector('[data-field="address"]').value.trim(),
+        active: row.querySelector('[data-field="active"]').checked
+      });
+    });
+    var status = document.getElementById('save-companies-status');
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('saveCompanies', { companies: JSON.stringify(updated) }).then(function (res) {
+      if (res.ok) {
+        state.companies = res.companies;
+        // Newly added companies just got a real Id assigned server-side —
+        // re-render so Employee departments' dropdowns can link to them.
+        renderCompanySettings();
+        renderDepartmentSettings();
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
+      } else {
+        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
+      }
+    }).catch(function () {
+      flashStatus(status, 'Network error', 'save-status err', 5000);
+    });
+  });
+
   function renderDepartmentSettings() {
     var container = document.getElementById('settings-departments');
     container.innerHTML = '';
+    var companies = state.companies || [];
     state.departments.forEach(function (dep, i) {
       var row = document.createElement('div');
       row.className = 'cat-row';
+      var companyOptions = '<option value="">— no company linked —</option>' + companies.map(function (co) {
+        return '<option value="' + esc(co.id) + '"' + (dep.companyId === co.id ? ' selected' : '') + '>' + esc(co.name || '(unnamed company)') + '</option>';
+      }).join('');
       row.innerHTML =
         '<input type="text" value="' + esc(dep.name) + '" data-original-name="' + esc(dep.name) + '" data-idx="' + i + '" data-field="name">' +
+        '<select data-idx="' + i + '" data-field="companyId">' + companyOptions + '</select>' +
         '<label class="toggle"><input type="checkbox" ' + (dep.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>';
       container.appendChild(row);
     });
@@ -2380,7 +2636,7 @@
     var input = document.getElementById('new-department-name');
     var name = input.value.trim();
     if (!name) return;
-    state.departments.push({ name: name, active: true, sortOrder: state.departments.length + 1 });
+    state.departments.push({ name: name, active: true, sortOrder: state.departments.length + 1, companyId: '' });
     input.value = '';
     renderDepartmentSettings();
   });
@@ -2392,12 +2648,13 @@
     Array.prototype.forEach.call(container.querySelectorAll('.cat-row'), function (row, i) {
       var nameInput = row.querySelector('[data-field="name"]');
       var activeInput = row.querySelector('[data-field="active"]');
+      var companySelect = row.querySelector('[data-field="companyId"]');
       var newName = nameInput.value.trim();
       var originalName = nameInput.getAttribute('data-original-name') || '';
       if (originalName && newName && originalName !== newName) {
         renames.push({ from: originalName, to: newName });
       }
-      updated.push({ name: newName, active: activeInput.checked, sortOrder: i + 1 });
+      updated.push({ name: newName, active: activeInput.checked, sortOrder: i + 1, companyId: companySelect ? companySelect.value : '' });
     });
     var status = document.getElementById('save-departments-status');
     flashStatus(status, 'Saving…', 'save-status', 0);
