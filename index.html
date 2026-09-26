@@ -29,15 +29,23 @@
 <style>
   :root {
     color-scheme: light;
-    --surface-1:      #fcfcfb;
-    --page:           #f9f9f7;
+    --surface-1:      #fcfbf9;
+    --page:           #faf6f0;
     --text-primary:   #0b0b0b;
     --text-secondary: #52514e;
     --text-muted:     #898781;
-    --gridline:       #e1e0d9;
+    --gridline:       #e1ded3;
     --baseline:       #c3c2b7;
     --border:         rgba(11,11,11,0.10);
     --card:           #ffffff;
+
+    /* The one brand accent, sampled from the real Daily Fruit logo's orange
+       — used for primary actions/highlights everywhere (buttons, active
+       tab, the owner badge), independent of the --series-* colors below,
+       which exist only to tell entities apart on charts and must stay
+       distinct from each other and from --brand. */
+    --brand:          #de6d2a;
+    --brand-ink:      #2a1408;
 
     --series-jhb:     #2a78d6;
     --series-veg:     #eb6834;
@@ -61,6 +69,9 @@
       --border:         rgba(255,255,255,0.10);
       --card:           #1f1f1e;
 
+      --brand:          #ef8a4c;
+      --brand-ink:      #1a1108;
+
       --series-jhb:     #3987e5;
       --series-veg:     #d95926;
       --series-pyroca:  #199e70;
@@ -78,6 +89,9 @@
     --baseline:       #383835;
     --border:         rgba(255,255,255,0.10);
     --card:           #1f1f1e;
+
+    --brand:          #ef8a4c;
+    --brand-ink:      #1a1108;
 
     --series-jhb:     #3987e5;
     --series-veg:     #d95926;
@@ -150,8 +164,8 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    background: var(--series-jhb);
-    color: white;
+    background: var(--brand);
+    color: var(--brand-ink);
   }
   .btn:disabled { opacity: 0.5; cursor: default; }
   .btn.secondary {
@@ -193,14 +207,14 @@
     padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
     color: var(--text-secondary); white-space: nowrap;
   }
-  nav.tabs button.active { background: var(--page); color: var(--text-primary); }
+  nav.tabs button.active { background: var(--page); color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--brand); }
   .topbar-right { display: flex; align-items: center; gap: 10px; }
   .who { font-size: 12px; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
   .role-badge {
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
-    padding: 2px 7px; border-radius: 999px; background: var(--series-total); color: #fff;
+    padding: 2px 7px; border-radius: 999px; background: var(--brand); color: var(--brand-ink);
   }
-  .role-badge.staff { background: var(--series-veg); }
+  .role-badge.staff { background: var(--series-jhb); color: #fff; }
   select#month-picker {
     padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--page); color: var(--text-primary); font-size: 13px; font-weight: 600;
@@ -219,7 +233,7 @@
   .kpi-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-left: 4px solid var(--dot, var(--series-jhb));
+    border-left: 4px solid var(--dot, var(--brand));
     border-radius: 12px;
     padding: 16px 18px;
   }
@@ -839,7 +853,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.2-payroll-adjustments';
+  var FRONTEND_BUILD = '2026-09-26.3-brand-theme';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
