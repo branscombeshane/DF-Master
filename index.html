@@ -582,6 +582,60 @@
       </div>
 
       <div class="panel">
+        <h2>Pay adjustments</h2>
+        <p class="panel-sub" id="adjustments-sub"></p>
+
+        <div id="advance-balances-wrap"></div>
+
+        <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label>Employee</label>
+            <select id="adj-employee"></select>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="adj-type">
+              <option value="Commission">Commission</option>
+              <option value="Bonus">Bonus</option>
+              <option value="Overtime">Overtime</option>
+              <option value="Other">Other taxable addition</option>
+              <option value="Deduction">Deduction</option>
+              <option value="AdvanceGiven">Advance given</option>
+              <option value="AdvanceRepayment">Advance repayment</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Amount (R)</label>
+            <input type="number" step="0.01" min="0" id="adj-amount">
+          </div>
+          <div class="field">
+            <label>Note (optional)</label>
+            <input type="text" id="adj-note">
+          </div>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="adj-recurring" style="width:auto; margin-right:6px;">Repeat every month until I remove it</label>
+          <div class="hint">Ticking this creates a standing amount that's added automatically each month (starting with the one you're viewing now). You can still edit or remove any single month's copy without affecting the others.</div>
+        </div>
+        <div class="error-text" id="adj-error"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="adj-add-btn">Add</button>
+          <span class="save-status" id="adj-save-status"></span>
+        </div>
+
+        <div style="overflow-x:auto; margin-top:18px;">
+          <table class="data-table" id="adjustments-table"></table>
+        </div>
+
+        <h3 style="margin:24px 0 4px; font-size:14px; color:var(--text-muted);">Standing / recurring adjustments</h3>
+        <p class="panel-sub" style="margin-top:0;">Every active item here gets a fresh copy added to each new month automatically. Turning one off (or deleting it) only affects months from now on — months it already applied to keep what they got.</p>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="recurring-adjustments-table"></table>
+        </div>
+      </div>
+
+      <div class="panel">
         <h2>Run Payroll &amp; SARS (EMP201)</h2>
         <p class="panel-sub" id="payrollrun-sub"></p>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -785,7 +839,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.1-dept-rename-cascade';
+  var FRONTEND_BUILD = '2026-09-26.2-payroll-adjustments';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -807,6 +861,7 @@
     monthData: null,
     entryEntity: null,
     payroll: null,
+    payrollAdjustments: null,
     users: null,
     activeTab: null
   };
@@ -986,7 +1041,7 @@
       if (hasSection('dashboard')) renderDashboard();
       if (hasSection('entry')) renderEntry();
       if (hasSection('history')) renderHistory();
-      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); }
+      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); loadAdjustments(); }
       if (hasSection('vehicles')) loadVehicles();
       if (state.role === 'owner') { renderSettings(); loadUsers(); }
       showTab(state.activeTab);
@@ -1059,7 +1114,7 @@
         if (hasSection('dashboard')) renderDashboard();
         if (hasSection('entry')) renderEntry();
       });
-      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); }
+      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); loadAdjustments(); }
     };
   }
 
@@ -1562,6 +1617,192 @@
   document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
   document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
 
+  // ================= PAY ADJUSTMENTS =================
+  var ADJ_TYPE_LABELS = {
+    Commission: 'Commission', Bonus: 'Bonus', Overtime: 'Overtime', Other: 'Other taxable addition',
+    Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
+  };
+  var ADJ_TYPE_SIGN = {
+    Commission: '+', Bonus: '+', Overtime: '+', Other: '+',
+    Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
+  };
+
+  function loadAdjustments() {
+    return callApi('getPayrollAdjustments', { month: state.selectedMonth }).then(function (res) {
+      if (res.ok) {
+        state.payrollAdjustments = res.payrollAdjustments;
+        renderAdjustments();
+      }
+      return res;
+    });
+  }
+
+  function renderAdjustments() {
+    if (!state.payrollAdjustments) return;
+    var pa = state.payrollAdjustments;
+    document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
+      ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; deductions and advances only affect Net pay.';
+
+    // Employee dropdown — active employees, from the roster already loaded.
+    var empSelect = document.getElementById('adj-employee');
+    var currentEmpVal = empSelect.value;
+    var activeEmployees = (state.payroll ? state.payroll.employees : []).filter(function (e) { return e.active; })
+      .slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+    empSelect.innerHTML = activeEmployees.map(function (e) {
+      return '<option value="' + esc(e.id) + '">' + esc(e.name) + (e.department ? ' — ' + esc(e.department) : '') + '</option>';
+    }).join('');
+    if (currentEmpVal && activeEmployees.some(function (e) { return e.id === currentEmpVal; })) empSelect.value = currentEmpVal;
+
+    // Advance balances — only shown for employees who currently owe (or are
+    // owed) something; derived server-side from the full adjustment history.
+    var balWrap = document.getElementById('advance-balances-wrap');
+    if (pa.advanceBalances && pa.advanceBalances.length) {
+      balWrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Outstanding advances</h3>' +
+        '<div class="dept-grid">' + pa.advanceBalances.map(function (b) {
+          return '<div class="dept-card"><div class="dept-name">' + esc(b.name) + '</div>' +
+            '<div class="dept-row"><span>Balance owed</span><span>' + money(b.balance) + '</span></div></div>';
+        }).join('') + '</div>';
+    } else {
+      balWrap.innerHTML = '';
+    }
+
+    renderAdjustmentsTable();
+    renderRecurringAdjustmentsTable();
+  }
+
+  function renderAdjustmentsTable() {
+    var pa = state.payrollAdjustments;
+    var table = document.getElementById('adjustments-table');
+    var head = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Type</th>' +
+      '<th>Amount</th><th style="text-align:left;">Note</th><th></th><th></th></tr></thead>';
+    var items = (pa && pa.items) || [];
+    var body = '<tbody>' + (items.length ? items.map(function (it) {
+      return '<tr>' +
+        '<td style="text-align:left;">' + esc(it.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
+        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + money(it.amount) + '</td>' +
+        '<td style="text-align:left;">' + esc(it.note) + '</td>' +
+        '<td>' + (it.source === 'recurring' ? '<span class="hint" style="margin:0;">recurring</span>' : '') + '</td>' +
+        '<td><button class="btn secondary small" data-adj-delete="' + esc(it.id) + '">Delete</button></td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Nothing added for ' + esc(monthLabel(state.selectedMonth)) + ' yet.</td></tr>') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-adj-delete]'), function (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        callApi('deleteAdjustment', { id: btn.getAttribute('data-adj-delete'), month: state.selectedMonth }).then(function (res) {
+          if (res.ok) {
+            state.payrollAdjustments = res.payrollAdjustments;
+            renderAdjustments();
+          } else {
+            btn.disabled = false;
+            window.alert(res.error || 'Could not delete.');
+          }
+        }).catch(function () {
+          btn.disabled = false;
+          window.alert('Network error — could not delete.');
+        });
+      });
+    });
+  }
+
+  function renderRecurringAdjustmentsTable() {
+    var pa = state.payrollAdjustments;
+    var table = document.getElementById('recurring-adjustments-table');
+    var head = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Type</th>' +
+      '<th>Amount</th><th style="text-align:left;">Note</th><th>Active</th><th></th></tr></thead>';
+    var recurring = (pa && pa.recurring) || [];
+    var body = '<tbody>' + (recurring.length ? recurring.map(function (r) {
+      return '<tr class="' + (r.active ? '' : 'inactive') + '">' +
+        '<td style="text-align:left;">' + esc(r.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[r.type] || r.type) + '</td>' +
+        '<td>' + (ADJ_TYPE_SIGN[r.type] || '') + money(r.amount) + '</td>' +
+        '<td style="text-align:left;">' + esc(r.note) + '</td>' +
+        '<td><input type="checkbox" class="recurring-active-cb" data-recurring-id="' + esc(r.id) + '" ' + (r.active ? 'checked' : '') + ' style="width:auto;"></td>' +
+        '<td><button class="btn secondary small" data-recurring-delete="' + esc(r.id) + '">Delete</button></td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No standing adjustments set up.</td></tr>') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-recurring-id]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-recurring-id');
+        var active = cb.checked;
+        cb.disabled = true;
+        callApi('saveRecurringAdjustment', { id: id, active: active, month: state.selectedMonth }).then(function (res) {
+          cb.disabled = false;
+          if (res.ok) {
+            state.payrollAdjustments = res.payrollAdjustments;
+            renderRecurringAdjustmentsTable();
+          } else {
+            cb.checked = !active;
+            window.alert(res.error || 'Could not update.');
+          }
+        }).catch(function () {
+          cb.disabled = false;
+          cb.checked = !active;
+          window.alert('Network error — could not update.');
+        });
+      });
+    });
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-recurring-delete]'), function (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        callApi('deleteRecurringAdjustment', { id: btn.getAttribute('data-recurring-delete'), month: state.selectedMonth }).then(function (res) {
+          if (res.ok) {
+            state.payrollAdjustments = res.payrollAdjustments;
+            renderRecurringAdjustmentsTable();
+          } else {
+            btn.disabled = false;
+            window.alert(res.error || 'Could not delete.');
+          }
+        }).catch(function () {
+          btn.disabled = false;
+          window.alert('Network error — could not delete.');
+        });
+      });
+    });
+  }
+
+  document.getElementById('adj-add-btn').addEventListener('click', function () {
+    var errEl = document.getElementById('adj-error');
+    var status = document.getElementById('adj-save-status');
+    errEl.textContent = '';
+    var employeeId = document.getElementById('adj-employee').value;
+    var type = document.getElementById('adj-type').value;
+    var amount = Number(document.getElementById('adj-amount').value);
+    var note = document.getElementById('adj-note').value.trim();
+    var recurring = document.getElementById('adj-recurring').checked;
+
+    if (!employeeId) { errEl.textContent = 'Choose an employee.'; return; }
+    if (!amount || amount <= 0) { errEl.textContent = 'Enter an amount greater than 0.'; return; }
+
+    flashStatus(status, 'Adding…', 'save-status', 0);
+    var action = recurring ? 'saveRecurringAdjustment' : 'addAdjustment';
+    var params = recurring
+      ? { employeeId: employeeId, type: type, amount: amount, note: note, month: state.selectedMonth }
+      : { employeeId: employeeId, month: state.selectedMonth, type: type, amount: amount, note: note };
+
+    callApi(action, params).then(function (res) {
+      if (res.ok) {
+        state.payrollAdjustments = res.payrollAdjustments;
+        renderAdjustments();
+        document.getElementById('adj-amount').value = '';
+        document.getElementById('adj-note').value = '';
+        document.getElementById('adj-recurring').checked = false;
+        flashStatus(status, 'Added', 'save-status ok', 3000);
+      } else {
+        flashStatus(status, '', 'save-status', 0);
+        errEl.textContent = res.error || 'Failed to add.';
+      }
+    }).catch(function () {
+      flashStatus(status, '', 'save-status', 0);
+      errEl.textContent = 'Network error.';
+    });
+  });
+
   // ================= RUN PAYROLL / SARS (EMP201) =================
   function loadPayrollRun() {
     return callApi('getPayrollRun', { month: state.selectedMonth }).then(function (res) {
@@ -1597,12 +1838,15 @@
 
     var table = document.getElementById('payslips-table');
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th>' +
-      '<th>Gross</th><th>PAYE</th><th>UIF (ee)</th><th>Retirement</th><th>Medical credit</th><th>ETI</th><th>Net pay</th></tr></thead>';
+      '<th>Base</th><th style="text-align:left;">Adjustments</th><th>Gross</th><th>PAYE</th><th>UIF (ee)</th>' +
+      '<th>Retirement</th><th>Medical credit</th><th>ETI</th><th>Net pay</th></tr></thead>';
     var rows = pr.payslips || [];
     var body = '<tbody>' + (rows.length ? rows.map(function (ps) {
       return '<tr>' +
         '<td style="text-align:left;">' + esc(ps.name) + '</td>' +
         '<td style="text-align:left;">' + esc(ps.department || '') + '</td>' +
+        '<td>' + money(ps.baseAmount) + '</td>' +
+        '<td style="text-align:left; max-width:260px; white-space:normal; font-size:12px; color:var(--text-secondary);">' + esc(adjustmentsSummary(ps)) + '</td>' +
         '<td>' + money(ps.gross) + '</td>' +
         '<td>' + money(ps.paye) + '</td>' +
         '<td>' + money(ps.uifEmployee) + '</td>' +
@@ -1611,8 +1855,24 @@
         '<td>' + money(ps.eti) + '</td>' +
         '<td>' + money(ps.net) + '</td>' +
         '</tr>';
-    }).join('') : '<tr><td colspan="9" style="text-align:center; color:var(--text-muted);">No payroll run recorded for this month yet — click "Run payroll for this month" above.</td></tr>') + '</tbody>';
+    }).join('') : '<tr><td colspan="11" style="text-align:center; color:var(--text-muted);">No payroll run recorded for this month yet — click "Run payroll for this month" above.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
+  }
+
+  // One-line "+Commission R200, −Deduction R50" style summary of a payslip's
+  // adjustment breakdown, for the compact Adjustments column above. Blank
+  // fields are skipped so an employee with nothing unusual that month just
+  // shows a dash.
+  function adjustmentsSummary(ps) {
+    var parts = [];
+    if (ps.adjCommission) parts.push('+Commission ' + money(ps.adjCommission));
+    if (ps.adjBonus) parts.push('+Bonus ' + money(ps.adjBonus));
+    if (ps.adjOvertime) parts.push('+Overtime ' + money(ps.adjOvertime));
+    if (ps.adjOther) parts.push('+Other ' + money(ps.adjOther));
+    if (ps.adjDeduction) parts.push('−Deduction ' + money(ps.adjDeduction));
+    if (ps.adjAdvanceGiven) parts.push('+Advance ' + money(ps.adjAdvanceGiven));
+    if (ps.adjAdvanceRepayment) parts.push('−Advance repay ' + money(ps.adjAdvanceRepayment));
+    return parts.length ? parts.join(', ') : '—';
   }
 
   document.getElementById('payrollrun-run-btn').addEventListener('click', function () {
