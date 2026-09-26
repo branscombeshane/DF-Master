@@ -442,7 +442,6 @@
     <h1>Daily Fruit Financials</h1>
     <nav class="tabs" id="nav-tabs"></nav>
     <div class="topbar-right">
-      <select id="month-picker"></select>
       <span class="who" id="who-label"></span>
       <button class="btn secondary small" id="account-btn">Password</button>
       <button class="btn secondary small" id="logout-btn">Log out</button>
@@ -489,6 +488,10 @@
 
     <!-- ---------- Payroll ---------- -->
     <section class="view" id="view-payroll">
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px;">
+        <label for="month-picker" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Payroll month</label>
+        <select id="month-picker"></select>
+      </div>
       <div class="kpi-grid" id="payroll-kpi-grid"></div>
 
       <div class="panel">
@@ -853,7 +856,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.7-no-salary-hiding';
+  var FRONTEND_BUILD = '2026-09-26.8-dashboard-landing';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1077,6 +1080,11 @@
     var nav = document.getElementById('nav-tabs');
     nav.innerHTML = '';
     var firstKey = null;
+    // Dashboard is always the preferred landing tab on login when the
+    // account can see it — this is checked explicitly rather than relying
+    // on it simply being first in the array above, so it stays true even
+    // if the tab order above ever changes.
+    var defaultKey = hasSection('dashboard') ? 'dashboard' : null;
     tabs.forEach(function (t) {
       if (!t.show) return;
       if (!firstKey) firstKey = t.key;
@@ -1086,8 +1094,7 @@
       btn.addEventListener('click', function () { showTab(t.key); });
       nav.appendChild(btn);
     });
-    document.getElementById('month-picker').style.display = hasSection('payroll') ? '' : 'none';
-    state.activeTab = state.activeTab && tabs.some(function (t) { return t.key === state.activeTab && t.show; }) ? state.activeTab : firstKey;
+    state.activeTab = state.activeTab && tabs.some(function (t) { return t.key === state.activeTab && t.show; }) ? state.activeTab : (defaultKey || firstKey);
   }
 
   function showTab(key) {
