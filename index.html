@@ -6,6 +6,19 @@
 <title>Daily Fruit Financials</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0b0b0b">
+
+<!-- Favicon (browser tabs / bookmarks) -->
+<link rel="icon" href="icons/favicon.ico" sizes="any">
+<link rel="icon" href="icons/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+
+<!-- Add to Home Screen / installable app icons -->
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DF Financials">
 <style>
   :root {
     color-scheme: light;
@@ -162,6 +175,12 @@
     font-size: 16px; margin: 0; white-space: nowrap;
   }
   nav.tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
+  #build-mismatch-banner {
+    background: var(--critical); color: #fff;
+    padding: 10px 24px; font-size: 13px; line-height: 1.5;
+    position: sticky; top: 0; z-index: 9;
+  }
+  #build-mismatch-banner strong { font-weight: 700; }
   nav.tabs button {
     background: transparent; border: none; cursor: pointer;
     padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
@@ -366,6 +385,8 @@
       <button class="btn secondary small" id="logout-btn">Log out</button>
     </div>
   </header>
+
+  <div id="build-mismatch-banner" style="display:none;"></div>
 
   <main>
     <!-- ---------- Dashboard ---------- -->
@@ -753,6 +774,12 @@
   // same URL working, so you should rarely need to change this).
   var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzX03XJ-3i3RwdhqKWHl-y-XKAwoAc18VFBZdFTabttyyvdaq-IjRGpVwmOq7J7J4q18A/exec';
 
+  // Bumped every round this file changes, alongside Code.gs's matching
+  // BACKEND_BUILD — see the comment next to that constant for why this
+  // exists. If these two ever don't match after logging in, a banner says
+  // so instead of leaving you to guess why something new isn't showing up.
+  var FRONTEND_BUILD = '2026-09-26.1-dept-rename-cascade';
+
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
   var ALL_ENTITIES_COUNT = 3;
@@ -913,6 +940,26 @@
     state.selectedMonth = state.selectedMonth || res.currentMonth;
     if (!state.entryEntity || state.entities.every(function (e) { return e.key !== state.entryEntity; })) {
       state.entryEntity = state.entities[0] ? state.entities[0].key : null;
+    }
+    checkBuildMismatch(res.backendBuild);
+  }
+
+  // Warns loudly if this index.html and the deployed Code.gs are from
+  // different rounds — by far the most common source of "I updated it but
+  // nothing changed" confusion in this project (one half redeployed, the
+  // other not). Missing backendBuild just means an old backend that
+  // predates this check entirely — still worth flagging, since it means the
+  // backend is stale by at least one round.
+  function checkBuildMismatch(backendBuild) {
+    var banner = document.getElementById('build-mismatch-banner');
+    if (!backendBuild || backendBuild !== FRONTEND_BUILD) {
+      banner.innerHTML = '<strong>Heads up:</strong> your frontend (' + esc(FRONTEND_BUILD) +
+        ') and backend (' + esc(backendBuild || 'unknown — predates this check') + ') are running different versions. ' +
+        'Some features on this page may not work correctly until both are redeployed to match — see SETUP.md, ' +
+        '"Two separate things it\'s easy to mix up".';
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
     }
   }
 
@@ -2248,6 +2295,16 @@
       }).catch(function () { flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.'; });
     }
   });
+
+  // ================= INSTALL TO HOME SCREEN =================
+  // Registers the (deliberately no-op) service worker so Chrome/Android and
+  // desktop browsers treat this as an installable app. Safe to fail silently
+  // on browsers that don't support it (e.g. some in-app webviews).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
 
   // ================= AUTO-RESUME SESSION =================
   var savedToken = sessionStorage.getItem('dff_token');
