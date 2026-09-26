@@ -2130,6 +2130,15 @@
     callApi('saveDepartments', { departments: JSON.stringify(updated), renames: JSON.stringify(renames) }).then(function (res) {
       if (res.ok) {
         state.departments = res.departments;
+        // Re-render immediately so each input's "original name" tracking
+        // (data-original-name) is refreshed to match what was just
+        // persisted. Without this, the DOM keeps remembering only the name
+        // that was on the page at the last full render (e.g. at login) —
+        // so a second rename of the same row, done later in the same
+        // session, would report the wrong "from" name to the backend. That
+        // mismatch compounds with every further rename, since it's always
+        // one step further behind the real saved value.
+        renderDepartmentSettings();
         flashStatus(status, 'Saved', 'save-status ok', 3000);
         // A rename relabels employees on the backend — re-fetch Payroll
         // rather than just re-rendering, so the roster reflects the new
