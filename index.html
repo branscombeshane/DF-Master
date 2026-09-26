@@ -341,12 +341,22 @@
 
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-    align-items: center; justify-content: center; z-index: 50; padding: 20px;
+    align-items: flex-start; justify-content: center; z-index: 50; padding: 20px;
+    /* Scrolls the overlay itself once content (e.g. a long payslip) is
+       taller than the viewport — without this, the fixed-position overlay
+       just clips at the viewport edge and the page behind it scrolls
+       instead, while the modal visually stays put. */
+    overflow-y: auto;
   }
   .modal-overlay.active { display: flex; }
   .modal-card {
     background: var(--card); border: 1px solid var(--border); border-radius: 14px;
     padding: 28px 26px; width: 100%; max-width: 380px;
+    /* Auto top/bottom margin centers a short modal vertically same as
+       before, but collapses to 0 (pinning it to the top, under the
+       overlay's own padding) once it's taller than the viewport — so it
+       scrolls in place instead of overflowing off-screen. */
+    margin: auto 0;
   }
   .modal-card h2 { margin: 0 0 4px; font-size: 16px; }
   .modal-card p.sub { color: var(--text-secondary); font-size: 12px; margin: 0 0 18px; }
@@ -911,7 +921,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.11-payslip-adj-fixes';
+  var FRONTEND_BUILD = '2026-09-26.12-modal-scroll-fix';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
