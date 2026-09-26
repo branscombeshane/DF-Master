@@ -457,76 +457,30 @@
       <div class="kpi-grid" id="kpi-grid"></div>
 
       <div class="panel">
-        <h2>Turnover trend</h2>
-        <p class="panel-sub" id="turnover-trend-sub">Bank turnover per entity, by month</p>
-        <div class="legend" id="legend-turnover"></div>
-        <div class="chart-wrap" id="chart-turnover"></div>
-      </div>
-
-      <div class="panel">
-        <h2>Gross profit % trend</h2>
-        <p class="panel-sub">GP% per entity, by month</p>
-        <div class="legend" id="legend-gpp"></div>
-        <div class="chart-wrap" id="chart-gpp"></div>
+        <h2 id="fy-table-title">Financial year to date</h2>
+        <p class="panel-sub" id="fy-table-sub"></p>
+        <div class="entity-picker" id="dashboard-entity-picker"></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="fy-table"></table>
+        </div>
       </div>
 
       <div class="panel">
         <h2>Expense breakdown</h2>
         <p class="panel-sub" id="expense-breakdown-sub"></p>
         <div id="expense-breakdown-chart"></div>
-        <p class="panel-note" id="expense-breakdown-note" style="display:none;">Some expense categories are hidden from your account and are not included above.</p>
-      </div>
-    </section>
-
-    <!-- ---------- Entry ---------- -->
-    <section class="view" id="view-entry">
-      <div class="entity-picker" id="entry-entity-picker"></div>
-
-      <div class="panel">
-        <h2>Turnover &amp; Cost of Sales</h2>
-        <p class="panel-sub" id="entry-turnover-sub"></p>
-        <div class="form-grid">
-          <div class="field">
-            <label>Bank Turnover (R)</label>
-            <input type="number" id="entry-turnover" step="0.01">
-          </div>
-          <div class="field">
-            <label>Bank Cost of Sales (R)</label>
-            <input type="number" id="entry-cos" step="0.01">
-          </div>
-        </div>
-        <div class="summary-strip">
-          <div class="item"><div class="label">Gross Profit</div><div class="value" id="entry-gp-preview">&mdash;</div></div>
-          <div class="item"><div class="label">GP %</div><div class="value" id="entry-gpp-preview">&mdash;</div></div>
-          <div class="item"><div class="label">Target GP %</div><div class="value" id="entry-target-preview">&mdash;</div></div>
-        </div>
-        <div style="margin-top:16px;">
-          <button class="btn" id="save-turnover-btn">Save Turnover</button>
-          <span class="save-status" id="save-turnover-status"></span>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h2>Monthly Expenses</h2>
-        <p class="panel-sub" id="entry-expenses-sub"></p>
-        <div id="expense-form"></div>
-        <div class="summary-strip">
-          <div class="item"><div class="label" id="entry-total-expenses-label">Total Expenses</div><div class="value" id="entry-total-expenses">&mdash;</div></div>
-          <div class="item"><div class="label" id="entry-nett-label">Nett Profit</div><div class="value" id="entry-nett-preview">&mdash;</div></div>
-        </div>
-        <p class="panel-note" id="entry-hidden-note" style="display:none;">One or more expense categories (e.g. Salaries) are hidden from your account. Totals above exclude them.</p>
-        <div style="margin-top:16px;">
-          <button class="btn" id="save-expenses-btn">Save Expenses</button>
-          <span class="save-status" id="save-expenses-status"></span>
-        </div>
       </div>
     </section>
 
     <!-- ---------- History ---------- -->
     <section class="view" id="view-history">
       <div class="panel">
-        <h2 id="history-title">Monthly history</h2>
-        <p class="panel-sub" id="history-sub"></p>
+        <h2 id="history-title">Financial year history</h2>
+        <p class="panel-sub" id="history-sub">Closed financial years only (1 March &ndash; end of February) &mdash; the current year is on the Dashboard.</p>
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px;">
+          <select id="history-fy-picker"></select>
+        </div>
+        <div class="entity-picker" id="history-entity-picker"></div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="history-table"></table>
         </div>
@@ -666,7 +620,12 @@
               <option value="AdvanceRepayment">Advance repayment</option>
             </select>
           </div>
-          <div class="field">
+          <div class="field" id="adj-hours-field" style="display:none;">
+            <label>Overtime hours</label>
+            <input type="number" step="0.1" min="0" id="adj-hours">
+            <div class="hint" id="adj-hours-rate-hint"></div>
+          </div>
+          <div class="field" id="adj-amount-field">
             <label>Amount (R)</label>
             <input type="number" step="0.01" min="0" id="adj-amount">
           </div>
@@ -675,7 +634,7 @@
             <input type="text" id="adj-note">
           </div>
         </div>
-        <div class="field">
+        <div class="field" id="adj-recurring-field">
           <label><input type="checkbox" id="adj-recurring" style="width:auto; margin-right:6px;">Repeat every month until I remove it</label>
           <div class="hint">Ticking this creates a standing amount that's added automatically each month (starting with the one you're viewing now). You can still edit or remove any single month's copy without affecting the others.</div>
         </div>
@@ -810,24 +769,6 @@
     <!-- ---------- Settings (Owner only) ---------- -->
     <section class="view" id="view-settings">
       <div class="panel">
-        <h2>Target GP % per entity</h2>
-        <p class="panel-sub">Used to calculate each entity's Target GP (Rand) against actual turnover.</p>
-        <div id="settings-entities"></div>
-      </div>
-      <div class="panel">
-        <h2>Expense categories</h2>
-        <p class="panel-sub">Deactivating a category hides it from new entries without touching past months. Marking a category <strong>Sensitive</strong> hides it (name and amount) from every Staff account, everywhere in the app.</p>
-        <div id="settings-categories"></div>
-        <div style="margin-top:14px; display:flex; gap:10px;">
-          <input type="text" id="new-category-name" placeholder="New category name" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);">
-          <button class="btn secondary" id="add-category-btn">Add</button>
-        </div>
-        <div style="margin-top:16px;">
-          <button class="btn" id="save-categories-btn">Save Categories</button>
-          <span class="save-status" id="save-categories-status"></span>
-        </div>
-      </div>
-      <div class="panel">
         <h2>Companies (for payslips)</h2>
         <p class="panel-sub">Each registered company you actually pay employees out of, with its own SARS payroll reference numbers. Add and save your companies here first, then link each department to one below in Employee departments — that's what decides which company's letterhead shows up on a given employee's payslip.</p>
         <div id="settings-companies"></div>
@@ -912,10 +853,10 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.5-payslips-companies';
+  var FRONTEND_BUILD = '2026-09-26.7-no-salary-hiding';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
-  var SECTION_LABELS = { dashboard: 'Dashboard', entry: 'Entry', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
+  var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
   var ALL_ENTITIES_COUNT = 3;
 
   // ================= STATE =================
@@ -926,14 +867,17 @@
     sections: [],
     entities: [],
     permittedEntities: [],
-    categories: [],
     departments: [],
     companies: [],
-    history: [],
     currentMonth: null,
+    currentTaxYear: null,
     selectedMonth: null,
-    monthData: null,
-    entryEntity: null,
+    financialYear: null,       // current (open) FY-to-date data, from getFinancialYear
+    dashboardEntity: 'total',  // which entity's FY table/breakdown is showing on the Dashboard
+    fiscalYears: [],           // closed FYs available on History, from getFiscalYears
+    historyYear: null,         // {label, startYear} currently selected on History
+    historyData: null,         // that year's full FY data, from getFinancialYear
+    historyEntity: 'total',
     payroll: null,
     payrollAdjustments: null,
     users: null,
@@ -1069,15 +1013,11 @@
     state.sections = res.sections || [];
     state.entities = res.entities || [];
     state.permittedEntities = res.permittedEntities || [];
-    state.categories = res.categories || [];
     state.departments = res.departments || [];
     state.companies = res.companies || [];
-    state.history = res.history || [];
     state.currentMonth = res.currentMonth;
+    state.currentTaxYear = res.currentTaxYear || null;
     state.selectedMonth = state.selectedMonth || res.currentMonth;
-    if (!state.entryEntity || state.entities.every(function (e) { return e.key !== state.entryEntity; })) {
-      state.entryEntity = state.entities[0] ? state.entities[0].key : null;
-    }
     checkBuildMismatch(res.backendBuild);
   }
 
@@ -1110,12 +1050,10 @@
     renderNav();
     populateMonthPicker();
 
-    var needsMonth = hasAnySection(['dashboard', 'entry', 'history']);
-    var chain = needsMonth ? loadMonth(state.selectedMonth) : Promise.resolve();
+    var chain = Promise.resolve();
+    if (hasSection('dashboard')) chain = chain.then(loadFinancialYear).then(renderDashboard);
+    if (hasSection('history')) chain = chain.then(loadFiscalYearsList).then(renderHistory);
     chain.then(function () {
-      if (hasSection('dashboard')) renderDashboard();
-      if (hasSection('entry')) renderEntry();
-      if (hasSection('history')) renderHistory();
       if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); loadAdjustments(); }
       if (hasSection('vehicles')) loadVehicles();
       if (state.role === 'owner') { renderSettings(); loadUsers(); }
@@ -1130,7 +1068,6 @@
   function renderNav() {
     var tabs = [
       { key: 'dashboard', label: 'Dashboard', show: hasSection('dashboard') },
-      { key: 'entry', label: 'Entry', show: hasSection('entry') },
       { key: 'history', label: 'History', show: hasSection('history') },
       { key: 'payroll', label: 'Payroll', show: hasSection('payroll') },
       { key: 'vehicles', label: 'Vehicles', show: hasSection('vehicles') },
@@ -1149,7 +1086,7 @@
       btn.addEventListener('click', function () { showTab(t.key); });
       nav.appendChild(btn);
     });
-    document.getElementById('month-picker').style.display = hasAnySection(['dashboard', 'entry', 'history']) ? '' : 'none';
+    document.getElementById('month-picker').style.display = hasSection('payroll') ? '' : 'none';
     state.activeTab = state.activeTab && tabs.some(function (t) { return t.key === state.activeTab && t.show; }) ? state.activeTab : firstKey;
   }
 
@@ -1185,238 +1122,111 @@
     });
     sel.onchange = function () {
       state.selectedMonth = sel.value;
-      loadMonth(state.selectedMonth).then(function () {
-        if (hasSection('dashboard')) renderDashboard();
-        if (hasSection('entry')) renderEntry();
-      });
       if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); loadAdjustments(); }
     };
   }
 
-  function loadMonth(month) {
-    return callApi('getMonth', { month: month }).then(function (res) {
-      if (res.ok) state.monthData = res.data;
-      return res;
-    });
-  }
-
   function isPartialEntitySet() { return state.entities.length < ALL_ENTITIES_COUNT; }
-  function salariesHidden() { return !!(state.monthData && state.monthData.salariesHidden); }
+  // Shared by Dashboard and History: both show a fiscal-year (1 March – end
+  // of February) breakdown, one row per month, for either a single entity
+  // or the "total" (combined-across-entities) pseudo-entity, sourced from
+  // getFinancialYear — the only difference is which fiscal year (current
+  // FY-to-date on the Dashboard, a closed one on History) and which section
+  // key/DOM ids each uses.
 
-  // ================= DASHBOARD =================
-  function renderDashboard() {
-    if (!state.monthData) return;
-    renderKpiGrid();
-    renderTrendChart('chart-turnover', 'legend-turnover', 'turnover');
-    renderTrendChart('chart-gpp', 'legend-gpp', 'gpp');
-    renderExpenseBreakdown();
+  function fyRowFor(monthRow, entityKey) {
+    return entityKey === 'total' ? monthRow.totals : monthRow.entities[entityKey];
   }
 
-  function renderKpiGrid() {
-    var grid = document.getElementById('kpi-grid');
-    grid.innerHTML = '';
-    var d = state.monthData;
-
-    state.entities.forEach(function (ent) {
-      var e = d.entities[ent.key];
-      grid.appendChild(kpiCard(ent.key, ent.name, e, false));
+  // Summed (not averaged) totals across every reported month of a fiscal
+  // year — what the headline KPI cards show. GP% is blended (total GP over
+  // total turnover), not an average of monthly percentages.
+  function fyTotals(data, entityKey) {
+    var turnover = 0, cos = 0, totalExpenses = 0, nettProfit = 0;
+    data.months.forEach(function (m) {
+      var r = fyRowFor(m, entityKey);
+      if (!r.hasData) return;
+      turnover += r.turnover; cos += r.cos; totalExpenses += r.totalExpenses; nettProfit += r.nettProfit;
     });
-
-    var totalLabel = isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined';
-    grid.appendChild(kpiCard('total', totalLabel, d.totals, true));
+    var gp = turnover - cos;
+    return { turnover: turnover, cos: cos, gp: gp, gpPercent: turnover > 0 ? gp / turnover : 0, totalExpenses: totalExpenses, nettProfit: nettProfit };
   }
 
-  function kpiCard(key, name, e, isTotal) {
-    var card = document.createElement('div');
-    card.className = 'kpi-card';
-    card.style.setProperty('--dot', isTotal ? 'var(--series-total)' : colorFor(key));
-
-    var onTarget = e.gpPercent >= (e.targetGpPercent || 0);
-    var nettPos = e.nettProfit >= 0;
-    var hiddenSuffix = salariesHidden() ? ' <span style="color:var(--text-muted); font-weight:400;">(excl. hidden)</span>' : '';
-
-    var badgeHtml = (e.targetGpPercent !== undefined)
-      ? '<span class="badge ' + (onTarget ? 'good' : 'critical') + '">' +
-        (onTarget ? 'On target' : 'Below target') + '</span>'
-      : '';
-
-    card.innerHTML =
-      '<div class="kpi-head"><span class="name">' + esc(name) + '</span>' + badgeHtml + '</div>' +
-      '<div class="kpi-row"><span>Turnover</span><span class="val">' + money(e.turnover) + '</span></div>' +
-      '<div class="kpi-row"><span>Cost of Sales</span><span class="val">' + money(e.cos) + '</span></div>' +
-      '<div class="kpi-row"><span>GP%' + (e.targetGpPercent !== undefined ? ' <span style="color:var(--text-muted)">(target ' + pct(e.targetGpPercent) + ')</span>' : '') + '</span><span class="val">' + pct(e.gpPercent) + '</span></div>' +
-      '<div class="kpi-row"><span>Total Expenses' + hiddenSuffix + '</span><span class="val">' + money(e.totalExpenses) + '</span></div>' +
-      '<div class="kpi-row hero"><span>Nett Profit' + hiddenSuffix + '</span><span class="val ' + (nettPos ? 'pos' : 'neg') + '">' + money(e.nettProfit) + '</span></div>';
-
-    return card;
-  }
-
-  // ---- SVG line chart ----
-  function renderTrendChart(containerId, legendId, metric) {
-    var container = document.getElementById(containerId);
-    var legendEl = document.getElementById(legendId);
-    container.innerHTML = '';
-    legendEl.innerHTML = '';
-
-    var history = state.history;
-    if (!history || !history.length) {
-      container.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">Not enough history yet.</p>';
-      return;
-    }
-
-    var seriesKeys = state.entities.map(function (e) { return e.key; });
-    seriesKeys.forEach(function (key) {
-      var ent = state.entities.filter(function (e) { return e.key === key; })[0];
-      var item = document.createElement('div');
-      item.className = 'item';
-      item.innerHTML = '<span class="dot" style="background:' + colorFor(key) + '"></span>' + esc(ent.name);
-      legendEl.appendChild(item);
-    });
-
-    var W = Math.max(container.clientWidth || 900, 320);
-    var H = 260;
-    var padL = 56, padR = 16, padT = 16, padB = 28;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-
-    var series = seriesKeys.map(function (key) {
-      return history.map(function (h) {
-        if (metric === 'turnover') {
-          var v = h.entities[key] ? h.entities[key].turnover : null;
-          return v;
-        } else {
-          var e = h.entities[key];
-          if (!e || !e.turnover) return null;
-          return (e.turnover - e.cos) / e.turnover;
-        }
-      });
-    });
-
-    var allVals = [];
-    series.forEach(function (s) { s.forEach(function (v) { if (v !== null && !isNaN(v)) allVals.push(v); }); });
-    if (!allVals.length) {
-      container.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No entity-level history yet for this range.</p>';
-      return;
-    }
-    var minV = 0;
-    var maxV = Math.max.apply(null, allVals) * 1.15 || 1;
-
-    function x(i) { return padL + (i / Math.max(history.length - 1, 1)) * plotW; }
-    function y(v) { return padT + plotH - ((v - minV) / (maxV - minV)) * plotH; }
-
-    var svgNS = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', H);
-
-    // gridlines
-    var gridColor = getComputedStyle(document.documentElement).getPropertyValue('--gridline').trim();
-    var mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
-    for (var g = 0; g <= 4; g++) {
-      var gv = minV + (maxV - minV) * (g / 4);
-      var gy = y(gv);
-      var line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', padL); line.setAttribute('x2', W - padR);
-      line.setAttribute('y1', gy); line.setAttribute('y2', gy);
-      line.setAttribute('stroke', gridColor); line.setAttribute('stroke-width', '1');
-      svg.appendChild(line);
-      var label = document.createElementNS(svgNS, 'text');
-      label.setAttribute('x', padL - 8); label.setAttribute('y', gy + 4);
-      label.setAttribute('text-anchor', 'end'); label.setAttribute('font-size', '10');
-      label.setAttribute('fill', mutedColor);
-      label.textContent = metric === 'gpp' ? (gv * 100).toFixed(0) + '%' : 'R' + Math.round(gv / 1000) + 'k';
-      svg.appendChild(label);
-    }
-
-    // x-axis month labels (every ~3 months)
-    var step = Math.ceil(history.length / 8);
-    history.forEach(function (h, i) {
-      if (i % step !== 0 && i !== history.length - 1) return;
-      var label = document.createElementNS(svgNS, 'text');
-      label.setAttribute('x', x(i)); label.setAttribute('y', H - 6);
-      label.setAttribute('text-anchor', 'middle'); label.setAttribute('font-size', '10');
-      label.setAttribute('fill', mutedColor);
-      label.textContent = monthLabel(h.month).replace(' 20', " '");
-      svg.appendChild(label);
-    });
-
-    // lines
-    seriesKeys.forEach(function (key, si) {
-      var pts = series[si];
-      var d = '';
-      pts.forEach(function (v, i) {
-        if (v === null || isNaN(v)) return;
-        d += (d ? 'L' : 'M') + x(i) + ',' + y(v) + ' ';
-      });
-      if (!d) return;
-      var path = document.createElementNS(svgNS, 'path');
-      path.setAttribute('d', d.trim());
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', colorFor(key));
-      path.setAttribute('stroke-width', '2');
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('stroke-linejoin', 'round');
-      svg.appendChild(path);
-
-      pts.forEach(function (v, i) {
-        if (v === null || isNaN(v)) return;
-        var c = document.createElementNS(svgNS, 'circle');
-        c.setAttribute('cx', x(i)); c.setAttribute('cy', y(v)); c.setAttribute('r', '3');
-        c.setAttribute('fill', colorFor(key));
-        c.setAttribute('data-month', h_month(i));
-        c.setAttribute('data-val', v);
-        c.setAttribute('data-key', key);
-        c.style.cursor = 'pointer';
-        svg.appendChild(c);
-      });
-    });
-
-    function h_month(i) { return history[i].month; }
-
-    container.appendChild(svg);
-
-    var tooltip = document.createElement('div');
-    tooltip.className = 'chart-tooltip';
-    container.style.position = 'relative';
-    container.appendChild(tooltip);
-
-    Array.prototype.forEach.call(svg.querySelectorAll('circle'), function (c) {
-      c.addEventListener('mouseenter', function () {
-        var key = c.getAttribute('data-key');
-        var ent = state.entities.filter(function (e) { return e.key === key; })[0];
-        var val = Number(c.getAttribute('data-val'));
-        var mo = c.getAttribute('data-month');
-        tooltip.textContent = ent.name + ' — ' + monthLabel(mo) + ': ' + (metric === 'gpp' ? pct(val) : money(val));
-        tooltip.style.left = c.getAttribute('cx') + 'px';
-        tooltip.style.top = c.getAttribute('cy') + 'px';
-        tooltip.style.opacity = '1';
-      });
-      c.addEventListener('mouseleave', function () { tooltip.style.opacity = '0'; });
+  // Entity picker used on both Dashboard and History — same look as the old
+  // Entry tab's picker, plus a "Combined" pseudo-entity pill.
+  function renderEntityPicker(containerId, selectedKey, onSelect) {
+    var picker = document.getElementById(containerId);
+    picker.innerHTML = '';
+    var options = state.entities.map(function (e) { return { key: e.key, name: e.name }; });
+    options.push({ key: 'total', name: isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined' });
+    options.forEach(function (opt) {
+      var pill = document.createElement('div');
+      pill.className = 'entity-pill' + (selectedKey === opt.key ? ' active' : '');
+      var color = opt.key === 'total' ? 'var(--series-total)' : colorFor(opt.key);
+      if (selectedKey === opt.key) { pill.style.background = color; pill.style.color = '#fff'; }
+      else { pill.style.color = color; }
+      pill.innerHTML = '<span class="dot"></span>' + esc(opt.name);
+      pill.addEventListener('click', function () { onSelect(opt.key); });
+      picker.appendChild(pill);
     });
   }
 
-  function renderExpenseBreakdown() {
+  function renderFyTable(tableId, data, entityKey) {
+    var table = document.getElementById(tableId);
+    var head = '<thead><tr><th style="text-align:left;">Month</th><th>Turnover</th><th>Cost of Sales</th>' +
+      '<th>Gross Profit</th><th>GP%</th><th>Total Expenses</th><th>Net Profit</th></tr></thead>';
+    var rows = data.months.map(function (m) {
+      var r = fyRowFor(m, entityKey);
+      return '<tr' + (r.hasData ? '' : ' class="inactive"') + '>' +
+        '<td style="text-align:left;">' + monthLabel(m.month) + '</td>' +
+        '<td>' + (r.hasData ? money(r.turnover) : '—') + '</td>' +
+        '<td>' + (r.hasData ? money(r.cos) : '—') + '</td>' +
+        '<td>' + (r.hasData ? money(r.gp) : '—') + '</td>' +
+        '<td>' + (r.hasData ? pct(r.gpPercent) : '—') + '</td>' +
+        '<td>' + (r.hasData ? money(r.totalExpenses) : '—') + '</td>' +
+        '<td>' + (r.hasData ? money(r.nettProfit) : '—') + '</td>' +
+        '</tr>';
+    }).join('');
+    var avg = entityKey === 'total' ? data.averages.totals : data.averages.entities[entityKey];
+    var avgRow = '<tr style="font-weight:600; border-top:2px solid var(--border);">' +
+      '<td style="text-align:left;">Monthly average (' + data.monthsReported + ' month' + (data.monthsReported === 1 ? '' : 's') + ' reported)</td>' +
+      '<td>' + money(avg.turnover) + '</td>' + '<td>' + money(avg.cos) + '</td>' + '<td>' + money(avg.gp) + '</td>' +
+      '<td>' + pct(avg.gpPercent) + '</td>' + '<td>' + money(avg.totalExpenses) + '</td>' + '<td>' + money(avg.nettProfit) + '</td>' +
+      '</tr>';
+    table.innerHTML = head + '<tbody>' + rows + avgRow + '</tbody>';
+  }
+
+  // Itemized expense breakdown for the most recently reported month within
+  // the fiscal year/entity currently being viewed — the closest equivalent
+  // to a real P&L's expense line items that this table view can show
+  // without an unwieldy union of categories across many months.
+  function renderExpenseBreakdown(data, entityKey) {
     var sub = document.getElementById('expense-breakdown-sub');
     var chart = document.getElementById('expense-breakdown-chart');
-    var note = document.getElementById('expense-breakdown-note');
-    var d = state.monthData;
-    sub.textContent = monthLabel(state.selectedMonth) + (isPartialEntitySet() ? ' — across your entities' : ' — combined across all entities');
-    note.style.display = salariesHidden() ? '' : 'none';
     chart.innerHTML = '';
 
+    var reportedMonths = data.months.filter(function (m) { return fyRowFor(m, entityKey).hasData; });
+    var latest = reportedMonths.length ? reportedMonths[reportedMonths.length - 1] : null;
+    if (!latest) {
+      sub.textContent = 'No expenses recorded yet this financial year.';
+      chart.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">Nothing to show yet.</p>';
+      return;
+    }
+    sub.textContent = monthLabel(latest.month) + ' — latest reported month' + (isPartialEntitySet() ? ' (across your entities)' : '');
+
     var totals = {};
-    state.entities.forEach(function (ent) {
-      var e = d.entities[ent.key];
-      Object.keys(e.expenses || {}).forEach(function (cat) {
-        totals[cat] = (totals[cat] || 0) + e.expenses[cat];
-      });
+    var entityKeys = entityKey === 'total' ? state.entities.map(function (e) { return e.key; }) : [entityKey];
+    entityKeys.forEach(function (key) {
+      var e = latest.entities[key];
+      if (!e) return;
+      Object.keys(e.expenses || {}).forEach(function (cat) { totals[cat] = (totals[cat] || 0) + e.expenses[cat]; });
     });
     var entries = Object.keys(totals).map(function (k) { return { cat: k, amt: totals[k] }; })
       .filter(function (e) { return e.amt > 0; })
       .sort(function (a, b) { return b.amt - a.amt; });
 
     if (!entries.length) {
-      chart.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No expenses recorded for this month yet.</p>';
+      chart.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No itemized expenses recorded for this month.</p>';
       return;
     }
     var max = entries[0].amt;
@@ -1433,144 +1243,117 @@
     });
   }
 
-  // ================= ENTRY =================
-  function renderEntry() {
-    var picker = document.getElementById('entry-entity-picker');
-    picker.innerHTML = '';
+  // ================= DASHBOARD (current fiscal year to date) =================
+  function loadFinancialYear() {
+    return callApi('getFinancialYear', {}).then(function (res) {
+      if (res.ok) state.financialYear = res.data;
+      return res;
+    });
+  }
+
+  function renderDashboard() {
+    if (!state.financialYear) return;
+    var data = state.financialYear;
+
+    renderKpiGrid(data);
+
+    document.getElementById('fy-table-title').textContent = data.taxYear + ' financial year to date';
+    document.getElementById('fy-table-sub').textContent = data.monthsReported + ' of ' + data.monthsTotal +
+      ' months reported so far (1 March – end of February)' + (isPartialEntitySet() ? ' — across your entities' : '');
+
+    renderEntityPicker('dashboard-entity-picker', state.dashboardEntity, function (key) {
+      state.dashboardEntity = key;
+      renderDashboard();
+    });
+
+    renderFyTable('fy-table', data, state.dashboardEntity);
+    renderExpenseBreakdown(data, state.dashboardEntity);
+  }
+
+  function renderKpiGrid(data) {
+    var grid = document.getElementById('kpi-grid');
+    grid.innerHTML = '';
     state.entities.forEach(function (ent) {
-      var pill = document.createElement('div');
-      pill.className = 'entity-pill' + (state.entryEntity === ent.key ? ' active' : '');
-      if (state.entryEntity === ent.key) {
-        pill.style.background = colorFor(ent.key);
-        pill.style.color = '#fff';
-      } else {
-        pill.style.color = colorFor(ent.key);
+      grid.appendChild(kpiCard(ent.key, ent.name, fyTotals(data, ent.key), false));
+    });
+    var totalLabel = isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined';
+    grid.appendChild(kpiCard('total', totalLabel, fyTotals(data, 'total'), true));
+  }
+
+  function kpiCard(key, name, e, isTotal) {
+    var card = document.createElement('div');
+    card.className = 'kpi-card';
+    card.style.setProperty('--dot', isTotal ? 'var(--series-total)' : colorFor(key));
+
+    var nettPos = e.nettProfit >= 0;
+
+    card.innerHTML =
+      '<div class="kpi-head"><span class="name">' + esc(name) + '</span></div>' +
+      '<div class="kpi-row"><span>Turnover (FYTD)</span><span class="val">' + money(e.turnover) + '</span></div>' +
+      '<div class="kpi-row"><span>Cost of Sales (FYTD)</span><span class="val">' + money(e.cos) + '</span></div>' +
+      '<div class="kpi-row"><span>GP%</span><span class="val">' + pct(e.gpPercent) + '</span></div>' +
+      '<div class="kpi-row"><span>Total Expenses (FYTD)</span><span class="val">' + money(e.totalExpenses) + '</span></div>' +
+      '<div class="kpi-row hero"><span>Nett Profit (FYTD)</span><span class="val ' + (nettPos ? 'pos' : 'neg') + '">' + money(e.nettProfit) + '</span></div>';
+
+    return card;
+  }
+
+  // ================= HISTORY (closed fiscal years) =================
+  function loadFiscalYearsList() {
+    return callApi('getFiscalYears', {}).then(function (res) {
+      if (res.ok) {
+        state.fiscalYears = res.years || [];
+        if (!state.historyYear && state.fiscalYears.length) state.historyYear = state.fiscalYears[0];
       }
-      pill.innerHTML = '<span class="dot"></span>' + esc(ent.name);
-      pill.addEventListener('click', function () {
-        state.entryEntity = ent.key;
-        renderEntry();
-      });
-      picker.appendChild(pill);
+      return res;
     });
-
-    if (!state.monthData || !state.entryEntity) return;
-    var e = state.monthData.entities[state.entryEntity];
-    var ent = state.entities.filter(function (x) { return x.key === state.entryEntity; })[0];
-    if (!e || !ent) return;
-
-    document.getElementById('entry-turnover-sub').textContent = ent.name + ' — ' + monthLabel(state.selectedMonth);
-    document.getElementById('entry-expenses-sub').textContent = ent.name + ' — ' + monthLabel(state.selectedMonth);
-    document.getElementById('entry-turnover').value = e.turnover || '';
-    document.getElementById('entry-cos').value = e.cos || '';
-    document.getElementById('entry-total-expenses-label').textContent = 'Total Expenses' + (salariesHidden() ? ' (excl. hidden)' : '');
-    document.getElementById('entry-nett-label').textContent = 'Nett Profit' + (salariesHidden() ? ' (excl. hidden)' : '');
-    document.getElementById('entry-hidden-note').style.display = salariesHidden() ? '' : 'none';
-    updateEntryPreview();
-
-    var form = document.getElementById('expense-form');
-    form.innerHTML = '';
-    state.categories.filter(function (c) { return c.active; }).forEach(function (cat) {
-      var row = document.createElement('div');
-      row.className = 'exp-row';
-      var val = (e.expenses && e.expenses[cat.name] !== undefined) ? e.expenses[cat.name] : 0;
-      row.innerHTML = '<label>' + esc(cat.name) + '</label><input type="number" step="0.01" data-cat="' + esc(cat.name) + '" value="' + val + '">';
-      form.appendChild(row);
-    });
-    Array.prototype.forEach.call(form.querySelectorAll('input'), function (inp) {
-      inp.addEventListener('input', updateExpensePreview);
-    });
-    updateExpensePreview();
   }
 
-  document.getElementById('entry-turnover').addEventListener('input', updateEntryPreview);
-  document.getElementById('entry-cos').addEventListener('input', updateEntryPreview);
-
-  function updateEntryPreview() {
-    var turnover = Number(document.getElementById('entry-turnover').value) || 0;
-    var cos = Number(document.getElementById('entry-cos').value) || 0;
-    var gp = turnover - cos;
-    var gpp = turnover > 0 ? gp / turnover : 0;
-    var ent = state.entities.filter(function (x) { return x.key === state.entryEntity; })[0];
-    document.getElementById('entry-gp-preview').textContent = money(gp);
-    document.getElementById('entry-gpp-preview').textContent = pct(gpp);
-    document.getElementById('entry-target-preview').textContent = ent ? pct(ent.targetGpPercent) : '—';
-    updateExpensePreview();
+  function loadHistoryYear(startYear) {
+    return callApi('getFinancialYear', { startYear: startYear }).then(function (res) {
+      if (res.ok) state.historyData = res.data;
+      return res;
+    });
   }
 
-  function updateExpensePreview() {
-    var form = document.getElementById('expense-form');
-    var total = 0;
-    Array.prototype.forEach.call(form.querySelectorAll('input'), function (inp) {
-      total += Number(inp.value) || 0;
-    });
-    document.getElementById('entry-total-expenses').textContent = money(total);
-
-    var turnover = Number(document.getElementById('entry-turnover').value) || 0;
-    var cos = Number(document.getElementById('entry-cos').value) || 0;
-    var gp = turnover - cos;
-    var nett = gp - total;
-    var nettEl = document.getElementById('entry-nett-preview');
-    nettEl.textContent = money(nett);
-    nettEl.style.color = nett >= 0 ? 'var(--good)' : 'var(--critical)';
-  }
-
-  document.getElementById('save-turnover-btn').addEventListener('click', function () {
-    var status = document.getElementById('save-turnover-status');
-    var turnover = Number(document.getElementById('entry-turnover').value) || 0;
-    var cos = Number(document.getElementById('entry-cos').value) || 0;
-    flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('saveTurnover', { month: state.selectedMonth, entity: state.entryEntity, turnover: turnover, cos: cos })
-      .then(function (res) {
-        if (res.ok) {
-          flashStatus(status, 'Saved', 'save-status ok', 3000);
-          state.monthData = res.data;
-          if (hasSection('dashboard')) renderDashboard();
-        } else {
-          flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
-        }
-      }).catch(function () {
-        flashStatus(status, 'Network error', 'save-status err', 5000);
-      });
-  });
-
-  document.getElementById('save-expenses-btn').addEventListener('click', function () {
-    var status = document.getElementById('save-expenses-status');
-    var form = document.getElementById('expense-form');
-    var expenses = {};
-    Array.prototype.forEach.call(form.querySelectorAll('input'), function (inp) {
-      expenses[inp.getAttribute('data-cat')] = Number(inp.value) || 0;
-    });
-    flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('saveExpenses', { month: state.selectedMonth, entity: state.entryEntity, expenses: JSON.stringify(expenses) })
-      .then(function (res) {
-        if (res.ok) {
-          flashStatus(status, 'Saved', 'save-status ok', 3000);
-          state.monthData = res.data;
-          if (hasSection('dashboard')) renderDashboard();
-        } else {
-          flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
-        }
-      }).catch(function () {
-        flashStatus(status, 'Network error', 'save-status err', 5000);
-      });
-  });
-
-  // ================= HISTORY =================
   function renderHistory() {
-    var title = document.getElementById('history-title');
-    var sub = document.getElementById('history-sub');
-    title.textContent = isPartialEntitySet() ? 'Monthly history — your entities' : 'Monthly history — combined';
-    sub.textContent = isPartialEntitySet()
-      ? 'Combined across: ' + state.entities.map(function (e) { return e.name; }).join(', ')
-      : '';
-    var table = document.getElementById('history-table');
-    var rows = state.history.slice().reverse();
-    var head = '<thead><tr><th>Month</th><th>Turnover</th><th>COS</th><th>GP</th><th>GP%</th></tr></thead>';
-    var body = '<tbody>' + rows.map(function (h) {
-      return '<tr><td>' + monthLabel(h.month) + '</td><td>' + money(h.totalTurnover) + '</td><td>' + money(h.totalCos) + '</td><td>' + money(h.totalGp) + '</td><td>' + pct(h.totalGpPercent) + '</td></tr>';
-    }).join('') + '</tbody>';
-    table.innerHTML = head + body;
+    var picker = document.getElementById('history-fy-picker');
+    if (!state.fiscalYears.length) {
+      picker.innerHTML = '<option value="">No closed financial years yet</option>';
+      document.getElementById('history-table').innerHTML = '';
+      document.getElementById('history-entity-picker').innerHTML = '';
+      return;
+    }
+    picker.innerHTML = state.fiscalYears.map(function (y) {
+      return '<option value="' + y.startYear + '">' + esc(y.label) + '</option>';
+    }).join('');
+    picker.value = state.historyYear.startYear;
+
+    picker.onchange = function () {
+      var startYear = Number(picker.value);
+      state.historyYear = state.fiscalYears.filter(function (y) { return y.startYear === startYear; })[0];
+      loadHistoryYear(startYear).then(renderHistoryBody);
+    };
+
+    if (!state.historyData || state.historyData.startYear !== state.historyYear.startYear) {
+      loadHistoryYear(state.historyYear.startYear).then(renderHistoryBody);
+    } else {
+      renderHistoryBody();
+    }
+  }
+
+  function renderHistoryBody() {
+    if (!state.historyData) return;
+    var data = state.historyData;
+    document.getElementById('history-sub').textContent = data.taxYear + ' financial year (1 March – end of February)' +
+      (isPartialEntitySet() ? ' — across your entities' : '');
+
+    renderEntityPicker('history-entity-picker', state.historyEntity, function (key) {
+      state.historyEntity = key;
+      renderHistoryBody();
+    });
+
+    renderFyTable('history-table', data, state.historyEntity);
   }
 
   // ================= PAYROLL =================
@@ -1843,6 +1626,7 @@
       return '<option value="' + esc(e.id) + '">' + esc(e.name) + (e.department ? ' — ' + esc(e.department) : '') + '</option>';
     }).join('');
     if (currentEmpVal && activeEmployees.some(function (e) { return e.id === currentEmpVal; })) empSelect.value = currentEmpVal;
+    updateOvertimeCalc();
 
     // Advance balances — only shown for employees who currently owe (or are
     // owed) something; derived server-side from the full adjustment history.
@@ -1871,7 +1655,8 @@
       return '<tr>' +
         '<td style="text-align:left;">' + esc(it.name) + '</td>' +
         '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
-        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + money(it.amount) + '</td>' +
+        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + money(it.amount) +
+        (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') + '</td>' +
         '<td style="text-align:left;">' + esc(it.note) + '</td>' +
         '<td>' + (it.source === 'recurring' ? '<span class="hint" style="margin:0;">recurring</span>' : '') + '</td>' +
         '<td><button class="btn secondary small" data-adj-delete="' + esc(it.id) + '">Delete</button></td>' +
@@ -1959,6 +1744,45 @@
 
   document.getElementById('adj-dept-filter').addEventListener('change', renderAdjustments);
 
+  // Overtime is entered as hours, not a Rand amount: Amount is computed live
+  // (hours x the employee's hourRate, straight 1x — no premium) and shown
+  // read-only, reusing the hourRate/dayRate the Payroll roster already
+  // carries per employee (see buildPayrollData_/apiGetPayslip_ in Code.gs),
+  // so no extra API round-trip is needed just to pick this up. Overtime also
+  // can't be a standing recurring adjustment (hours vary every month), so
+  // that checkbox is hidden while Overtime is selected.
+  function selectedAdjEmployee() {
+    var id = document.getElementById('adj-employee').value;
+    return (state.payroll ? state.payroll.employees : []).filter(function (e) { return e.id === id; })[0] || null;
+  }
+
+  function updateOvertimeCalc() {
+    var type = document.getElementById('adj-type').value;
+    var isOvertime = type === 'Overtime';
+    document.getElementById('adj-hours-field').style.display = isOvertime ? '' : 'none';
+    document.getElementById('adj-recurring-field').style.display = isOvertime ? 'none' : '';
+    var amountInput = document.getElementById('adj-amount');
+    amountInput.readOnly = isOvertime;
+    amountInput.style.opacity = isOvertime ? '0.7' : '';
+    if (!isOvertime) return;
+
+    var emp = selectedAdjEmployee();
+    var hours = Number(document.getElementById('adj-hours').value) || 0;
+    var hint = document.getElementById('adj-hours-rate-hint');
+    if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
+      hint.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
+      amountInput.value = '';
+      return;
+    }
+    var amount = Math.round(hours * emp.hourRate * 100) / 100;
+    amountInput.value = amount ? amount.toFixed(2) : '';
+    hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × ' + money(emp.hourRate) + '/h = ' + money(amount);
+  }
+
+  document.getElementById('adj-type').addEventListener('change', updateOvertimeCalc);
+  document.getElementById('adj-hours').addEventListener('input', updateOvertimeCalc);
+  document.getElementById('adj-employee').addEventListener('change', updateOvertimeCalc);
+
   document.getElementById('adj-add-btn').addEventListener('click', function () {
     var errEl = document.getElementById('adj-error');
     var status = document.getElementById('adj-save-status');
@@ -1967,22 +1791,35 @@
     var type = document.getElementById('adj-type').value;
     var amount = Number(document.getElementById('adj-amount').value);
     var note = document.getElementById('adj-note').value.trim();
-    var recurring = document.getElementById('adj-recurring').checked;
+    var recurring = type === 'Overtime' ? false : document.getElementById('adj-recurring').checked;
+    var hours = null;
 
     if (!employeeId) { errEl.textContent = 'Choose an employee.'; return; }
+
+    if (type === 'Overtime') {
+      hours = Number(document.getElementById('adj-hours').value);
+      if (!hours || hours <= 0) { errEl.textContent = 'Enter the number of overtime hours.'; return; }
+      var emp = selectedAdjEmployee();
+      if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
+        errEl.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
+        return;
+      }
+      amount = Math.round(hours * emp.hourRate * 100) / 100;
+    }
     if (!amount || amount <= 0) { errEl.textContent = 'Enter an amount greater than 0.'; return; }
 
     flashStatus(status, 'Adding…', 'save-status', 0);
     var action = recurring ? 'saveRecurringAdjustment' : 'addAdjustment';
     var params = recurring
       ? { employeeId: employeeId, type: type, amount: amount, note: note, month: state.selectedMonth }
-      : { employeeId: employeeId, month: state.selectedMonth, type: type, amount: amount, note: note };
+      : { employeeId: employeeId, month: state.selectedMonth, type: type, amount: amount, note: note, hours: (hours !== null ? hours : '') };
 
     callApi(action, params).then(function (res) {
       if (res.ok) {
         state.payrollAdjustments = res.payrollAdjustments;
         renderAdjustments();
         document.getElementById('adj-amount').value = '';
+        document.getElementById('adj-hours').value = '';
         document.getElementById('adj-note').value = '';
         document.getElementById('adj-recurring').checked = false;
         flashStatus(status, 'Added', 'save-status ok', 3000);
@@ -2499,49 +2336,9 @@
 
   // ================= SETTINGS (Owner only) =================
   function renderSettings() {
-    var container = document.getElementById('settings-entities');
-    container.innerHTML = '';
-    state.entities.forEach(function (ent) {
-      var row = document.createElement('div');
-      row.className = 'exp-row';
-      row.innerHTML = '<label>' + esc(ent.name) + '</label><input type="number" step="0.1" min="0" max="100" value="' + (ent.targetGpPercent * 100).toFixed(1) + '" data-entity="' + esc(ent.key) + '">';
-      container.appendChild(row);
-      var input = row.querySelector('input');
-      input.addEventListener('change', function () {
-        var pctVal = Number(input.value) / 100;
-        callApi('saveEntitySettings', { entity: ent.key, targetGpPercent: pctVal }).then(function (res) {
-          if (res.ok) { state.entities = res.entities; }
-        });
-      });
-    });
-
-    renderCategorySettings();
     renderCompanySettings();
     renderDepartmentSettings();
   }
-
-  function renderCategorySettings() {
-    var container = document.getElementById('settings-categories');
-    container.innerHTML = '';
-    state.categories.forEach(function (cat, i) {
-      var row = document.createElement('div');
-      row.className = 'cat-row';
-      row.innerHTML =
-        '<input type="text" value="' + esc(cat.name) + '" data-idx="' + i + '" data-field="name">' +
-        '<label class="toggle"><input type="checkbox" ' + (cat.active ? 'checked' : '') + ' data-idx="' + i + '" data-field="active"> Active</label>' +
-        '<label class="toggle sensitive"><input type="checkbox" ' + (cat.sensitive ? 'checked' : '') + ' data-idx="' + i + '" data-field="sensitive"> Sensitive (hide from Staff)</label>';
-      container.appendChild(row);
-    });
-  }
-
-  document.getElementById('add-category-btn').addEventListener('click', function () {
-    var input = document.getElementById('new-category-name');
-    var name = input.value.trim();
-    if (!name) return;
-    state.categories.push({ name: name, active: true, sensitive: false, sortOrder: state.categories.length + 1 });
-    input.value = '';
-    renderCategorySettings();
-  });
 
   function renderCompanySettings() {
     var container = document.getElementById('settings-companies');
@@ -2683,27 +2480,6 @@
     });
   });
 
-  document.getElementById('save-categories-btn').addEventListener('click', function () {
-    var container = document.getElementById('settings-categories');
-    var updated = [];
-    Array.prototype.forEach.call(container.querySelectorAll('.cat-row'), function (row, i) {
-      var nameInput = row.querySelector('[data-field="name"]');
-      var activeInput = row.querySelector('[data-field="active"]');
-      var sensitiveInput = row.querySelector('[data-field="sensitive"]');
-      updated.push({ name: nameInput.value.trim(), active: activeInput.checked, sensitive: sensitiveInput.checked, sortOrder: i + 1 });
-    });
-    var status = document.getElementById('save-categories-status');
-    flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('saveCategories', { categories: JSON.stringify(updated) }).then(function (res) {
-      if (res.ok) {
-        state.categories = res.categories;
-        flashStatus(status, 'Saved', 'save-status ok', 3000);
-        if (hasSection('entry')) renderEntry();
-      } else {
-        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
-      }
-    });
-  });
 
   // ================= USERS (Owner only) =================
   function loadUsers() {
@@ -2729,7 +2505,7 @@
     }).join('');
   }
 
-  function SECTION_KEYS_LOCAL() { return ['dashboard', 'entry', 'history', 'payroll', 'vehicles']; }
+  function SECTION_KEYS_LOCAL() { return ['dashboard', 'history', 'payroll', 'vehicles']; }
 
   function renderUsersTable() {
     var table = document.getElementById('users-table');
