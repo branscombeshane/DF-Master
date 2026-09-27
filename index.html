@@ -551,8 +551,7 @@
       </div>
       <div class="field">
         <label>Department</label>
-        <input type="text" id="payroll-department" list="payroll-dept-list">
-        <datalist id="payroll-dept-list"></datalist>
+        <select id="payroll-department"></select>
       </div>
       <div class="field">
         <label>Employee number</label>
@@ -1064,7 +1063,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.19-multi-company-groups';
+  var FRONTEND_BUILD = '2026-09-27.20-department-dropdown';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1783,14 +1782,12 @@
       deptGrid.appendChild(card);
     });
 
-    var deptList = document.getElementById('payroll-dept-list');
     var deptFilter = document.getElementById('payroll-dept-filter');
-    // The add/edit form's suggestions come from the managed department list
-    // (Settings), so data entry is steered toward the canonical set; the
-    // filter dropdown reflects whatever's actually on the roster today,
-    // including a stray name from before departments were managed here.
-    var managedDeptNames = state.departments.filter(function (d) { return d.active; }).map(function (d) { return d.name; });
-    deptList.innerHTML = managedDeptNames.map(function (d) { return '<option value="' + esc(d) + '">'; }).join('');
+    // The roster's own filter dropdown reflects whatever's actually on the
+    // roster today, including a stray name from before departments were
+    // managed here — separate from the Add/Edit form's own dropdown (see
+    // populateEmployeeDepartmentSelect_), which is steered toward the
+    // managed (Settings) list instead.
     var deptNames = Array.from(new Set(state.payroll.employees.map(function (e) { return e.department; }))).sort();
     var currentFilter = deptFilter.value;
     deptFilter.innerHTML = '<option value="">All departments</option>' +
@@ -2531,13 +2528,36 @@
     URL.revokeObjectURL(url);
   });
 
+  // Builds the Add/Edit employee form's Department dropdown from the
+  // managed (Settings) list — active departments only, since that's the
+  // canonical set data entry should be steered toward. currentValue (when
+  // editing an existing employee) is always included as an option even if
+  // it's inactive or isn't in the managed list at all — e.g. a stray name
+  // from before departments were managed here, or one left over from a
+  // payroll-history import — so opening Edit on that employee never
+  // silently reassigns them to a different department just because their
+  // actual value isn't one of the "official" choices.
+  function populateEmployeeDepartmentSelect_(currentValue) {
+    var sel = document.getElementById('payroll-department');
+    var names = state.departments.filter(function (d) { return d.active; }).map(function (d) { return d.name; });
+    if (currentValue && names.indexOf(currentValue) === -1) names.unshift(currentValue);
+    // A brand new company group starts with zero managed departments — say
+    // so plainly rather than just showing an empty-looking dropdown, since
+    // there's genuinely nothing to pick until at least one is added under
+    // Settings > Employee departments.
+    var placeholder = names.length ? '— choose a department —' : 'No departments yet — add one in Settings first';
+    sel.innerHTML = '<option value="">' + esc(placeholder) + '</option>' +
+      names.map(function (n) { return '<option value="' + esc(n) + '"' + (n === currentValue ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    sel.value = currentValue || '';
+  }
+
   function startEditEmployee(id) {
     var e = state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!e) return;
     document.getElementById('payroll-form-title').textContent = 'Edit employee — ' + e.name;
     document.getElementById('payroll-edit-id').value = e.id;
     document.getElementById('payroll-name').value = e.name;
-    document.getElementById('payroll-department').value = e.department;
+    populateEmployeeDepartmentSelect_(e.department);
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
     document.getElementById('payroll-job-title').value = e.jobTitle || '';
     document.getElementById('payroll-days').value = e.days === null ? '' : e.days;
@@ -2569,7 +2589,7 @@
     document.getElementById('payroll-form-title').textContent = 'Add employee';
     document.getElementById('payroll-edit-id').value = '';
     document.getElementById('payroll-name').value = '';
-    document.getElementById('payroll-department').value = '';
+    populateEmployeeDepartmentSelect_('');
     document.getElementById('payroll-empnum').value = '';
     document.getElementById('payroll-job-title').value = '';
     document.getElementById('payroll-days').value = '';
