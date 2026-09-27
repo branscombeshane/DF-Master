@@ -50,6 +50,8 @@
     --series-jhb:     #2a78d6;
     --series-veg:     #eb6834;
     --series-pyroca:  #1baf7a;
+    --series-cpt:     #c0399f;
+    --series-blendid: #2ea8a8;
     --series-total:   #4a3aa7;
 
     --good:           #0ca30c;
@@ -75,6 +77,8 @@
       --series-jhb:     #3987e5;
       --series-veg:     #d95926;
       --series-pyroca:  #199e70;
+      --series-cpt:     #d452b3;
+      --series-blendid: #3fc1c1;
       --series-total:   #9085e9;
     }
   }
@@ -96,6 +100,8 @@
     --series-jhb:     #3987e5;
     --series-veg:     #d95926;
     --series-pyroca:  #199e70;
+    --series-cpt:     #d452b3;
+    --series-blendid: #3fc1c1;
     --series-total:   #9085e9;
   }
 
@@ -182,6 +188,45 @@
     margin-top: 8px;
     min-height: 16px;
   }
+
+  /* ---------- Company group tile picker ---------- */
+  #group-picker-screen {
+    display: none;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .group-picker-card {
+    width: 100%;
+    max-width: 640px;
+    text-align: center;
+  }
+  .group-picker-card h1 { font-size: 20px; margin: 0 0 4px; }
+  .group-picker-card p.sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 28px; }
+  .group-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+  }
+  .group-tile {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 18px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    transition: transform 0.1s, border-color 0.1s;
+  }
+  .group-tile:hover { border-color: var(--brand); transform: translateY(-2px); }
+  .group-tile .group-tile-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    margin: 0 auto 14px; background: var(--dot, var(--brand));
+  }
+  #group-picker-logout-btn { margin-top: 28px; }
 
   /* ---------- App shell ---------- */
   #app { display: none; min-height: 100vh; }
@@ -434,7 +479,7 @@
 <div id="login-screen">
   <div class="login-card">
     <h1>Daily Fruit Financials</h1>
-    <p class="sub">Daily Fruit JHB &middot; Daily Fruit Veg &middot; Pyroca 79</p>
+    <p class="sub">Daily Fruit Group &middot; Daily Fruit Cpt &middot; Blendid</p>
     <div class="field">
       <label for="login-name">Name</label>
       <input id="login-name" type="text" autocomplete="username" placeholder="Your name">
@@ -445,6 +490,16 @@
     </div>
     <button class="btn block" id="login-btn">Log in</button>
     <div class="error-text" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ==================== COMPANY GROUP TILE PICKER ==================== -->
+<div id="group-picker-screen">
+  <div class="group-picker-card">
+    <h1>Which company?</h1>
+    <p class="sub">Pick a company to see its dashboard, history and payroll. You can switch at any time from the menu bar.</p>
+    <div class="group-tile-grid" id="group-tile-grid"></div>
+    <button class="btn secondary" id="group-picker-logout-btn">Log out</button>
   </div>
 </div>
 
@@ -606,10 +661,11 @@
 <!-- ==================== APP ==================== -->
 <div id="app">
   <header class="topbar">
-    <h1>Daily Fruit Financials</h1>
+    <h1>Daily Fruit Financials<span id="active-group-label" style="display:none; font-weight:400; color:var(--text-secondary); font-size:13px;"></span></h1>
     <nav class="tabs" id="nav-tabs"></nav>
     <div class="topbar-right">
       <span class="who" id="who-label"></span>
+      <button class="btn secondary small" id="switch-group-btn" style="display:none;">Switch company</button>
       <button class="btn secondary small" id="account-btn">Password</button>
       <button class="btn secondary small" id="logout-btn">Log out</button>
     </div>
@@ -905,6 +961,7 @@
       <div class="panel">
         <h2>Import monthly financials</h2>
         <p class="panel-sub">Drag and drop your MonthlyFinancials and/or MonthlyExpenses CSV file(s) below, or click a box to browse for the file — instead of opening Google Sheets or Excel. This writes each row through the app itself, so the Month column is never at risk of Sheets or Excel silently turning "2026-04" into a date — the #1 cause of a month not showing up on Dashboard/History. You can still paste the CSV text directly into a box instead if you prefer. Leave either box empty if you're only importing one of the two.</p>
+        <p class="panel-note">Each row's own EntityKey column says which entity/company it belongs to, so this import isn't affected by which company tile is currently active.</p>
         <div class="form-grid">
           <div class="field">
             <label>MonthlyFinancials CSV</label>
@@ -932,6 +989,7 @@
       <div class="panel">
         <h2>Import payroll history</h2>
         <p class="panel-sub">Backfill past months from a previous payroll system so Payroll History/IRP5 reflects what was actually paid, rather than today's rates recalculated backwards. Drag and drop (or paste) the payroll-history CSV for a month — matched to each person by their Emp No.; anyone not already in Employees gets added automatically, flagged below for you to double-check. This never changes a current employee's pay rate or department — it only records what that month actually paid, and quietly fills in ID number/date of birth/tax number/job title/address ONLY where those are still blank.</p>
+        <p class="panel-note" id="import-payroll-history-group-note"></p>
         <div class="field">
           <label>Payroll history CSV</label>
           <div class="csv-drop-zone" id="import-payroll-dropzone" tabindex="0" role="button">
@@ -1006,11 +1064,26 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.18-import-payroll-history';
+  var FRONTEND_BUILD = '2026-09-27.19-multi-company-groups';
 
-  var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
+  var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
-  var ALL_ENTITIES_COUNT = 3;
+
+  // Actions whose data is partitioned by company group (Daily Fruit Group /
+  // Daily Fruit Cpt / Blendid) — callApi automatically stamps state.companyGroup
+  // onto params for these, so every call site above doesn't have to remember
+  // to do it itself. Login/bootstrap/account-management/vehicles calls are
+  // deliberately left off this list: Users and Vehicles aren't partitioned by
+  // company group (see SETUP.md), and login/bootstrap/changePassword happen
+  // before a group is even chosen.
+  var GROUP_SCOPED_ACTIONS = {
+    getFinancialYear: true, getFiscalYears: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, deleteEmployee: true, setPayrollDone: true,
+    runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true,
+    getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
+    saveRecurringAdjustment: true, deleteRecurringAdjustment: true,
+    saveDepartments: true, saveCompanies: true, saveCategoryAliases: true
+  };
 
   // ================= STATE =================
   var state = {
@@ -1018,10 +1091,22 @@
     name: null,
     role: null,
     sections: [],
+    // companyGroups: every group tile this account can see (from bootstrap).
+    // companyGroup: whichever one is currently selected — everything below
+    // (entities/permittedEntities/departments/companies/categoryAliases) is
+    // filtered down to just that group by applyCompanyGroupFilter(), while
+    // the "all" versions keep bootstrap's full, unfiltered lists across every
+    // group so switching companies never needs a fresh server round trip.
+    companyGroups: [],
+    companyGroup: null,
+    allEntities: [],
     entities: [],
     permittedEntities: [],
+    allDepartments: [],
     departments: [],
+    allCompanies: [],
     companies: [],
+    allCategoryAliases: [],
     categoryAliases: [],
     currentMonth: null,
     currentTaxYear: null,
@@ -1041,6 +1126,11 @@
   // ================= API =================
   function callApi(action, params) {
     params = params || {};
+    // Group-scoped actions get state.companyGroup stamped on automatically
+    // (unless the caller already set one explicitly) — see GROUP_SCOPED_ACTIONS.
+    if (state.companyGroup && GROUP_SCOPED_ACTIONS[action] && params.companyGroup === undefined) {
+      params = Object.assign({ companyGroup: state.companyGroup }, params);
+    }
     if (state.token && action !== 'login') params = Object.assign({ token: state.token }, params);
     var qs = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
@@ -1175,15 +1265,43 @@
     state.name = res.name;
     state.role = res.role;
     state.sections = res.sections || [];
-    state.entities = res.entities || [];
-    state.permittedEntities = res.permittedEntities || [];
-    state.departments = res.departments || [];
-    state.companies = res.companies || [];
-    state.categoryAliases = res.categoryAliases || [];
+    // Full, unfiltered-by-group lists — small enough to send in one go for
+    // every group this account can see, so switching companies later never
+    // needs its own bootstrap round trip. applyCompanyGroupFilter() below
+    // derives the actually-displayed (group-scoped) lists from these.
+    state.companyGroups = res.companyGroups || [];
+    state.allEntities = res.entities || [];
+    state.allDepartments = res.departments || [];
+    state.allCompanies = res.companies || [];
+    state.allCategoryAliases = res.categoryAliases || [];
     state.currentMonth = res.currentMonth;
     state.currentTaxYear = res.currentTaxYear || null;
     state.selectedMonth = state.selectedMonth || res.currentMonth;
     checkBuildMismatch(res.backendBuild);
+  }
+
+  // Narrows the "all" lists bootstrap sent down to just the currently
+  // selected company group — this is what every existing Dashboard/History/
+  // Payroll/Settings render actually reads (state.entities, state.departments,
+  // etc.), so picking a different tile is entirely a client-side re-filter,
+  // no extra server round trip needed.
+  function applyCompanyGroupFilter() {
+    var g = state.companyGroup;
+    state.entities = state.allEntities.filter(function (e) { return e.companyGroup === g; });
+    state.permittedEntities = state.entities.map(function (e) { return e.key; });
+    state.departments = state.allDepartments.filter(function (d) { return d.companyGroup === g; });
+    state.companies = state.allCompanies.filter(function (c) { return c.companyGroup === g; });
+    state.categoryAliases = state.allCategoryAliases.filter(function (a) { return a.companyGroup === g; });
+  }
+
+  // How many entities the WHOLE company group has (regardless of which ones
+  // this account is personally permitted to see) — Daily Fruit Group has 3
+  // (jhb/veg/pyroca), Cpt and Blendid each have exactly 1. Replaces the old
+  // hardcoded ALL_ENTITIES_COUNT === 3, which stopped being true the moment
+  // single-entity groups existed.
+  function totalEntitiesInGroup() {
+    var g = state.companyGroup;
+    return state.allEntities.filter(function (e) { return e.companyGroup === g; }).length;
   }
 
   // Warns loudly if this index.html and the deployed Code.gs are from
@@ -1207,10 +1325,91 @@
 
   function enterApp() {
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
 
     var who = document.getElementById('who-label');
     who.innerHTML = esc(state.name) + ' <span class="role-badge ' + (state.role === 'owner' ? '' : 'staff') + '">' + state.role + '</span>';
+
+    document.getElementById('switch-group-btn').style.display = state.companyGroups.length > 1 ? '' : 'none';
+
+    // One company, no tiles to pick from — just go straight in. Otherwise
+    // (or if a group was already chosen earlier this session, e.g. resuming
+    // after a refresh) show the tile picker / re-enter the chosen group.
+    if (state.companyGroups.length <= 1) {
+      state.companyGroup = state.companyGroups.length ? state.companyGroups[0].key : null;
+      enterGroup();
+    } else if (state.companyGroup) {
+      enterGroup();
+    } else {
+      showGroupPicker();
+    }
+  }
+
+  // ================= COMPANY GROUP TILE PICKER =================
+  function showGroupPicker() {
+    document.getElementById('app').style.display = 'none';
+    var grid = document.getElementById('group-tile-grid');
+    grid.innerHTML = '';
+    state.companyGroups.forEach(function (g) {
+      var tile = document.createElement('div');
+      tile.className = 'group-tile';
+      tile.style.setProperty('--dot', colorForGroup_(g.key));
+      tile.innerHTML = '<div class="group-tile-dot"></div>' + esc(g.name);
+      tile.addEventListener('click', function () {
+        state.companyGroup = g.key;
+        enterGroup();
+      });
+      grid.appendChild(tile);
+    });
+    document.getElementById('group-picker-screen').style.display = 'flex';
+  }
+
+  // Each company group's tile/dot is colored after its first (or only)
+  // entity, so Daily Fruit Group's tile reads as JHB's blue family, Cpt's as
+  // its own pink, Blendid's as its own teal — same palette used everywhere
+  // else that entity is shown.
+  function colorForGroup_(groupKey) {
+    var first = state.allEntities.filter(function (e) { return e.companyGroup === groupKey; })[0];
+    return first ? colorFor(first.key) : getComputedStyle(document.documentElement).getPropertyValue('--brand').trim();
+  }
+
+  document.getElementById('group-picker-logout-btn').addEventListener('click', function () {
+    callApi('logout', {}).catch(function () {}).then(forceLogout);
+  });
+
+  document.getElementById('switch-group-btn').addEventListener('click', function () {
+    // Deliberately keeps the session/token — this is just a tile re-pick,
+    // not a logout, per how Shane asked for this to work ("switching groups
+    // later doesn't require logging out").
+    showGroupPicker();
+  });
+
+  // Enters (or re-enters) whichever group is currently in state.companyGroup
+  // — narrows every list to that group, resets the per-group cached data
+  // from any group previously viewed this session (so a stale Cpt payroll
+  // roster can never flash up while Blendid's is loading, say), then runs
+  // the same load-and-render chain enterApp used to run unconditionally.
+  function enterGroup() {
+    applyCompanyGroupFilter();
+
+    state.financialYear = null;
+    state.dashboardEntity = 'total';
+    state.fiscalYears = [];
+    state.historyYear = null;
+    state.historyData = null;
+    state.historyEntity = 'total';
+    state.payroll = null;
+    state.payrollAdjustments = null;
+
+    document.getElementById('group-picker-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    var activeGroup = state.companyGroups.filter(function (g) { return g.key === state.companyGroup; })[0];
+    var label = document.getElementById('active-group-label');
+    if (activeGroup && state.companyGroups.length > 1) {
+      label.textContent = ' — ' + activeGroup.name;
+      label.style.display = '';
+    } else {
+      label.style.display = 'none';
+    }
 
     renderNav();
     populateMonthPicker();
@@ -1295,7 +1494,7 @@
     };
   }
 
-  function isPartialEntitySet() { return state.entities.length < ALL_ENTITIES_COUNT; }
+  function isPartialEntitySet() { return state.entities.length < totalEntitiesInGroup(); }
   // Shared by Dashboard and History: both show a fiscal-year (1 March – end
   // of February) breakdown, one row per month, for either a single entity
   // or the "total" (combined-across-entities) pseudo-entity, sourced from
@@ -2710,6 +2909,21 @@
     renderCompanySettings();
     renderDepartmentSettings();
     renderCategoryAliasSettings();
+    renderImportPayrollHistoryGroupNote();
+  }
+
+  // Unlike the financials import (each row names its own EntityKey), the
+  // payroll history import matches/creates employees WITHIN whichever
+  // company group is currently active — so it's worth spelling that out
+  // right above the box, especially now there's more than one tile to
+  // possibly have forgotten to switch away from.
+  function renderImportPayrollHistoryGroupNote() {
+    var note = document.getElementById('import-payroll-history-group-note');
+    if (!note) return;
+    var activeGroup = state.companyGroups.filter(function (g) { return g.key === state.companyGroup; })[0];
+    note.textContent = state.companyGroups.length > 1 && activeGroup
+      ? 'This imports into: ' + activeGroup.name + ' — switch companies first (top right) if you meant a different one.'
+      : '';
   }
 
   function renderCompanySettings() {
@@ -2769,7 +2983,13 @@
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveCompanies', { companies: JSON.stringify(updated) }).then(function (res) {
       if (res.ok) {
-        state.companies = res.companies;
+        // The backend returns the FULL registry across every company group
+        // (same shape bootstrap sends) — re-derive just this group's slice
+        // from it rather than assigning it straight to state.companies,
+        // which would otherwise briefly show every other group's companies
+        // too.
+        state.allCompanies = res.companies;
+        applyCompanyGroupFilter();
         // Newly added companies just got a real Id assigned server-side —
         // re-render so Employee departments' dropdowns can link to them.
         renderCompanySettings();
@@ -2829,7 +3049,10 @@
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveDepartments', { departments: JSON.stringify(updated), renames: JSON.stringify(renames) }).then(function (res) {
       if (res.ok) {
-        state.departments = res.departments;
+        // Full cross-group registry, same reasoning as saveCompanies above —
+        // re-derive this group's own slice rather than assigning it whole.
+        state.allDepartments = res.departments;
+        applyCompanyGroupFilter();
         // Re-render immediately so each input's "original name" tracking
         // (data-original-name) is refreshed to match what was just
         // persisted. Without this, the DOM keeps remembering only the name
@@ -2892,7 +3115,10 @@
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('saveCategoryAliases', { categoryAliases: JSON.stringify(updated) }).then(function (res) {
       if (res.ok) {
-        state.categoryAliases = res.categoryAliases;
+        // Same cross-group-registry reasoning as saveCompanies/saveDepartments
+        // above.
+        state.allCategoryAliases = res.categoryAliases;
+        applyCompanyGroupFilter();
         renderCategoryAliasSettings();
         flashStatus(status, 'Saved', 'save-status ok', 3000);
         // Re-render the Dashboard's expense breakdown immediately so a
@@ -3177,9 +3403,17 @@
       return '<label><input type="checkbox" value="' + s + '" class="user-section-cb" style="width:auto;">' + SECTION_LABELS[s] + '</label>';
     }).join('');
 
+    // Uses EVERY entity across every company group this Owner can see — not
+    // just whichever tile happens to be active right now — since a staff
+    // account's permissions are an admin setting independent of which
+    // company Owner is currently viewing.
     var entitiesGrid = document.getElementById('user-entities-grid');
-    entitiesGrid.innerHTML = state.entities.map(function (e) {
-      return '<label><input type="checkbox" value="' + esc(e.key) + '" class="user-entity-cb" style="width:auto;">' + esc(e.name) + '</label>';
+    var groupNameByKey = {};
+    state.companyGroups.forEach(function (g) { groupNameByKey[g.key] = g.name; });
+    var showGroupPrefix = state.companyGroups.length > 1;
+    entitiesGrid.innerHTML = state.allEntities.map(function (e) {
+      var label = showGroupPrefix ? (groupNameByKey[e.companyGroup] || e.companyGroup) + ' — ' + e.name : e.name;
+      return '<label><input type="checkbox" value="' + esc(e.key) + '" class="user-entity-cb" style="width:auto;">' + esc(label) + '</label>';
     }).join('');
   }
 
