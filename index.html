@@ -385,17 +385,35 @@
   #payslip-content table.ps-table td { padding: 6px 4px; border-bottom: 1px solid var(--gridline); }
   #payslip-content .ps-net-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; padding: 10px 0; border-top: 2px solid var(--text-primary); border-bottom: 2px solid var(--text-primary); margin-bottom: 18px; }
   #payslip-content .ps-note { font-size: 11px; color: var(--text-muted); margin-top: 14px; }
+  #payslip-content .ps-print-page:not(:first-child) { margin-top: 30px; padding-top: 30px; border-top: 2px dashed var(--gridline); }
   @media (max-width: 640px) {
     #payslip-content .ps-two-col { flex-direction: column; gap: 4px; }
   }
 
   @media print {
-    body * { visibility: hidden; }
-    #payslip-content, #payslip-content * { visibility: visible; }
-    #payslip-content { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+    /* Hiding everything with visibility:hidden (the old approach) keeps
+       every hidden element's layout height intact — so the full Payroll
+       tab behind the modal (roster table, KPI grid, etc.) was still adding
+       blank pages to the print job even though nothing on them was
+       visible. display:none removes that height entirely, so the printed
+       page count matches the payslip content only. */
+    body > *:not(#payslip-modal) { display: none !important; }
+    #payslip-modal {
+      display: block !important; position: static !important;
+      background: none !important; padding: 0 !important; overflow: visible !important;
+    }
+    #payslip-modal .modal-card {
+      position: static !important; box-shadow: none !important; border: none !important;
+      padding: 0 !important; max-width: none !important; margin: 0 !important;
+      max-height: none !important; overflow: visible !important;
+    }
     #payslip-modal-controls { display: none !important; }
-    .modal-overlay { position: absolute; background: none; padding: 0; }
-    .modal-card { box-shadow: none; border: none; padding: 0; max-width: none; }
+    #payslip-content { width: 100%; padding: 0; }
+    /* Each payslip (single, or one of several selected for a batch print)
+       starts on its own printed page. */
+    .ps-print-page { page-break-after: always; break-after: page; }
+    .ps-print-page:last-child { page-break-after: auto; break-after: auto; }
+    .ps-print-page:not(:first-child) { margin-top: 0; padding-top: 0; border-top: none; }
   }
 
   @media (max-width: 640px) {
@@ -447,9 +465,12 @@
 
 <div class="modal-overlay" id="payslip-modal">
   <div class="modal-card wide">
-    <div id="payslip-modal-controls" style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">
-      <button class="btn secondary small" id="payslip-close-btn">Close</button>
-      <button class="btn small" id="payslip-print-btn">Print / Save as PDF</button>
+    <div id="payslip-modal-controls" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+      <span id="payslip-modal-title" style="font-size:13px; font-weight:600; color:var(--text-secondary);"></span>
+      <div style="display:flex; gap:10px;">
+        <button class="btn secondary small" id="payslip-close-btn">Close</button>
+        <button class="btn small" id="payslip-print-btn">Print / Save as PDF</button>
+      </div>
     </div>
     <div id="payslip-content"></div>
   </div>
@@ -654,6 +675,7 @@
           <input type="text" id="payroll-search" placeholder="Search by name...">
           <select id="payroll-dept-filter"><option value="">All departments</option></select>
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show inactive</label>
+          <button class="btn secondary small" id="payroll-print-selected-btn">Print selected payslips</button>
         </div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="payroll-table"></table>
@@ -934,7 +956,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-26.14-date-employed-picker';
+  var FRONTEND_BUILD = '2026-09-27.15-payslip-print-fix';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1529,6 +1551,18 @@
     renderPayrollTable();
   }
 
+  // Employees ticked for a batch "Print selected payslips" run — kept
+  // outside renderPayrollTable() so the selection survives a re-render
+  // (search/filter changes rebuild the table's HTML from scratch).
+  var selectedPayslipIds = new Set();
+
+  function updatePrintSelectedButton() {
+    var btn = document.getElementById('payroll-print-selected-btn');
+    if (!btn) return;
+    var n = selectedPayslipIds.size;
+    btn.textContent = n > 0 ? 'Print selected payslips (' + n + ')' : 'Print selected payslips';
+  }
+
   function renderPayrollTable() {
     var search = document.getElementById('payroll-search').value.trim().toLowerCase();
     var deptFilterVal = document.getElementById('payroll-dept-filter').value;
@@ -1545,9 +1579,10 @@
     });
 
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th><th></th></tr></thead>';
+    var head = '<thead><tr><th><input type="checkbox" id="payroll-select-all" title="Select all shown"></th><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
+        '<td><input type="checkbox" class="payroll-select-cb" data-select-id="' + esc(e.id) + '" ' + (selectedPayslipIds.has(String(e.id)) ? 'checked' : '') + ' style="width:auto;"></td>' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
@@ -1575,6 +1610,32 @@
         openPayslip(btn.getAttribute('data-payslip-id'));
       });
     });
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-select-id]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-select-id');
+        if (cb.checked) selectedPayslipIds.add(id); else selectedPayslipIds.delete(id);
+        updatePrintSelectedButton();
+        var selectAllCb = document.getElementById('payroll-select-all');
+        if (selectAllCb) selectAllCb.checked = rows.length > 0 && rows.every(function (r) { return selectedPayslipIds.has(String(r.id)); });
+      });
+    });
+
+    // "Select all" only ever applies to the currently filtered/searched
+    // rows shown in the table, not the whole roster — so filtering by
+    // department first and then "select all" does what it looks like it
+    // does.
+    var selectAllCb = table.querySelector('#payroll-select-all');
+    if (selectAllCb) {
+      selectAllCb.checked = rows.length > 0 && rows.every(function (e) { return selectedPayslipIds.has(String(e.id)); });
+      selectAllCb.addEventListener('change', function () {
+        rows.forEach(function (e) {
+          if (selectAllCb.checked) selectedPayslipIds.add(String(e.id)); else selectedPayslipIds.delete(String(e.id));
+        });
+        renderPayrollTable();
+      });
+    }
+    updatePrintSelectedButton();
 
     Array.prototype.forEach.call(table.querySelectorAll('[data-done-id]'), function (cb) {
       cb.addEventListener('change', function () {
@@ -1608,6 +1669,7 @@
   function openPayslip(employeeId) {
     var modal = document.getElementById('payslip-modal');
     var content = document.getElementById('payslip-content');
+    document.getElementById('payslip-modal-title').textContent = '';
     content.innerHTML = '<p class="hint">Loading…</p>';
     modal.classList.add('active');
     callApi('getPayslip', { month: state.selectedMonth, employeeId: employeeId }).then(function (res) {
@@ -1615,9 +1677,34 @@
         content.innerHTML = '<p class="error-text">' + esc(res.error || 'Could not load payslip.') + '</p>';
         return;
       }
-      content.innerHTML = renderPayslipHtml(res);
+      content.innerHTML = '<div class="ps-print-page">' + renderPayslipHtml(res) + '</div>';
     }).catch(function () {
       content.innerHTML = '<p class="error-text">Network error — could not load payslip.</p>';
+    });
+  }
+
+  // Prints/saves one PDF containing every selected employee's payslip, each
+  // starting on its own page (see the .ps-print-page print rule) — so
+  // Shane can tick a department's worth of people in the Roster and print
+  // them all in a single job instead of one at a time.
+  function printSelectedPayslips(ids) {
+    var modal = document.getElementById('payslip-modal');
+    var content = document.getElementById('payslip-content');
+    document.getElementById('payslip-modal-title').textContent = ids.length + ' payslip' + (ids.length === 1 ? '' : 's') + ' selected';
+    content.innerHTML = '<p class="hint">Loading ' + ids.length + ' payslip' + (ids.length === 1 ? '' : 's') + '…</p>';
+    modal.classList.add('active');
+
+    Promise.all(ids.map(function (id) {
+      return callApi('getPayslip', { month: state.selectedMonth, employeeId: id }).then(function (res) {
+        return res;
+      }).catch(function () {
+        return { ok: false, error: 'Network error — could not load this payslip.' };
+      });
+    })).then(function (results) {
+      content.innerHTML = results.map(function (res) {
+        var inner = res.ok ? renderPayslipHtml(res) : '<p class="error-text">' + esc(res.error || 'Could not load this payslip.') + '</p>';
+        return '<div class="ps-print-page">' + inner + '</div>';
+      }).join('');
     });
   }
 
@@ -1765,6 +1852,14 @@
   });
   document.getElementById('payslip-print-btn').addEventListener('click', function () {
     window.print();
+  });
+
+  document.getElementById('payroll-print-selected-btn').addEventListener('click', function () {
+    if (selectedPayslipIds.size === 0) {
+      window.alert('Tick the checkbox next to one or more employees in the Roster first.');
+      return;
+    }
+    printSelectedPayslips(Array.from(selectedPayslipIds));
   });
 
   // ================= PAY ADJUSTMENTS =================
