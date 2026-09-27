@@ -337,6 +337,12 @@
 
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
   .toolbar input[type=text], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
+
+  .csv-drop-zone { border: 2px dashed var(--gridline); border-radius: 10px; padding: 16px 12px; text-align: center; font-size: 12px; color: var(--text-secondary); cursor: pointer; margin-bottom: 8px; transition: background 0.15s, border-color 0.15s; }
+  .csv-drop-zone:hover { border-color: var(--brand); }
+  .csv-drop-zone.dragover { border-color: var(--brand); background: rgba(222,109,42,0.08); }
+  .csv-drop-zone.has-file { border-style: solid; border-color: var(--gridline); color: var(--text-primary); }
+  .csv-drop-zone .csv-drop-zone-clear { display: inline-block; margin-left: 8px; text-decoration: underline; color: var(--brand); cursor: pointer; }
   .toolbar input[type=text] { flex: 1; min-width: 160px; }
 
   .modal-overlay {
@@ -898,14 +904,22 @@
       </div>
       <div class="panel">
         <h2>Import monthly financials</h2>
-        <p class="panel-sub">Paste the MonthlyFinancials and/or MonthlyExpenses CSV text (exactly as given to you in chat, header row and all — it's stripped automatically) straight in here instead of opening Google Sheets or Excel. This writes each row through the app itself, so the Month column is never at risk of Sheets or Excel silently turning "2026-04" into a date — the #1 cause of a month not showing up on Dashboard/History. Leave either box blank if you're only importing one of the two.</p>
+        <p class="panel-sub">Drag and drop your MonthlyFinancials and/or MonthlyExpenses CSV file(s) below, or click a box to browse for the file — instead of opening Google Sheets or Excel. This writes each row through the app itself, so the Month column is never at risk of Sheets or Excel silently turning "2026-04" into a date — the #1 cause of a month not showing up on Dashboard/History. You can still paste the CSV text directly into a box instead if you prefer. Leave either box empty if you're only importing one of the two.</p>
         <div class="form-grid">
           <div class="field">
             <label>MonthlyFinancials CSV</label>
+            <div class="csv-drop-zone" id="import-financials-dropzone" tabindex="0" role="button">
+              <span id="import-financials-dropzone-text">Drag &amp; drop your MonthlyFinancials CSV file here, or click to browse</span>
+            </div>
+            <input type="file" id="import-financials-file" accept=".csv,text/csv" style="display:none;">
             <textarea id="import-financials-csv" rows="8" placeholder="Month,EntityKey,Turnover,COS,SavedAt&#10;2026-04,jhb,2782898.17,1750470.45,2026-09-27" style="width:100%; font-family:monospace; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
           </div>
           <div class="field">
             <label>MonthlyExpenses CSV</label>
+            <div class="csv-drop-zone" id="import-expenses-dropzone" tabindex="0" role="button">
+              <span id="import-expenses-dropzone-text">Drag &amp; drop your MonthlyExpenses CSV file here, or click to browse</span>
+            </div>
+            <input type="file" id="import-expenses-file" accept=".csv,text/csv" style="display:none;">
             <textarea id="import-expenses-csv" rows="8" placeholder="Month,EntityKey,Category,Amount,SavedAt,Sensitive&#10;2026-04,jhb,Accounting,2500.00,2026-09-27,FALSE" style="width:100%; font-family:monospace; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
           </div>
         </div>
@@ -975,7 +989,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.16-import-monthly-data';
+  var FRONTEND_BUILD = '2026-09-27.17-import-drag-drop';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2904,6 +2918,74 @@
     return out;
   }
 
+  // Wires a drag-and-drop (+ click-to-browse) file zone to a textarea: drop
+  // or pick a .csv file and its text lands in the textarea exactly as if it
+  // had been pasted, so everything downstream (header stripping, chunking)
+  // works unchanged. resetCsvDropzone_ below restores the zone's label once
+  // its textarea is cleared after a clean import.
+  function wireCsvDropzone_(zoneId, fileInputId, textareaId, defaultLabel) {
+    var zone = document.getElementById(zoneId);
+    var fileInput = document.getElementById(fileInputId);
+    var textarea = document.getElementById(textareaId);
+    if (!zone || !fileInput || !textarea) return;
+    var textEl = zone.querySelector('span');
+
+    function countLines(text) {
+      return String(text || '').split(/\r\n|\r|\n/).filter(function (l) { return l.trim().length > 0; }).length;
+    }
+
+    function loadFile(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        textarea.value = String(e.target.result || '');
+        zone.classList.add('has-file');
+        textEl.textContent = file.name + ' — ' + countLines(textarea.value) + ' line' + (countLines(textarea.value) === 1 ? '' : 's') + ' loaded (click to choose a different file)';
+      };
+      reader.onerror = function () {
+        zone.classList.remove('has-file');
+        textEl.textContent = 'Could not read that file — click to try again, or paste the CSV text into the box below instead.';
+      };
+      reader.readAsText(file);
+    }
+
+    zone.addEventListener('click', function () { fileInput.click(); });
+    zone.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+    });
+    fileInput.addEventListener('change', function () {
+      loadFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+
+    ['dragenter', 'dragover'].forEach(function (evt) {
+      zone.addEventListener(evt, function (e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('dragover'); });
+    });
+    ['dragleave', 'dragend'].forEach(function (evt) {
+      zone.addEventListener(evt, function (e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('dragover'); });
+    });
+    zone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove('dragover');
+      var dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) loadFile(dt.files[0]);
+    });
+
+    zone._resetCsvDropzone = function () {
+      zone.classList.remove('has-file');
+      textEl.textContent = defaultLabel;
+    };
+  }
+
+  function resetCsvDropzone_(zoneId) {
+    var zone = document.getElementById(zoneId);
+    if (zone && zone._resetCsvDropzone) zone._resetCsvDropzone();
+  }
+
+  wireCsvDropzone_('import-financials-dropzone', 'import-financials-file', 'import-financials-csv', 'Drag & drop your MonthlyFinancials CSV file here, or click to browse');
+  wireCsvDropzone_('import-expenses-dropzone', 'import-expenses-file', 'import-expenses-csv', 'Drag & drop your MonthlyExpenses CSV file here, or click to browse');
+
   // Sends one CSV block's lines to the backend in small sequential chunks,
   // aggregating the imported count / errors / warnings across all of them.
   function importCsvBlock_(sheetKey, lines) {
@@ -2970,8 +3052,8 @@
       // Only clear a box once every one of its rows went in clean — if
       // something failed, leave the text there so it's easy to fix and
       // retry rather than having to re-generate/re-paste the whole thing.
-      if (finLines.length && !fin.errors.length) document.getElementById('import-financials-csv').value = '';
-      if (expLines.length && !exp.errors.length) document.getElementById('import-expenses-csv').value = '';
+      if (finLines.length && !fin.errors.length) { document.getElementById('import-financials-csv').value = ''; resetCsvDropzone_('import-financials-dropzone'); }
+      if (expLines.length && !exp.errors.length) { document.getElementById('import-expenses-csv').value = ''; resetCsvDropzone_('import-expenses-dropzone'); }
 
       // Refresh the Dashboard's current-financial-year figures immediately
       // if they're already loaded, same as the category-alias save above —
