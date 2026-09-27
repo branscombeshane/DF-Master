@@ -896,6 +896,25 @@
           <span class="save-status" id="save-category-aliases-status"></span>
         </div>
       </div>
+      <div class="panel">
+        <h2>Import monthly financials</h2>
+        <p class="panel-sub">Paste the MonthlyFinancials and/or MonthlyExpenses CSV text (exactly as given to you in chat, header row and all — it's stripped automatically) straight in here instead of opening Google Sheets or Excel. This writes each row through the app itself, so the Month column is never at risk of Sheets or Excel silently turning "2026-04" into a date — the #1 cause of a month not showing up on Dashboard/History. Leave either box blank if you're only importing one of the two.</p>
+        <div class="form-grid">
+          <div class="field">
+            <label>MonthlyFinancials CSV</label>
+            <textarea id="import-financials-csv" rows="8" placeholder="Month,EntityKey,Turnover,COS,SavedAt&#10;2026-04,jhb,2782898.17,1750470.45,2026-09-27" style="width:100%; font-family:monospace; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          </div>
+          <div class="field">
+            <label>MonthlyExpenses CSV</label>
+            <textarea id="import-expenses-csv" rows="8" placeholder="Month,EntityKey,Category,Amount,SavedAt,Sensitive&#10;2026-04,jhb,Accounting,2500.00,2026-09-27,FALSE" style="width:100%; font-family:monospace; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          </div>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="import-monthly-data-btn">Import</button>
+          <span class="save-status" id="import-monthly-data-status"></span>
+        </div>
+        <div id="import-monthly-data-result" style="margin-top:12px; font-size:12px;"></div>
+      </div>
     </section>
 
     <!-- ---------- Users (Owner only) ---------- -->
@@ -956,7 +975,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.15-payslip-print-fix';
+  var FRONTEND_BUILD = '2026-09-27.16-import-monthly-data';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2853,6 +2872,117 @@
       }
     }).catch(function () {
       flashStatus(status, 'Network error', 'save-status err', 5000);
+    });
+  });
+
+  // ================= IMPORT MONTHLY FINANCIALS =================
+  // Paste-in replacement for "download the CSV, open it in Sheets/Excel,
+  // paste it under the last row, remember to fix the Month column format"
+  // — every row goes through this app's own API instead, which forces the
+  // Month cell to Plain text before ever writing a value into it, so
+  // Sheets/Excel's "that looks like a date" auto-conversion (the single
+  // most common cause of a month silently not showing up) can't happen.
+  //
+  // callApi is GET-only (see the note at the top of Code.gs on why), so a
+  // big paste is split into small chunks and sent as several sequential
+  // requests rather than one request that could exceed a URL length limit.
+  var IMPORT_CHUNK_SIZE = 25;
+
+  // Strips a leading header row if present, so Shane can paste the CSV
+  // exactly as given to him, header and all, without editing it first.
+  function stripCsvHeader_(text, firstColumnName) {
+    var lines = String(text || '').split(/\r\n|\r|\n/);
+    if (lines.length && lines[0].trim().toLowerCase().indexOf(firstColumnName.toLowerCase() + ',') === 0) {
+      lines = lines.slice(1);
+    }
+    return lines.map(function (l) { return l.trim(); }).filter(function (l) { return l.length > 0; });
+  }
+
+  function chunkArray_(arr, size) {
+    var out = [];
+    for (var i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  // Sends one CSV block's lines to the backend in small sequential chunks,
+  // aggregating the imported count / errors / warnings across all of them.
+  function importCsvBlock_(sheetKey, lines) {
+    var chunks = chunkArray_(lines, IMPORT_CHUNK_SIZE);
+    var totals = { imported: 0, errors: [], warnings: [] };
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk) {
+      chain = chain.then(function () {
+        return callApi('importMonthlyData', { sheet: sheetKey, lines: chunk.join('\n') }).then(function (res) {
+          if (res.ok) {
+            totals.imported += res.imported;
+            totals.errors = totals.errors.concat(res.errors || []);
+            totals.warnings = totals.warnings.concat(res.warnings || []);
+          } else {
+            totals.errors.push(res.error || 'Import failed for this batch.');
+          }
+        }).catch(function () {
+          totals.errors.push('Network error partway through the import — anything before this point was still saved; re-paste the remaining rows once you\'re back online.');
+        });
+      });
+    });
+    return chain.then(function () { return totals; });
+  }
+
+  document.getElementById('import-monthly-data-btn').addEventListener('click', function () {
+    var finLines = stripCsvHeader_(document.getElementById('import-financials-csv').value, 'Month');
+    var expLines = stripCsvHeader_(document.getElementById('import-expenses-csv').value, 'Month');
+    var status = document.getElementById('import-monthly-data-status');
+    var resultEl = document.getElementById('import-monthly-data-result');
+
+    if (!finLines.length && !expLines.length) {
+      resultEl.innerHTML = '<p class="error-text">Paste at least one row into one of the two boxes first.</p>';
+      return;
+    }
+
+    flashStatus(status, 'Importing…', 'save-status', 0);
+    resultEl.innerHTML = '';
+    var btn = document.getElementById('import-monthly-data-btn');
+    btn.disabled = true;
+
+    Promise.all([
+      finLines.length ? importCsvBlock_('financials', finLines) : Promise.resolve({ imported: 0, errors: [], warnings: [] }),
+      expLines.length ? importCsvBlock_('expenses', expLines) : Promise.resolve({ imported: 0, errors: [], warnings: [] })
+    ]).then(function (results) {
+      btn.disabled = false;
+      var fin = results[0], exp = results[1];
+      var allErrors = fin.errors.concat(exp.errors);
+      var allWarnings = fin.warnings.concat(exp.warnings);
+
+      flashStatus(status, allErrors.length ? 'Finished with errors' : 'Imported', allErrors.length ? 'save-status err' : 'save-status ok', 6000);
+
+      var html = '<p>Imported ' + fin.imported + ' MonthlyFinancials row' + (fin.imported === 1 ? '' : 's') +
+        ' and ' + exp.imported + ' MonthlyExpenses row' + (exp.imported === 1 ? '' : 's') + '.</p>';
+      if (allWarnings.length) {
+        html += '<p style="color:var(--text-secondary);">' + allWarnings.length + ' possible duplicate' + (allWarnings.length === 1 ? '' : 's') + ':</p><ul style="margin:4px 0 0 18px; color:var(--text-secondary);">' +
+          allWarnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+      }
+      if (allErrors.length) {
+        html += '<p class="error-text" style="margin-top:8px;">' + allErrors.length + ' row' + (allErrors.length === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
+          allErrors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
+      }
+      resultEl.innerHTML = html;
+
+      // Only clear a box once every one of its rows went in clean — if
+      // something failed, leave the text there so it's easy to fix and
+      // retry rather than having to re-generate/re-paste the whole thing.
+      if (finLines.length && !fin.errors.length) document.getElementById('import-financials-csv').value = '';
+      if (expLines.length && !exp.errors.length) document.getElementById('import-expenses-csv').value = '';
+
+      // Refresh the Dashboard's current-financial-year figures immediately
+      // if they're already loaded, same as the category-alias save above —
+      // History (prior closed years) still needs a reload, since it's
+      // fetched per-year on demand rather than cached up front.
+      if ((fin.imported || exp.imported) && state.financialYear) {
+        loadFinancialYear().then(function () {
+          renderDashboard();
+          renderExpenseBreakdown(state.financialYear, state.dashboardEntity);
+        });
+      }
     });
   });
 
