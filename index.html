@@ -929,6 +929,23 @@
         </div>
         <div id="import-monthly-data-result" style="margin-top:12px; font-size:12px;"></div>
       </div>
+      <div class="panel">
+        <h2>Import payroll history</h2>
+        <p class="panel-sub">Backfill past months from a previous payroll system so Payroll History/IRP5 reflects what was actually paid, rather than today's rates recalculated backwards. Drag and drop (or paste) the payroll-history CSV for a month — matched to each person by their Emp No.; anyone not already in Employees gets added automatically, flagged below for you to double-check. This never changes a current employee's pay rate or department — it only records what that month actually paid, and quietly fills in ID number/date of birth/tax number/job title/address ONLY where those are still blank.</p>
+        <div class="field">
+          <label>Payroll history CSV</label>
+          <div class="csv-drop-zone" id="import-payroll-dropzone" tabindex="0" role="button">
+            <span id="import-payroll-dropzone-text">Drag &amp; drop a payroll history CSV file here, or click to browse</span>
+          </div>
+          <input type="file" id="import-payroll-file" accept=".csv,text/csv" style="display:none;">
+          <textarea id="import-payroll-csv" rows="8" placeholder="Month,EmployeeNumber,Name,Department,IdNumber,DateOfBirth,TaxNumber,JobTitle,Address,BaseAmount,Gross,PAYE,UIFEmployee,UIFEmployer,SDLEmployer,ETI,RetirementDeduction,MedicalContribution,AdjCommission,AdjBonus,AdjOvertime,AdjOther,AdjDeduction,AdjAdvanceGiven,AdjAdvanceRepayment,Net,ImportNotes" style="width:100%; font-family:monospace; font-size:12px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+          <button class="btn" id="import-payroll-history-btn">Import</button>
+          <span class="save-status" id="import-payroll-history-status"></span>
+        </div>
+        <div id="import-payroll-history-result" style="margin-top:12px; font-size:12px;"></div>
+      </div>
     </section>
 
     <!-- ---------- Users (Owner only) ---------- -->
@@ -989,7 +1006,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.17-import-drag-drop';
+  var FRONTEND_BUILD = '2026-09-27.18-import-payroll-history';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3064,6 +3081,80 @@
           renderDashboard();
           renderExpenseBreakdown(state.financialYear, state.dashboardEntity);
         });
+      }
+    });
+  });
+
+  // ================= IMPORT PAYROLL HISTORY =================
+  // Same paste/drop → chunked-GET → import pattern as the financials import
+  // above, but each row is much wider (27 columns, since a payslip carries
+  // both the pay figures and enough employee identity detail to create a
+  // new Employee record when needed), so a smaller chunk size is used to
+  // stay comfortably under any URL length limit.
+  var IMPORT_PAYROLL_CHUNK_SIZE = 10;
+
+  function importPayrollBlock_(lines) {
+    var chunks = chunkArray_(lines, IMPORT_PAYROLL_CHUNK_SIZE);
+    var totals = { imported: 0, errors: [], warnings: [], employeesCreated: [] };
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk) {
+      chain = chain.then(function () {
+        return callApi('importPayrollHistory', { lines: chunk.join('\n') }).then(function (res) {
+          if (res.ok) {
+            totals.imported += res.imported;
+            totals.errors = totals.errors.concat(res.errors || []);
+            totals.warnings = totals.warnings.concat(res.warnings || []);
+            totals.employeesCreated = totals.employeesCreated.concat(res.employeesCreated || []);
+          } else {
+            totals.errors.push(res.error || 'Import failed for this batch.');
+          }
+        }).catch(function () {
+          totals.errors.push('Network error partway through the import — anything before this point was still saved; re-paste the remaining rows once you\'re back online.');
+        });
+      });
+    });
+    return chain.then(function () { return totals; });
+  }
+
+  wireCsvDropzone_('import-payroll-dropzone', 'import-payroll-file', 'import-payroll-csv', 'Drag & drop a payroll history CSV file here, or click to browse');
+
+  document.getElementById('import-payroll-history-btn').addEventListener('click', function () {
+    var lines = stripCsvHeader_(document.getElementById('import-payroll-csv').value, 'Month');
+    var status = document.getElementById('import-payroll-history-status');
+    var resultEl = document.getElementById('import-payroll-history-result');
+
+    if (!lines.length) {
+      resultEl.innerHTML = '<p class="error-text">Paste or drop a payroll history CSV first.</p>';
+      return;
+    }
+
+    flashStatus(status, 'Importing…', 'save-status', 0);
+    resultEl.innerHTML = '';
+    var btn = document.getElementById('import-payroll-history-btn');
+    btn.disabled = true;
+
+    importPayrollBlock_(lines).then(function (totals) {
+      btn.disabled = false;
+      flashStatus(status, totals.errors.length ? 'Finished with errors' : 'Imported', totals.errors.length ? 'save-status err' : 'save-status ok', 6000);
+
+      var html = '<p>Imported ' + totals.imported + ' payroll record' + (totals.imported === 1 ? '' : 's') + '.</p>';
+      if (totals.employeesCreated.length) {
+        html += '<p style="color:var(--text-secondary);">' + totals.employeesCreated.length + ' new employee' + (totals.employeesCreated.length === 1 ? '' : 's') + ' created — please check their details in Payroll:</p><ul style="margin:4px 0 0 18px; color:var(--text-secondary);">' +
+          totals.employeesCreated.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
+      }
+      if (totals.warnings.length) {
+        html += '<p style="color:var(--text-secondary); margin-top:8px;">' + totals.warnings.length + ' warning' + (totals.warnings.length === 1 ? '' : 's') + ':</p><ul style="margin:4px 0 0 18px; color:var(--text-secondary);">' +
+          totals.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+      }
+      if (totals.errors.length) {
+        html += '<p class="error-text" style="margin-top:8px;">' + totals.errors.length + ' row' + (totals.errors.length === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
+          totals.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
+      }
+      resultEl.innerHTML = html;
+
+      if (!totals.errors.length) {
+        document.getElementById('import-payroll-csv').value = '';
+        resetCsvDropzone_('import-payroll-dropzone');
       }
     });
   });
