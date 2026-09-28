@@ -602,8 +602,45 @@
       <label>Notes</label>
       <input type="text" id="payroll-notes">
     </div>
-    <div class="field" id="payroll-active-field" style="display:none;">
-      <label><input type="checkbox" id="payroll-active" checked style="width:auto; margin-right:6px;">Active</label>
+    <div class="field" id="payroll-status-field" style="display:none;">
+      <label>Employment status</label>
+      <div id="payroll-status-display" style="margin:4px 0 8px; font-size:14px;"></div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn secondary small" id="payroll-discharge-btn" style="display:none;">Discharge employee</button>
+        <button type="button" class="btn secondary small" id="payroll-rehire-btn" style="display:none;">Rehire employee</button>
+      </div>
+      <div id="payroll-discharge-fields" style="display:none; margin-top:10px; padding:10px; border:1px solid var(--border); border-radius:6px;">
+        <div class="form-grid">
+          <div class="field">
+            <label>Discharge date</label>
+            <input type="date" id="payroll-discharge-date">
+          </div>
+          <div class="field">
+            <label>Reason (optional)</label>
+            <input type="text" id="payroll-discharge-reason">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn danger small" id="payroll-discharge-confirm-btn">Confirm discharge</button>
+          <button type="button" class="btn secondary small" id="payroll-discharge-cancel-btn">Cancel</button>
+        </div>
+      </div>
+      <div id="payroll-rehire-fields" style="display:none; margin-top:10px; padding:10px; border:1px solid var(--border); border-radius:6px;">
+        <div class="form-grid">
+          <div class="field">
+            <label>Rehire date</label>
+            <input type="date" id="payroll-rehire-date">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn small" id="payroll-rehire-confirm-btn">Confirm rehire</button>
+          <button type="button" class="btn secondary small" id="payroll-rehire-cancel-btn">Cancel</button>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <div class="hint" style="margin-bottom:4px;">Employment history</div>
+        <div id="payroll-employment-history" style="font-size:13px; color:var(--text-secondary);"></div>
+      </div>
     </div>
 
     <h3 style="margin:20px 0 4px; font-size:14px; color:var(--text-muted);">Banking details</h3>
@@ -670,7 +707,6 @@
     <div style="display:flex; gap:10px; align-items:center;">
       <button class="btn" id="payroll-save-btn">Save employee</button>
       <button class="btn secondary" id="payroll-cancel-btn" style="display:none;">Cancel edit</button>
-      <button class="btn danger" id="payroll-delete-btn" style="display:none;">Delete employee</button>
       <span class="save-status" id="payroll-save-status"></span>
     </div>
   </div>
@@ -760,7 +796,7 @@
           <div class="toolbar">
             <input type="text" id="payroll-search" placeholder="Search by name...">
             <select id="payroll-dept-filter"><option value="">All departments</option></select>
-            <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show inactive</label>
+            <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show discharged</label>
             <button class="btn secondary small" id="payroll-print-selected-btn">Print selected payslips</button>
           </div>
           <div style="overflow-x:auto;">
@@ -1114,7 +1150,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-28.22-import-error-counts';
+  var FRONTEND_BUILD = '2026-09-28.23-employee-lifecycle';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1128,7 +1164,7 @@
   // before a group is even chosen.
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
-    getPayroll: true, addEmployee: true, updateEmployee: true, deleteEmployee: true, setPayrollAdjustmentStatus: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     saveRecurringAdjustment: true, deleteRecurringAdjustment: true,
@@ -2702,8 +2738,6 @@
     document.getElementById('payroll-branch-code').value = e.branchCode || '';
     document.getElementById('payroll-account-number').value = e.accountNumber || '';
     document.getElementById('payroll-pay-method').value = e.payMethod || '';
-    document.getElementById('payroll-active').checked = e.active;
-    document.getElementById('payroll-active-field').style.display = '';
     document.getElementById('payroll-id-number').value = e.idNumber || '';
     document.getElementById('payroll-tax-number').value = e.taxNumber || '';
     document.getElementById('payroll-dob').value = e.dateOfBirth || '';
@@ -2713,9 +2747,58 @@
     document.getElementById('payroll-uif-exempt').checked = !!e.uifExempt;
     document.getElementById('payroll-save-btn').textContent = 'Update employee';
     document.getElementById('payroll-cancel-btn').style.display = '';
-    document.getElementById('payroll-delete-btn').style.display = '';
     document.getElementById('payroll-error').textContent = '';
+
+    // Employment status is read-only here — a line plus a single contextual
+    // action (Discharge while employed, Rehire while discharged). Status can
+    // only change through those two actions now, never through Save, so the
+    // record of exactly when each transition happened is never lost.
+    document.getElementById('payroll-status-field').style.display = '';
+    document.getElementById('payroll-status-display').innerHTML = employmentStatusLine_(e);
+    document.getElementById('payroll-discharge-btn').style.display = e.active ? '' : 'none';
+    document.getElementById('payroll-rehire-btn').style.display = e.active ? 'none' : '';
+    document.getElementById('payroll-discharge-fields').style.display = 'none';
+    document.getElementById('payroll-rehire-fields').style.display = 'none';
+    document.getElementById('payroll-employment-history').textContent = 'Loading…';
+    callApi('getEmploymentHistory', { id: e.id }).then(function (res) {
+      if (res.ok && document.getElementById('payroll-edit-id').value === String(e.id)) renderEmploymentHistory_(res.events);
+    });
+
     document.getElementById('employee-modal').classList.add('active');
+  }
+
+  // "Employed since <date>" / "Discharged on <date> — Reason: <text>" — the
+  // read-only status line shown at the top of the Employment status block.
+  function employmentStatusLine_(e) {
+    if (e.active) {
+      return 'Employed' + (e.dateEmployed ? ' since ' + esc(e.dateEmployed) : '') + '.';
+    }
+    var line = 'Discharged' + (e.dateDischarged ? ' on ' + esc(e.dateDischarged) : '') + '.';
+    if (e.dischargeReason) line += ' Reason: ' + esc(e.dischargeReason);
+    return line;
+  }
+
+  var EMPLOYMENT_EVENT_LABELS = { hired: 'Hired', discharged: 'Discharged', rehired: 'Rehired' };
+  function renderEmploymentHistory_(events) {
+    var box = document.getElementById('payroll-employment-history');
+    if (!events || !events.length) { box.textContent = 'No history recorded yet.'; return; }
+    // Events come back oldest-first from the API — show newest first here so
+    // the most recent transition is the one immediately visible.
+    var sorted = events.slice().reverse();
+    box.innerHTML = sorted.map(function (ev) {
+      var label = EMPLOYMENT_EVENT_LABELS[ev.type] || ev.type;
+      var line = '<div>' + esc(label) + (ev.date ? ' — ' + esc(ev.date) : '');
+      if (ev.reason) line += ' (' + esc(ev.reason) + ')';
+      return line + '</div>';
+    }).join('');
+  }
+
+  // Defaults the date inputs in the Discharge/Rehire inline forms to today —
+  // just a convenience starting point, Shane can always change it.
+  function todayDateInputValue_() {
+    var tz = new Date();
+    var y = tz.getFullYear(), m = String(tz.getMonth() + 1).padStart(2, '0'), d = String(tz.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
   }
 
   function resetEmployeeForm() {
@@ -2741,11 +2824,13 @@
     document.getElementById('payroll-medical-contribution').value = '';
     document.getElementById('payroll-retirement').value = '';
     document.getElementById('payroll-uif-exempt').checked = false;
-    document.getElementById('payroll-active-field').style.display = 'none';
     document.getElementById('payroll-save-btn').textContent = 'Save employee';
     document.getElementById('payroll-cancel-btn').style.display = 'none';
-    document.getElementById('payroll-delete-btn').style.display = 'none';
     document.getElementById('payroll-error').textContent = '';
+    document.getElementById('payroll-status-field').style.display = 'none';
+    document.getElementById('payroll-discharge-fields').style.display = 'none';
+    document.getElementById('payroll-rehire-fields').style.display = 'none';
+    document.getElementById('payroll-employment-history').innerHTML = '';
     document.getElementById('employee-modal').classList.remove('active');
   }
 
@@ -2793,7 +2878,7 @@
     var action, extra;
     if (id) {
       action = 'updateEmployee';
-      extra = { id: id, active: document.getElementById('payroll-active').checked };
+      extra = { id: id };
     } else {
       action = 'addEmployee';
       extra = {};
@@ -2819,25 +2904,77 @@
     });
   });
 
-  document.getElementById('payroll-delete-btn').addEventListener('click', function () {
+  // ---- Discharge / Rehire ----
+  // Employees are never deleted (record-keeping) — these two actions are the
+  // only way an employee's status can change, and both log the transition
+  // permanently to EmploymentHistory (see apiDischargeEmployee_/
+  // apiRehireEmployee_ in Code.gs). Each reveals an inline date (+ optional
+  // reason for discharge) form rather than a browser prompt, consistent with
+  // the rest of this modal.
+  document.getElementById('payroll-discharge-btn').addEventListener('click', function () {
+    document.getElementById('payroll-discharge-date').value = todayDateInputValue_();
+    document.getElementById('payroll-discharge-reason').value = '';
+    document.getElementById('payroll-discharge-fields').style.display = '';
+    document.getElementById('payroll-rehire-fields').style.display = 'none';
+  });
+
+  document.getElementById('payroll-discharge-cancel-btn').addEventListener('click', function () {
+    document.getElementById('payroll-discharge-fields').style.display = 'none';
+  });
+
+  document.getElementById('payroll-rehire-btn').addEventListener('click', function () {
+    document.getElementById('payroll-rehire-date').value = todayDateInputValue_();
+    document.getElementById('payroll-rehire-fields').style.display = '';
+    document.getElementById('payroll-discharge-fields').style.display = 'none';
+  });
+
+  document.getElementById('payroll-rehire-cancel-btn').addEventListener('click', function () {
+    document.getElementById('payroll-rehire-fields').style.display = 'none';
+  });
+
+  document.getElementById('payroll-discharge-confirm-btn').addEventListener('click', function () {
     var id = document.getElementById('payroll-edit-id').value;
     if (!id) return;
-    var e = state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
-    var label = e ? e.name : 'this employee';
-    if (!window.confirm('Delete ' + label + '? This permanently removes their record from the roster and cannot be undone.\n\nIf they might come back, consider unticking Active instead of deleting.')) return;
-
+    var date = document.getElementById('payroll-discharge-date').value.trim();
     var errEl = document.getElementById('payroll-error');
+    if (!date) { errEl.textContent = 'Discharge date is required.'; return; }
+    errEl.textContent = '';
+    var reason = document.getElementById('payroll-discharge-reason').value.trim();
     var status = document.getElementById('payroll-save-status');
-    flashStatus(status, 'Deleting…', 'save-status', 0);
-    callApi('deleteEmployee', { id: id }).then(function (res) {
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('dischargeEmployee', { id: id, dateDischarged: date, reason: reason }).then(function (res) {
       if (res.ok) {
-        flashStatus(status, 'Deleted', 'save-status ok', 3000);
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
         state.payroll = res.payroll;
         renderPayroll();
         if (state.payrollAdjustments) renderAdjustments();
-        resetEmployeeForm();
+        startEditEmployee(id); // refresh the modal in place with the new status + history
       } else {
-        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to delete.';
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to discharge employee.';
+      }
+    }).catch(function () {
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
+    });
+  });
+
+  document.getElementById('payroll-rehire-confirm-btn').addEventListener('click', function () {
+    var id = document.getElementById('payroll-edit-id').value;
+    if (!id) return;
+    var date = document.getElementById('payroll-rehire-date').value.trim();
+    var errEl = document.getElementById('payroll-error');
+    if (!date) { errEl.textContent = 'Rehire date is required.'; return; }
+    errEl.textContent = '';
+    var status = document.getElementById('payroll-save-status');
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('rehireEmployee', { id: id, dateEmployed: date }).then(function (res) {
+      if (res.ok) {
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        state.payroll = res.payroll;
+        renderPayroll();
+        if (state.payrollAdjustments) renderAdjustments();
+        startEditEmployee(id); // refresh the modal in place with the new status + history
+      } else {
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to rehire employee.';
       }
     }).catch(function () {
       flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
