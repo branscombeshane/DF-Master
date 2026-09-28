@@ -269,6 +269,25 @@
   .view { display: none; }
   .view.active { display: block; }
 
+  /* Secondary nav bar used inside a top-level tab (currently Payroll) to
+     split it into sub-sections — deliberately styled as an underlined strip
+     rather than the pill-style buttons of nav.tabs, so it reads as "one
+     level down" from the main tab bar above it. */
+  .subtabs { display: flex; gap: 0; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .subtabs button {
+    background: transparent; border: none; cursor: pointer;
+    padding: 10px 4px; margin-right: 20px; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary); border-bottom: 2px solid transparent;
+  }
+  .subtabs button.active { color: var(--text-primary); border-bottom-color: var(--brand); }
+  .payroll-subview { display: none; }
+  .payroll-subview.active { display: block; }
+
+  .status-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; display: inline-block; }
+  .status-badge.not-started { background: var(--gridline); color: var(--text-secondary); }
+  .status-badge.in-progress { background: rgba(250,178,25,0.18); color: var(--warning); }
+  .status-badge.finalized { background: rgba(12,163,12,0.15); color: var(--good); }
+
   .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -714,125 +733,157 @@
         <label for="month-picker" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Payroll month</label>
         <select id="month-picker"></select>
       </div>
-      <div class="kpi-grid" id="payroll-kpi-grid"></div>
 
-      <div class="panel">
-        <h2>Departments</h2>
-        <div class="dept-grid" id="payroll-dept-grid"></div>
-      </div>
+      <nav class="subtabs" id="payroll-subtabs"></nav>
 
-      <div class="panel" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-        <div>
-          <h2 style="margin-bottom:2px;">Employees</h2>
-          <p class="panel-sub" style="margin:0;">Add a new employee, or click Edit on a row in the Roster below.</p>
-        </div>
-        <button class="btn" id="payroll-add-btn">+ Add employee</button>
-      </div>
+      <div class="payroll-subview" id="payroll-sub-dashboard">
+        <div class="kpi-grid" id="payroll-kpi-grid"></div>
 
-      <div class="panel">
-        <h2>Roster</h2>
-        <p class="panel-sub" id="payroll-roster-sub"></p>
-        <div class="toolbar">
-          <input type="text" id="payroll-search" placeholder="Search by name...">
-          <select id="payroll-dept-filter"><option value="">All departments</option></select>
-          <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show inactive</label>
-          <button class="btn secondary small" id="payroll-print-selected-btn">Print selected payslips</button>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="data-table" id="payroll-table"></table>
+        <div class="panel">
+          <h2>Departments</h2>
+          <div class="dept-grid" id="payroll-dept-grid"></div>
         </div>
       </div>
 
-      <div class="panel">
-        <h2>Pay adjustments</h2>
-        <p class="panel-sub" id="adjustments-sub"></p>
-
-        <div id="advance-balances-wrap"></div>
-
-        <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
-        <div class="form-grid">
-          <div class="field">
-            <label>Department</label>
-            <select id="adj-dept-filter"><option value="">All departments</option></select>
-            <div class="hint">Filters the Employee list below — handy for working through payroll one department at a time.</div>
+      <div class="payroll-subview" id="payroll-sub-roster">
+        <div class="panel" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h2 style="margin-bottom:2px;">Employees</h2>
+            <p class="panel-sub" style="margin:0;">Add a new employee, or click Edit on a row in the Roster below.</p>
           </div>
-          <div class="field">
-            <label>Employee</label>
-            <select id="adj-employee"></select>
-          </div>
-          <div class="field">
-            <label>Type</label>
-            <select id="adj-type">
-              <option value="Commission">Commission</option>
-              <option value="Bonus">Bonus</option>
-              <option value="Overtime">Overtime</option>
-              <option value="Other">Other taxable addition</option>
-              <option value="Deduction">Deduction</option>
-              <option value="AdvanceGiven">Advance given</option>
-              <option value="AdvanceRepayment">Advance repayment</option>
-            </select>
-          </div>
-          <div class="field" id="adj-hours-field" style="display:none;">
-            <label>Overtime hours</label>
-            <input type="number" step="0.1" min="0" id="adj-hours">
-            <div class="hint" id="adj-hours-rate-hint"></div>
-          </div>
-          <div class="field" id="adj-amount-field">
-            <label>Amount (R)</label>
-            <input type="number" step="0.01" min="0" id="adj-amount">
-          </div>
-          <div class="field">
-            <label>Note (optional)</label>
-            <input type="text" id="adj-note">
-          </div>
-        </div>
-        <div class="field" id="adj-recurring-field">
-          <label><input type="checkbox" id="adj-recurring" style="width:auto; margin-right:6px;">Repeat every month until I remove it</label>
-          <div class="hint">Ticking this creates a standing amount that's added automatically each month (starting with the one you're viewing now). You can still edit or remove any single month's copy without affecting the others.</div>
-        </div>
-        <div class="error-text" id="adj-error"></div>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn" id="adj-add-btn">Add</button>
-          <span class="save-status" id="adj-save-status"></span>
+          <button class="btn" id="payroll-add-btn">+ Add employee</button>
         </div>
 
-        <div style="overflow-x:auto; margin-top:18px;">
-          <table class="data-table" id="adjustments-table"></table>
-        </div>
-
-        <h3 style="margin:24px 0 4px; font-size:14px; color:var(--text-muted);">Standing / recurring adjustments</h3>
-        <p class="panel-sub" style="margin-top:0;">Every active item here gets a fresh copy added to each new month automatically. Turning one off (or deleting it) only affects months from now on — months it already applied to keep what they got.</p>
-        <div style="overflow-x:auto;">
-          <table class="data-table" id="recurring-adjustments-table"></table>
+        <div class="panel">
+          <h2>Roster</h2>
+          <p class="panel-sub" id="payroll-roster-sub"></p>
+          <div class="toolbar">
+            <input type="text" id="payroll-search" placeholder="Search by name...">
+            <select id="payroll-dept-filter"><option value="">All departments</option></select>
+            <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show inactive</label>
+            <button class="btn secondary small" id="payroll-print-selected-btn">Print selected payslips</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="payroll-table"></table>
+          </div>
         </div>
       </div>
 
-      <div class="panel">
-        <h2>Run Payroll &amp; SARS (EMP201)</h2>
-        <p class="panel-sub" id="payrollrun-sub"></p>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
-          <span class="save-status" id="payrollrun-status"></span>
-        </div>
-        <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
-        <div style="overflow-x:auto; margin-top:16px;">
-          <table class="data-table" id="payslips-table"></table>
+      <div class="payroll-subview" id="payroll-sub-adjustments">
+        <div class="panel">
+          <h2>Pay adjustments</h2>
+          <p class="panel-sub" id="adjustments-sub"></p>
+
+          <div id="advance-balances-wrap"></div>
+
+          <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label>Department</label>
+              <select id="adj-dept-filter"><option value="">All departments</option></select>
+              <div class="hint">Filters the Employee list below — handy for working through payroll one department at a time.</div>
+            </div>
+            <div class="field">
+              <label>Employee</label>
+              <select id="adj-employee"></select>
+            </div>
+            <div class="field">
+              <label>Type</label>
+              <select id="adj-type">
+                <option value="Commission">Commission</option>
+                <option value="Bonus">Bonus</option>
+                <option value="Overtime">Overtime</option>
+                <option value="Other">Other taxable addition</option>
+                <option value="Deduction">Deduction</option>
+                <option value="AdvanceGiven">Advance given</option>
+                <option value="AdvanceRepayment">Advance repayment</option>
+              </select>
+            </div>
+            <div class="field" id="adj-hours-field" style="display:none;">
+              <label>Overtime hours</label>
+              <input type="number" step="0.1" min="0" id="adj-hours">
+              <div class="hint" id="adj-hours-rate-hint"></div>
+            </div>
+            <div class="field" id="adj-amount-field">
+              <label>Amount (R)</label>
+              <input type="number" step="0.01" min="0" id="adj-amount">
+            </div>
+            <div class="field">
+              <label>Note (optional)</label>
+              <input type="text" id="adj-note">
+            </div>
+          </div>
+          <div class="field" id="adj-recurring-field">
+            <label><input type="checkbox" id="adj-recurring" style="width:auto; margin-right:6px;">Repeat every month until I remove it</label>
+            <div class="hint">Ticking this creates a standing amount that's added automatically each month (starting with the one you're viewing now). You can still edit or remove any single month's copy without affecting the others.</div>
+          </div>
+          <div class="error-text" id="adj-error"></div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn" id="adj-add-btn">Add</button>
+            <span class="save-status" id="adj-save-status"></span>
+          </div>
+
+          <div style="overflow-x:auto; margin-top:18px;">
+            <table class="data-table" id="adjustments-table"></table>
+          </div>
+
+          <h3 style="margin:24px 0 4px; font-size:14px; color:var(--text-muted);">Standing / recurring adjustments</h3>
+          <p class="panel-sub" style="margin-top:0;">Every active item here gets a fresh copy added to each new month automatically. Turning one off (or deleting it) only affects months from now on — months it already applied to keep what they got.</p>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="recurring-adjustments-table"></table>
+          </div>
+
+          <div id="adj-emp-status-strip" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-top:24px;">
+            <div>
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; font-weight:700; margin-bottom:4px;">Selected employee</div>
+              <div style="font-size:14px; font-weight:700;" id="adj-emp-status-name">—</div>
+              <div style="margin-top:6px;"><span class="status-badge" id="adj-emp-status-badge"></span></div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <button class="btn secondary" id="adj-save-status-btn">Save (in progress)</button>
+              <button class="btn" id="adj-finalize-status-btn">Finalize</button>
+              <span class="save-status" id="adj-status-save-status"></span>
+            </div>
+          </div>
+          <p class="panel-note">Save marks this employee as in progress; Finalize marks them done and complete for the month. Payroll can only be run once every active employee has been Finalized.</p>
         </div>
       </div>
 
-      <div class="panel">
-        <h2>IRP5 / Tax Certificates</h2>
-        <p class="panel-sub" id="irp5-sub"></p>
-        <div class="hint" style="margin-bottom:12px;">
-          This gives you the correctly-coded figures for each employee's annual certificate — it does not submit anything
-          to SARS or generate a SARS e@syFile bulk-import file. Capture these into e@syFile/eFiling yourself, or hand the
-          CSV to whoever does your SARS submissions.
+      <div class="payroll-subview" id="payroll-sub-reports">
+        <div class="panel">
+          <h2>Run Payroll &amp; SARS (EMP201)</h2>
+          <p class="panel-sub" id="payrollrun-sub"></p>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
+            <span class="save-status" id="payrollrun-status"></span>
+          </div>
+          <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
+          <div style="overflow-x:auto; margin-top:16px;">
+            <table class="data-table" id="payslips-table"></table>
+          </div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <button class="btn secondary" id="irp5-download-btn">Download IRP5 data (CSV)</button>
+
+        <div class="panel">
+          <h2>IRP5 / Tax Certificates</h2>
+          <p class="panel-sub" id="irp5-sub"></p>
+          <div class="hint" style="margin-bottom:12px;">
+            This gives you the correctly-coded figures for each employee's annual certificate — it does not submit anything
+            to SARS or generate a SARS e@syFile bulk-import file. Capture these into e@syFile/eFiling yourself, or hand the
+            CSV to whoever does your SARS submissions.
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn secondary" id="irp5-download-btn">Download IRP5 data (CSV)</button>
+          </div>
+          <div style="overflow-x:auto; margin-top:16px;">
+            <table class="data-table" id="irp5-table"></table>
+          </div>
         </div>
-        <div style="overflow-x:auto; margin-top:16px;">
-          <table class="data-table" id="irp5-table"></table>
+      </div>
+
+      <div class="payroll-subview" id="payroll-sub-casuals">
+        <div class="panel">
+          <h2>Casuals</h2>
+          <p class="panel-sub" style="margin:0;">Casual / day-labour payroll isn't set up yet — this is a placeholder until that workflow is built.</p>
         </div>
       </div>
     </section>
@@ -1063,7 +1114,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-27.20-department-dropdown';
+  var FRONTEND_BUILD = '2026-09-28.21-payroll-subtabs';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1077,7 +1128,7 @@
   // before a group is even chosen.
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
-    getPayroll: true, addEmployee: true, updateEmployee: true, deleteEmployee: true, setPayrollDone: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, deleteEmployee: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     saveRecurringAdjustment: true, deleteRecurringAdjustment: true,
@@ -1118,6 +1169,7 @@
     historyEntity: 'total',
     payroll: null,
     payrollAdjustments: null,
+    payrollSubTab: null,
     users: null,
     activeTab: null
   };
@@ -1411,6 +1463,7 @@
     }
 
     renderNav();
+    if (hasSection('payroll')) renderPayrollSubNav();
     populateMonthPicker();
 
     var chain = Promise.resolve();
@@ -1465,6 +1518,42 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.remove('active'); });
     var view = document.getElementById('view-' + key);
+    if (view) view.classList.add('active');
+  }
+
+  // ================= PAYROLL SUB-TABS =================
+  // A second, smaller nav inside the Payroll tab, parallel to the main
+  // nav.tabs/showTab system above but scoped to #view-payroll's own
+  // sub-sections (.payroll-subview). Built once per login (renderPayrollSubNav
+  // no-ops if the buttons already exist) so the currently-open sub-tab
+  // survives every payroll re-render (month change, Save/Finalize, etc).
+  var PAYROLL_SUBTABS = [
+    { key: 'dashboard', label: 'Dashboard' },
+    { key: 'roster', label: 'Roster' },
+    { key: 'adjustments', label: 'Pay Adjustments' },
+    { key: 'reports', label: 'Reports' },
+    { key: 'casuals', label: 'Casuals' }
+  ];
+  function renderPayrollSubNav() {
+    var nav = document.getElementById('payroll-subtabs');
+    if (!nav || nav.childElementCount) { showPayrollSubTab(state.payrollSubTab || 'dashboard'); return; }
+    PAYROLL_SUBTABS.forEach(function (t) {
+      var btn = document.createElement('button');
+      btn.textContent = t.label;
+      btn.setAttribute('data-subview', t.key);
+      btn.addEventListener('click', function () { showPayrollSubTab(t.key); });
+      nav.appendChild(btn);
+    });
+    showPayrollSubTab(state.payrollSubTab || 'dashboard');
+  }
+  function showPayrollSubTab(key) {
+    if (!key) return;
+    state.payrollSubTab = key;
+    Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs button'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-subview') === key);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.payroll-subview'), function (v) { v.classList.remove('active'); });
+    var view = document.getElementById('payroll-sub-' + key);
     if (view) view.classList.add('active');
   }
 
@@ -1761,7 +1850,7 @@
 
   function renderPayroll() {
     if (!state.payroll) return;
-    document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — tick off each payslip as you process it; resets fresh each month.';
+    document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
     var kpiGrid = document.getElementById('payroll-kpi-grid');
     kpiGrid.innerHTML =
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Headcount (active)</span></div>' +
@@ -1809,6 +1898,18 @@
     btn.textContent = n > 0 ? 'Print selected payslips (' + n + ')' : 'Print selected payslips';
   }
 
+  // Read-only badge for an employee's payroll-prep status this month — set
+  // via the Save/Finalize buttons in Pay Adjustments, not clickable here.
+  var STATUS_BADGE = {
+    not_started: ['not-started', 'Not started'],
+    in_progress: ['in-progress', 'In progress'],
+    finalized: ['finalized', 'Finalized']
+  };
+  function statusBadgeHtml(status) {
+    var m = STATUS_BADGE[status] || STATUS_BADGE.not_started;
+    return '<span class="status-badge ' + m[0] + '">' + m[1] + '</span>';
+  }
+
   function renderPayrollTable() {
     var search = document.getElementById('payroll-search').value.trim().toLowerCase();
     var deptFilterVal = document.getElementById('payroll-dept-filter').value;
@@ -1825,7 +1926,7 @@
     });
 
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th><input type="checkbox" id="payroll-select-all" title="Select all shown"></th><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th>Payslip</th><th></th><th></th></tr></thead>';
+    var head = '<thead><tr><th><input type="checkbox" id="payroll-select-all" title="Select all shown"></th><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th><th></th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
         '<td><input type="checkbox" class="payroll-select-cb" data-select-id="' + esc(e.id) + '" ' + (selectedPayslipIds.has(String(e.id)) ? 'checked' : '') + ' style="width:auto;"></td>' +
@@ -1838,7 +1939,7 @@
         '<td>' + (e.hourRate === null ? '—' : money(e.hourRate)) + '</td>' +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
-        '<td><input type="checkbox" class="payroll-done-cb" data-done-id="' + esc(e.id) + '" ' + (e.done ? 'checked' : '') + ' style="width:auto;"></td>' +
+        '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
         '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
         '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
         '</tr>';
@@ -1882,29 +1983,6 @@
       });
     }
     updatePrintSelectedButton();
-
-    Array.prototype.forEach.call(table.querySelectorAll('[data-done-id]'), function (cb) {
-      cb.addEventListener('change', function () {
-        var id = cb.getAttribute('data-done-id');
-        var done = cb.checked;
-        cb.disabled = true;
-        callApi('setPayrollDone', { month: state.selectedMonth, id: id, done: done }).then(function (res) {
-          cb.disabled = false;
-          if (res.ok) {
-            state.payroll = res.payroll;
-            var kpiGrid = document.getElementById('payroll-kpi-grid');
-            kpiGrid.querySelector('.kpi-card:nth-child(3) .val').textContent = state.payroll.processedCount + ' / ' + state.payroll.headcount;
-          } else {
-            cb.checked = !done;
-            window.alert(res.error || 'Could not update payslip status.');
-          }
-        }).catch(function () {
-          cb.disabled = false;
-          cb.checked = !done;
-          window.alert('Network error — could not update payslip status.');
-        });
-      });
-    });
   }
 
   document.getElementById('payroll-search').addEventListener('input', renderPayrollTable);
@@ -2162,6 +2240,7 @@
     }).join('');
     if (currentEmpVal && activeEmployees.some(function (e) { return e.id === currentEmpVal; })) empSelect.value = currentEmpVal;
     updateOvertimeCalc();
+    updateAdjEmpStatusStrip();
 
     // Advance balances — only shown for employees who currently owe (or are
     // owed) something; derived server-side from the full adjustment history.
@@ -2290,6 +2369,60 @@
     var id = document.getElementById('adj-employee').value;
     return (state.payroll ? state.payroll.employees : []).filter(function (e) { return e.id === id; })[0] || null;
   }
+
+  // Save/Finalize strip at the bottom of Pay Adjustments — scoped to
+  // whichever single employee is currently selected in the Employee dropdown
+  // above, not a bulk action. Save leaves that employee 'in_progress';
+  // Finalize marks them 'finalized', which is what Run Payroll (Reports tab)
+  // checks for every active employee before it will run.
+  function updateAdjEmpStatusStrip() {
+    var emp = selectedAdjEmployee();
+    var nameEl = document.getElementById('adj-emp-status-name');
+    var badgeEl = document.getElementById('adj-emp-status-badge');
+    var saveBtn = document.getElementById('adj-save-status-btn');
+    var finalizeBtn = document.getElementById('adj-finalize-status-btn');
+    if (!emp) {
+      nameEl.textContent = '—';
+      badgeEl.innerHTML = '';
+      saveBtn.disabled = true;
+      finalizeBtn.disabled = true;
+      return;
+    }
+    nameEl.textContent = emp.name;
+    badgeEl.innerHTML = statusBadgeHtml(emp.status);
+    saveBtn.disabled = false;
+    finalizeBtn.disabled = false;
+  }
+
+  function setAdjEmployeeStatus_(status) {
+    var emp = selectedAdjEmployee();
+    if (!emp) return;
+    var statusEl = document.getElementById('adj-status-save-status');
+    document.getElementById('adj-save-status-btn').disabled = true;
+    document.getElementById('adj-finalize-status-btn').disabled = true;
+    flashStatus(statusEl, status === 'finalized' ? 'Finalizing…' : 'Saving…', 'save-status', 0);
+    callApi('setPayrollAdjustmentStatus', { month: state.selectedMonth, id: emp.id, status: status }).then(function (res) {
+      if (res.ok) {
+        state.payroll = res.payroll;
+        state.payrollAdjustments = res.payrollAdjustments;
+        renderPayroll();
+        renderAdjustments();
+        flashStatus(statusEl, status === 'finalized' ? 'Finalized' : 'Saved', 'save-status ok', 3000);
+      } else {
+        document.getElementById('adj-save-status-btn').disabled = false;
+        document.getElementById('adj-finalize-status-btn').disabled = false;
+        flashStatus(statusEl, res.error || 'Could not update status.', 'save-status err', 5000);
+      }
+    }).catch(function () {
+      document.getElementById('adj-save-status-btn').disabled = false;
+      document.getElementById('adj-finalize-status-btn').disabled = false;
+      flashStatus(statusEl, 'Network error — could not update status.', 'save-status err', 5000);
+    });
+  }
+
+  document.getElementById('adj-employee').addEventListener('change', updateAdjEmpStatusStrip);
+  document.getElementById('adj-save-status-btn').addEventListener('click', function () { setAdjEmployeeStatus_('in_progress'); });
+  document.getElementById('adj-finalize-status-btn').addEventListener('click', function () { setAdjEmployeeStatus_('finalized'); });
 
   function updateOvertimeCalc() {
     var type = document.getElementById('adj-type').value;
