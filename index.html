@@ -1114,7 +1114,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-28.21-payroll-subtabs';
+  var FRONTEND_BUILD = '2026-09-28.22-import-error-counts';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3386,7 +3386,15 @@
   // aggregating the imported count / errors / warnings across all of them.
   function importCsvBlock_(sheetKey, lines) {
     var chunks = chunkArray_(lines, IMPORT_CHUNK_SIZE);
-    var totals = { imported: 0, errors: [], warnings: [] };
+    // failedRowCount is tracked separately from errors.length: a per-row
+    // validation error (from res.errors) really is exactly 1 row, but a
+    // whole chunk request failing (network error, or the call rejected
+    // outright) silently drops every row in THAT chunk — up to
+    // IMPORT_CHUNK_SIZE of them — not just the one error message it
+    // produces. Using errors.length for the "N rows could not be imported"
+    // count badly undercounted this case (see index.html history: a single
+    // dropped chunk of 10 payroll rows once displayed as "1 row").
+    var totals = { imported: 0, errors: [], warnings: [], failedRowCount: 0 };
     var chain = Promise.resolve();
     chunks.forEach(function (chunk) {
       chain = chain.then(function () {
@@ -3395,11 +3403,14 @@
             totals.imported += res.imported;
             totals.errors = totals.errors.concat(res.errors || []);
             totals.warnings = totals.warnings.concat(res.warnings || []);
+            totals.failedRowCount += (res.errors || []).length;
           } else {
-            totals.errors.push(res.error || 'Import failed for this batch.');
+            totals.errors.push((res.error || 'Import failed for this batch.') + ' (' + chunk.length + ' row' + (chunk.length === 1 ? '' : 's') + ' in this batch not saved.)');
+            totals.failedRowCount += chunk.length;
           }
         }).catch(function () {
-          totals.errors.push('Network error partway through the import — anything before this point was still saved; re-paste the remaining rows once you\'re back online.');
+          totals.errors.push('Network error sending ' + chunk.length + ' row' + (chunk.length === 1 ? '' : 's') + ' to the server — none of them were saved. The import kept going with the rest of the file; once you\'re back online, re-paste the whole file again (rows already imported will just be safely updated, not duplicated).');
+          totals.failedRowCount += chunk.length;
         });
       });
     });
@@ -3430,6 +3441,7 @@
       var fin = results[0], exp = results[1];
       var allErrors = fin.errors.concat(exp.errors);
       var allWarnings = fin.warnings.concat(exp.warnings);
+      var allFailedRowCount = (fin.failedRowCount || 0) + (exp.failedRowCount || 0);
 
       flashStatus(status, allErrors.length ? 'Finished with errors' : 'Imported', allErrors.length ? 'save-status err' : 'save-status ok', 6000);
 
@@ -3440,7 +3452,7 @@
           allWarnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
       }
       if (allErrors.length) {
-        html += '<p class="error-text" style="margin-top:8px;">' + allErrors.length + ' row' + (allErrors.length === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
+        html += '<p class="error-text" style="margin-top:8px;">' + allFailedRowCount + ' row' + (allFailedRowCount === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
           allErrors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
       }
       resultEl.innerHTML = html;
@@ -3474,7 +3486,11 @@
 
   function importPayrollBlock_(lines) {
     var chunks = chunkArray_(lines, IMPORT_PAYROLL_CHUNK_SIZE);
-    var totals = { imported: 0, errors: [], warnings: [], employeesCreated: [] };
+    // failedRowCount vs. errors.length — see the matching comment on
+    // importCsvBlock_ above; the same undercount applied here too, and with
+    // a chunk size of 10 it was very visible (a single dropped chunk showed
+    // as "1 row could not be imported" when really it was up to 10 people).
+    var totals = { imported: 0, errors: [], warnings: [], employeesCreated: [], failedRowCount: 0 };
     var chain = Promise.resolve();
     chunks.forEach(function (chunk) {
       chain = chain.then(function () {
@@ -3484,11 +3500,14 @@
             totals.errors = totals.errors.concat(res.errors || []);
             totals.warnings = totals.warnings.concat(res.warnings || []);
             totals.employeesCreated = totals.employeesCreated.concat(res.employeesCreated || []);
+            totals.failedRowCount += (res.errors || []).length;
           } else {
-            totals.errors.push(res.error || 'Import failed for this batch.');
+            totals.errors.push((res.error || 'Import failed for this batch.') + ' (' + chunk.length + ' row' + (chunk.length === 1 ? '' : 's') + ' in this batch not saved.)');
+            totals.failedRowCount += chunk.length;
           }
         }).catch(function () {
-          totals.errors.push('Network error partway through the import — anything before this point was still saved; re-paste the remaining rows once you\'re back online.');
+          totals.errors.push('Network error sending ' + chunk.length + ' row' + (chunk.length === 1 ? '' : 's') + ' to the server — none of them were saved. The import kept going with the rest of the file; once you\'re back online, re-paste the whole file again (rows already imported will just be safely updated, not duplicated).');
+          totals.failedRowCount += chunk.length;
         });
       });
     });
@@ -3526,7 +3545,7 @@
           totals.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
       }
       if (totals.errors.length) {
-        html += '<p class="error-text" style="margin-top:8px;">' + totals.errors.length + ' row' + (totals.errors.length === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
+        html += '<p class="error-text" style="margin-top:8px;">' + totals.failedRowCount + ' row' + (totals.failedRowCount === 1 ? '' : 's') + ' could not be imported:</p><ul style="margin:4px 0 0 18px;" class="error-text">' +
           totals.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>';
       }
       resultEl.innerHTML = html;
