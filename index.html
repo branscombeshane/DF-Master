@@ -1496,12 +1496,12 @@
     var label = document.getElementById('active-group-label');
     var appNameLabel = document.getElementById('app-name-label');
     if (activeGroup && state.companyGroups.length > 1) {
-      // Show the current company as the prominent heading, with the app name
-      // demoted to a small secondary suffix (was the other way round).
+      // Show just the current company name -- no "Daily Fruit Financials"
+      // alongside it at all, per Shane's request.
       label.textContent = activeGroup.name;
       label.style.display = '';
-      appNameLabel.textContent = ' — Daily Fruit Financials';
-      appNameLabel.classList.add('app-name-sub');
+      appNameLabel.textContent = '';
+      appNameLabel.classList.remove('app-name-sub');
     } else {
       label.style.display = 'none';
       appNameLabel.textContent = 'Daily Fruit Financials';
