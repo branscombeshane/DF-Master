@@ -2009,8 +2009,8 @@
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
         '<td>' + money(e.amount) + '</td>' +
-        '<td>' + (e.dayRate === null ? '—' : money(e.dayRate)) + '</td>' +
-        '<td>' + (e.hourRate === null ? '—' : money(e.hourRate)) + '</td>' +
+        '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
+        '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>' +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
@@ -2518,7 +2518,12 @@
     }
     var amount = Math.round(hours * emp.hourRate * 100) / 100;
     amountInput.value = amount ? amount.toFixed(2) : '';
-    hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × ' + money(emp.hourRate) + '/h = ' + money(amount);
+    // Both the rate and the total show to the cent here (money() rounds to
+    // whole Rand, which made this look like it didn't add up -- e.g.
+    // "5.7 hrs x R33/h = R190" when the real rate was R33.00-something and
+    // the real total R188.10; the underlying calc above was always exact,
+    // only the display was misleading).
+    hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h = R ' + moneyExact(amount);
   }
 
   document.getElementById('adj-type').addEventListener('change', updateOvertimeCalc);
