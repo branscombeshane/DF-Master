@@ -182,6 +182,22 @@
   .btn.danger { background: var(--critical); }
   .btn.small { padding: 6px 12px; font-size: 12px; }
   .btn.block { width: 100%; }
+  /* Global click-to-loading state — see beginButtonLoading_/endButtonLoading_
+     in the script below. The spinner is a plain child span, so the button's
+     existing flex layout + gap places it before the label with no extra
+     markup or width jump; currentColor keeps it matching whichever text
+     color that button variant (primary/secondary/danger) already uses. */
+  .btn-spinner {
+    width: 13px;
+    height: 13px;
+    flex: none;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    opacity: 0.85;
+    animation: btn-spin 0.6s linear infinite;
+  }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
   .error-text {
     color: var(--critical);
     font-size: 13px;
@@ -1255,7 +1271,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-30.29-note-date-corruption-fix';
+  var FRONTEND_BUILD = '2026-09-30.30-button-loading-states';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1315,6 +1331,61 @@
     activeTab: null
   };
 
+  // ================= GLOBAL BUTTON LOADING STATE =================
+  // Every real action in this app funnels through callApi() below (the one
+  // fetch() call site), so rather than hand-wire a loading indicator into
+  // every individual button's click handler — dozens of them, easy to miss
+  // one — this hooks that one choke point instead: whichever .btn was just
+  // clicked gets a spinner and is disabled for as long as any callApi()
+  // call it triggered is still in flight.
+  //
+  // pendingLoadingButton is deliberately NOT cleared the instant callApi()
+  // reads it — a single click can fire more than one callApi() call (e.g.
+  // "Download selected payslips" loads several payslips in parallel via
+  // Promise.all), and each of those calls needs to correctly attribute
+  // itself to the same button. Instead it's cleared on the next macrotask
+  // (setTimeout 0), which runs only after the click handler's own
+  // synchronous execution (and anything it kicks off synchronously) has
+  // already read it — so a later, unrelated callApi() call (a month-picker
+  // change, a group tile click, anything not from a .btn) never wrongly
+  // inherits a stale button reference.
+  var pendingLoadingButton = null;
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('button.btn');
+    if (!btn || btn.disabled) return;
+    pendingLoadingButton = btn;
+    setTimeout(function () { pendingLoadingButton = null; }, 0);
+  }, true);
+
+  // Reference-counted so N parallel calls from one click only restore the
+  // button once every one of them has settled, not after the first.
+  function beginButtonLoading_(btn) {
+    var n = (Number(btn.dataset.loadingCount) || 0) + 1;
+    btn.dataset.loadingCount = String(n);
+    if (n === 1) {
+      btn.disabled = true;
+      btn.classList.add('is-loading');
+      var spinner = document.createElement('span');
+      spinner.className = 'btn-spinner';
+      btn.insertBefore(spinner, btn.firstChild);
+    }
+  }
+  function endButtonLoading_(btn) {
+    // Restoring is attached via callApi()'s own .finally(), which resolves
+    // BEFORE the calling code's .then()/.catch() runs — so a handler that
+    // deliberately wants a button to stay disabled afterwards (e.g.
+    // Finalize, once an employee is already finalized) still gets the
+    // final say once its own callback runs right after this.
+    if (!btn || !btn.isConnected) return; // removed by a re-render meanwhile — nothing to restore
+    var n = (Number(btn.dataset.loadingCount) || 1) - 1;
+    if (n > 0) { btn.dataset.loadingCount = String(n); return; }
+    delete btn.dataset.loadingCount;
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+    var spinner = btn.querySelector('.btn-spinner');
+    if (spinner) spinner.remove();
+  }
+
   // ================= API =================
   function callApi(action, params) {
     params = params || {};
@@ -1329,6 +1400,8 @@
     }).join('&');
     var url = WEB_APP_URL + '?action=' + encodeURIComponent(action) +
       (qs ? '&' + qs : '') + '&_=' + Date.now();
+    var loadingBtn = pendingLoadingButton;
+    if (loadingBtn) beginButtonLoading_(loadingBtn);
     return fetch(url, { method: 'GET', cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (res) {
@@ -1336,6 +1409,9 @@
           forceLogout();
         }
         return res;
+      })
+      .finally(function () {
+        if (loadingBtn) endButtonLoading_(loadingBtn);
       });
   }
 
