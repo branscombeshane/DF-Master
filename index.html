@@ -552,7 +552,7 @@
       <span id="payslip-modal-title" style="font-size:13px; font-weight:600; color:var(--text-secondary);"></span>
       <div style="display:flex; gap:10px;">
         <button class="btn secondary small" id="payslip-close-btn">Close</button>
-        <button class="btn small" id="payslip-print-btn">Print / Save as PDF</button>
+        <button class="btn small" id="payslip-print-btn">Download PDF</button>
       </div>
     </div>
     <div id="payslip-content"></div>
@@ -852,6 +852,7 @@
                 <option value="Bonus">Bonus</option>
                 <option value="Overtime">Overtime</option>
                 <option value="Other">Other taxable addition</option>
+                <option value="Absent">Absent</option>
                 <option value="Deduction">Deduction</option>
                 <option value="AdvanceRepayment">Advance repayment</option>
               </select>
@@ -861,6 +862,11 @@
               <label>Overtime hours</label>
               <input type="number" step="0.1" min="0" id="adj-hours">
               <div class="hint" id="adj-hours-rate-hint"></div>
+            </div>
+            <div class="field" id="adj-days-field" style="display:none;">
+              <label>Days absent</label>
+              <input type="number" step="0.5" min="0" id="adj-days">
+              <div class="hint" id="adj-days-rate-hint"></div>
             </div>
             <div class="field" id="adj-amount-field">
               <label>Amount (R)</label>
@@ -947,7 +953,7 @@
           <h2>Payslips</h2>
           <p class="panel-sub" id="reports-payslips-sub"></p>
           <div class="toolbar">
-            <button class="btn secondary small" id="reports-print-selected-btn">Print selected payslips</button>
+            <button class="btn secondary small" id="reports-print-selected-btn">Download selected payslips (PDF)</button>
           </div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="reports-payslips-table"></table>
@@ -1228,6 +1234,13 @@
   </main>
 </div>
 
+<!-- PDF generation for payslips/certificates — renders the on-screen
+     .ps-print-page content straight to a downloadable PDF (see
+     downloadPagesAsPdf below) instead of going through the browser's own
+     Print dialog. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <script>
 (function () {
   'use strict';
@@ -1242,7 +1255,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-29.27-advances-redesign';
+  var FRONTEND_BUILD = '2026-09-30.28-absent-adjustment-pdf-downloads';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2053,18 +2066,18 @@
     renderReportsPayslipsTable();
   }
 
-  // Employees ticked for a batch "Print selected payslips" run, in the
-  // Reports > Payslips panel — kept outside its render function so the
-  // selection survives a re-render (month change rebuilds the table's HTML
-  // from scratch). Consolidated here (see Reports tab) rather than living on
-  // the Roster, so there's one place to select and print payslips from.
+  // Employees ticked for a batch payslip download, in the Reports >
+  // Payslips panel — kept outside its render function so the selection
+  // survives a re-render (month change rebuilds the table's HTML from
+  // scratch). Consolidated here (see Reports tab) rather than living on the
+  // Roster, so there's one place to select and download payslips from.
   var selectedPayslipIds = new Set();
 
   function updatePrintSelectedButton() {
     var btn = document.getElementById('reports-print-selected-btn');
     if (!btn) return;
     var n = selectedPayslipIds.size;
-    btn.textContent = n > 0 ? 'Print selected payslips (' + n + ')' : 'Print selected payslips';
+    btn.textContent = n > 0 ? 'Download selected payslips (PDF) (' + n + ')' : 'Download selected payslips (PDF)';
   }
 
   // Read-only badge for an employee's payroll-prep status this month — set
@@ -2131,6 +2144,72 @@
   document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
   document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
 
+  // ================= PDF GENERATION (payslips / certificates) =================
+  // Renders every .ps-print-page currently sitting in #payslip-content to a
+  // real downloadable PDF file, instead of routing through window.print()
+  // and relying on the person to choose "Save as PDF" in the print dialog.
+  // Reuses the exact same on-screen HTML/CSS that used to be printed — each
+  // .ps-print-page is captured with html2canvas (so no layout is
+  // hand-rebuilt in a PDF-drawing API and no risk of drifting from what's
+  // shown on screen) and dropped onto its own A4 page in the PDF, scaled to
+  // fit the page while preserving its aspect ratio.
+  var lastPdfFilenameHint = 'Document';
+
+  // Keeps a download filename filesystem-safe across Windows/macOS — swaps
+  // anything that isn't a letter/number/space/dash/underscore for an
+  // underscore, and collapses repeats.
+  function sanitizeFilenamePart_(s) {
+    return String(s || '').replace(/[^A-Za-z0-9 _-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'Document';
+  }
+
+  function downloadPagesAsPdf(containerEl, filename) {
+    var pages = Array.prototype.slice.call(containerEl.querySelectorAll('.ps-print-page'));
+    if (!pages.length) return Promise.reject(new Error('Nothing to export yet.'));
+    var jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+    if (!jsPDFCtor || !window.html2canvas) return Promise.reject(new Error('PDF library did not load — check your internet connection and try again.'));
+
+    var pageWidthMm = 210, pageHeightMm = 297, marginMm = 8;
+    var usableWidth = pageWidthMm - marginMm * 2;
+    var usableHeight = pageHeightMm - marginMm * 2;
+    var doc = new jsPDFCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+    function renderPage(i) {
+      if (i >= pages.length) {
+        doc.save(filename);
+        return Promise.resolve();
+      }
+      return window.html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', useCORS: true }).then(function (canvas) {
+        var imgWmm = usableWidth;
+        var imgHmm = canvas.height * imgWmm / canvas.width;
+        if (imgHmm > usableHeight) {
+          imgHmm = usableHeight;
+          imgWmm = canvas.width * imgHmm / canvas.height;
+        }
+        var x = marginMm + (usableWidth - imgWmm) / 2;
+        var y = marginMm;
+        if (i > 0) doc.addPage();
+        doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgWmm, imgHmm);
+        return renderPage(i + 1);
+      });
+    }
+    return renderPage(0);
+  }
+
+  document.getElementById('payslip-print-btn').addEventListener('click', function () {
+    var btn = this;
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    downloadPagesAsPdf(document.getElementById('payslip-content'), lastPdfFilenameHint + '.pdf')
+      .catch(function (err) {
+        window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error'));
+      })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  });
+
   // ================= PAYSLIP =================
   function openPayslip(employeeId) {
     var modal = document.getElementById('payslip-modal');
@@ -2143,22 +2222,25 @@
         content.innerHTML = '<p class="error-text">' + esc(res.error || 'Could not load payslip.') + '</p>';
         return;
       }
+      lastPdfFilenameHint = 'Payslip_' + sanitizeFilenamePart_(res.employee.name) + '_' + sanitizeFilenamePart_(res.month);
       content.innerHTML = '<div class="ps-print-page">' + renderPayslipHtml(res) + '</div>';
     }).catch(function () {
       content.innerHTML = '<p class="error-text">Network error — could not load payslip.</p>';
     });
   }
 
-  // Prints/saves one PDF containing every selected employee's payslip, each
-  // starting on its own page (see the .ps-print-page print rule) — so
-  // Shane can tick a department's worth of people in the Roster and print
-  // them all in a single job instead of one at a time.
+  // Loads every selected employee's payslip into one modal, each starting
+  // on its own page — "Download PDF" in the modal then bundles them all
+  // into a single downloadable PDF (see downloadPagesAsPdf) instead of one
+  // at a time, so Shane can tick a department's worth of people in Reports
+  // and download them all in one file.
   function printSelectedPayslips(ids) {
     var modal = document.getElementById('payslip-modal');
     var content = document.getElementById('payslip-content');
     document.getElementById('payslip-modal-title').textContent = ids.length + ' payslip' + (ids.length === 1 ? '' : 's') + ' selected';
     content.innerHTML = '<p class="hint">Loading ' + ids.length + ' payslip' + (ids.length === 1 ? '' : 's') + '…</p>';
     modal.classList.add('active');
+    lastPdfFilenameHint = 'Payslips_' + sanitizeFilenamePart_(state.selectedMonth);
 
     Promise.all(ids.map(function (id) {
       return callApi('getPayslip', { month: state.selectedMonth, employeeId: id }).then(function (res) {
@@ -2211,12 +2293,23 @@
     }
     overtimeLabel = withNote(overtimeLabel, 'Overtime', notesByType);
 
+    // Absent shows as its own Earnings-table row, amount negative, so it's
+    // visible as a reduction to gross pay rather than looking like a
+    // post-tax deduction (see computeEmployeePayroll_ — it comes off Gross
+    // itself, before tax, unlike Deduction/AdvanceRepayment below).
+    var absentLabel = 'Absent';
+    if (c.absentDays) {
+      absentLabel = 'Absent (' + c.absentDays + (c.absentDays === 1 ? ' day' : ' days') + ')';
+    }
+    absentLabel = withNote(absentLabel, 'Absent', notesByType);
+
     var earningsRows = [
       ['Basic Salary', c.baseAmount],
       c.adjustments.Commission ? [withNote('Commission', 'Commission', notesByType), c.adjustments.Commission] : null,
       c.adjustments.Bonus ? [withNote('Bonus', 'Bonus', notesByType), c.adjustments.Bonus] : null,
       c.adjustments.Overtime ? [overtimeLabel, c.adjustments.Overtime] : null,
-      c.adjustments.Other ? [withNote('Other taxable addition', 'Other', notesByType), c.adjustments.Other] : null
+      c.adjustments.Other ? [withNote('Other taxable addition', 'Other', notesByType), c.adjustments.Other] : null,
+      c.adjustments.Absent ? [absentLabel, -c.adjustments.Absent] : null
     ].filter(Boolean);
 
     var deductionRows = [
@@ -2325,18 +2418,15 @@
   document.getElementById('payslip-close-btn').addEventListener('click', function () {
     document.getElementById('payslip-modal').classList.remove('active');
   });
-  document.getElementById('payslip-print-btn').addEventListener('click', function () {
-    window.print();
-  });
 
   // ================= PAY ADJUSTMENTS =================
   var ADJ_TYPE_LABELS = {
     Commission: 'Commission', Bonus: 'Bonus', Overtime: 'Overtime', Other: 'Other taxable addition',
-    Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
+    Absent: 'Absent', Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
   };
   var ADJ_TYPE_SIGN = {
     Commission: '+', Bonus: '+', Overtime: '+', Other: '+',
-    Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
+    Absent: '−', Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
   };
 
   function loadAdjustments() {
@@ -2353,7 +2443,7 @@
     if (!state.payrollAdjustments) return;
     var pa = state.payrollAdjustments;
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
-      ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; deductions and advances only affect Net pay.';
+      ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent comes off Gross before tax; deductions and advances only affect Net pay.';
 
     // Department filter — lets Shane work through payroll one department at
     // a time instead of hunting for each name in one long combined list.
@@ -2382,7 +2472,7 @@
       return '<option value="' + esc(e.id) + '">' + esc(e.name) + (e.department ? ' — ' + esc(e.department) : '') + '</option>';
     }).join('');
     if (currentEmpVal && activeEmployees.some(function (e) { return e.id === currentEmpVal; })) empSelect.value = currentEmpVal;
-    updateOvertimeCalc();
+    updateAdjRateCalc();
     updateAdjEmpStatusStrip();
 
     // Advance balances — only shown for employees who currently owe (or are
@@ -2412,7 +2502,8 @@
         '<td style="text-align:left;">' + esc(it.name) + '</td>' +
         '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
         '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount) +
-        (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') + '</td>' +
+        (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') +
+        (it.type === 'Absent' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')</span>' : '') + '</td>' +
         '<td style="text-align:left;">' + esc(it.note) + '</td>' +
         '<td><button class="btn secondary small" data-adj-delete="' + esc(it.id) + '">Delete</button></td>' +
         '</tr>';
@@ -2614,36 +2705,62 @@
   document.getElementById('adj-save-status-btn').addEventListener('click', function () { setAdjEmployeeStatus_('in_progress'); });
   document.getElementById('adj-finalize-status-btn').addEventListener('click', function () { setAdjEmployeeStatus_('finalized'); });
 
-  function updateOvertimeCalc() {
+  // Handles both rate-based adjustment types: Overtime (hours × hourRate)
+  // and Absent (days × dayRate) — same pattern, just a different rate and
+  // input field. Amount is always computed here and sent to the backend
+  // already-calculated; the backend never re-derives it (see
+  // apiAddAdjustment_'s comment on why a stale/missing rate can't silently
+  // block a payroll run).
+  function updateAdjRateCalc() {
     var type = document.getElementById('adj-type').value;
     var isOvertime = type === 'Overtime';
+    var isAbsent = type === 'Absent';
     document.getElementById('adj-hours-field').style.display = isOvertime ? '' : 'none';
+    document.getElementById('adj-days-field').style.display = isAbsent ? '' : 'none';
     var amountInput = document.getElementById('adj-amount');
-    amountInput.readOnly = isOvertime;
-    amountInput.style.opacity = isOvertime ? '0.7' : '';
-    if (!isOvertime) return;
+    amountInput.readOnly = isOvertime || isAbsent;
+    amountInput.style.opacity = (isOvertime || isAbsent) ? '0.7' : '';
+    if (!isOvertime && !isAbsent) return;
 
     var emp = selectedAdjEmployee();
-    var hours = Number(document.getElementById('adj-hours').value) || 0;
-    var hint = document.getElementById('adj-hours-rate-hint');
-    if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
-      hint.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
+
+    if (isOvertime) {
+      var hours = Number(document.getElementById('adj-hours').value) || 0;
+      var hint = document.getElementById('adj-hours-rate-hint');
+      if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
+        hint.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
+        amountInput.value = '';
+        return;
+      }
+      var amount = Math.round(hours * emp.hourRate * 100) / 100;
+      amountInput.value = amount ? amount.toFixed(2) : '';
+      // Both the rate and the total show to the cent here (money() rounds to
+      // whole Rand, which made this look like it didn't add up -- e.g.
+      // "5.7 hrs x R33/h = R190" when the real rate was R33.00-something and
+      // the real total R188.10; the underlying calc above was always exact,
+      // only the display was misleading).
+      hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h = R ' + moneyExact(amount);
+      return;
+    }
+
+    // Absent — reduces Gross itself before tax (see computeEmployeePayroll_),
+    // not a net-pay deduction like Deduction/AdvanceRepayment.
+    var days = Number(document.getElementById('adj-days').value) || 0;
+    var dhint = document.getElementById('adj-days-rate-hint');
+    if (!emp || emp.dayRate === null || emp.dayRate === undefined) {
+      dhint.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
       amountInput.value = '';
       return;
     }
-    var amount = Math.round(hours * emp.hourRate * 100) / 100;
-    amountInput.value = amount ? amount.toFixed(2) : '';
-    // Both the rate and the total show to the cent here (money() rounds to
-    // whole Rand, which made this look like it didn't add up -- e.g.
-    // "5.7 hrs x R33/h = R190" when the real rate was R33.00-something and
-    // the real total R188.10; the underlying calc above was always exact,
-    // only the display was misleading).
-    hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h = R ' + moneyExact(amount);
+    var dAmount = Math.round(days * emp.dayRate * 100) / 100;
+    amountInput.value = dAmount ? dAmount.toFixed(2) : '';
+    dhint.textContent = days + ' day' + (days === 1 ? '' : 's') + ' × R ' + moneyExact(emp.dayRate) + '/day = R ' + moneyExact(dAmount) + ' — comes off Gross before tax.';
   }
 
-  document.getElementById('adj-type').addEventListener('change', updateOvertimeCalc);
-  document.getElementById('adj-hours').addEventListener('input', updateOvertimeCalc);
-  document.getElementById('adj-employee').addEventListener('change', updateOvertimeCalc);
+  document.getElementById('adj-type').addEventListener('change', updateAdjRateCalc);
+  document.getElementById('adj-hours').addEventListener('input', updateAdjRateCalc);
+  document.getElementById('adj-days').addEventListener('input', updateAdjRateCalc);
+  document.getElementById('adj-employee').addEventListener('change', updateAdjRateCalc);
 
   document.getElementById('adj-add-btn').addEventListener('click', function () {
     var errEl = document.getElementById('adj-error');
@@ -2666,6 +2783,18 @@
         return;
       }
       amount = Math.round(hours * emp.hourRate * 100) / 100;
+    } else if (type === 'Absent') {
+      // Sent under the same "hours" param the backend already stores
+      // Overtime's hour count in — for an Absent row it holds the day
+      // count instead (see apiAddAdjustment_/summarizeAdjustments_).
+      hours = Number(document.getElementById('adj-days').value);
+      if (!hours || hours <= 0) { errEl.textContent = 'Enter the number of absent days.'; return; }
+      var absEmp = selectedAdjEmployee();
+      if (!absEmp || absEmp.dayRate === null || absEmp.dayRate === undefined) {
+        errEl.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
+        return;
+      }
+      amount = Math.round(hours * absEmp.dayRate * 100) / 100;
     }
     if (!amount || amount <= 0) { errEl.textContent = 'Enter an amount greater than 0.'; return; }
 
@@ -2678,6 +2807,7 @@
         renderAdjustments();
         document.getElementById('adj-amount').value = '';
         document.getElementById('adj-hours').value = '';
+        document.getElementById('adj-days').value = '';
         document.getElementById('adj-note').value = '';
         flashStatus(status, 'Added', 'save-status ok', 3000);
       } else {
@@ -2777,14 +2907,14 @@
 
   // ================= REPORTS > PAYSLIPS =================
   // Checkbox table of every active employee for the selected month, moved
-  // here from the Roster so payslip printing lives in one place (Reports)
+  // here from the Roster so payslip downloads live in one place (Reports)
   // alongside EMP201 and IRP5/IT3(a) rather than scattered across tabs.
   function renderReportsPayslipsTable() {
     if (!state.payroll) return;
     var rows = state.payroll.employees.filter(function (e) { return e.active; })
       .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) +
-      ' — tick employees below, then Print selected payslips (opens one combined print job).';
+      ' — tick employees below, then Download selected payslips (bundles them into one PDF).';
 
     var table = document.getElementById('reports-payslips-table');
     var head = '<thead><tr><th><input type="checkbox" id="reports-select-all" title="Select all shown"></th>' +
@@ -2845,6 +2975,7 @@
     if (ps.adjBonus) parts.push('+Bonus ' + money(ps.adjBonus));
     if (ps.adjOvertime) parts.push('+Overtime ' + money(ps.adjOvertime));
     if (ps.adjOther) parts.push('+Other ' + money(ps.adjOther));
+    if (ps.adjAbsent) parts.push('−Absent ' + money(ps.adjAbsent));
     if (ps.adjDeduction) parts.push('−Deduction ' + money(ps.adjDeduction));
     if (ps.adjAdvanceGiven) parts.push('+Advance ' + money(ps.adjAdvanceGiven));
     if (ps.adjAdvanceRepayment) parts.push('−Advance repay ' + money(ps.adjAdvanceRepayment));
@@ -2902,7 +3033,7 @@
         '<td>' + money(c.sdlContribution_4142) + '</td>' +
         '<td>' + money(c.retirementContribution_4001) + '</td>' +
         '<td>' + money(c.medicalContribution_4005) + '</td>' +
-        '<td><button class="btn secondary small" data-irp5-cert-id="' + esc(c.employeeId) + '">Print</button></td>' +
+        '<td><button class="btn secondary small" data-irp5-cert-id="' + esc(c.employeeId) + '">PDF</button></td>' +
         '</tr>';
     }).join('') : '<tr><td colspan="12" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
@@ -2915,12 +3046,14 @@
     });
   }
 
-  // Reuses the payslip print modal to show/print one employee's IRP5/IT3(a)
+  // Reuses the payslip modal to show/download one employee's IRP5/IT3(a)
   // certificate — a simple SARS-coded summary, not a full replica of the
-  // official SARS certificate layout.
+  // official SARS certificate layout. "Download PDF" in the modal saves it
+  // via the same downloadPagesAsPdf helper the payslips use.
   function openIrp5Certificate(c, taxYear) {
     var modal = document.getElementById('payslip-modal');
     document.getElementById('payslip-modal-title').textContent = c.certificateType + ' — ' + c.name;
+    lastPdfFilenameHint = sanitizeFilenamePart_(c.certificateType) + '_' + sanitizeFilenamePart_(c.name) + '_' + sanitizeFilenamePart_(taxYear);
     document.getElementById('payslip-content').innerHTML = '<div class="ps-print-page">' +
       '<div class="ps-header"><div class="ps-company">' + esc(c.certificateType) + ' Certificate</div>' +
       '<div class="ps-doc-period">Tax year ' + esc(taxYear) + '</div></div>' +
