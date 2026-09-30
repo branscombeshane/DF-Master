@@ -2411,7 +2411,7 @@
       return '<tr>' +
         '<td style="text-align:left;">' + esc(it.name) + '</td>' +
         '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
-        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + money(it.amount) +
+        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount) +
         (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') + '</td>' +
         '<td style="text-align:left;">' + esc(it.note) + '</td>' +
         '<td><button class="btn secondary small" data-adj-delete="' + esc(it.id) + '">Delete</button></td>' +
