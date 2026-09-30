@@ -597,9 +597,16 @@
         <input type="date" id="payroll-date">
       </div>
     </div>
-    <div class="field">
-      <label>Address</label>
-      <input type="text" id="payroll-address">
+    <div class="form-grid">
+      <div class="field">
+        <label>Contact number *</label>
+        <input type="text" id="payroll-contact-number">
+        <div class="hint">Required — feeds SARS field 3136 on the Employer Reconciliation export.</div>
+      </div>
+      <div class="field">
+        <label>Address</label>
+        <input type="text" id="payroll-address">
+      </div>
     </div>
     <div class="field">
       <label>Notes</label>
@@ -688,6 +695,11 @@
         <input type="text" id="payroll-dob" placeholder="YYYY-MM-DD">
       </div>
       <div class="field">
+        <label>ID/passport country</label>
+        <input type="text" id="payroll-id-passport-country" placeholder="e.g. ZWE, MWI">
+        <div class="hint">Only meaningful for someone without a clean 13-digit RSA ID number — feeds SARS field 3075. Leave blank otherwise.</div>
+      </div>
+      <div class="field">
         <label>Medical aid — lives covered</label>
         <input type="number" step="1" min="0" id="payroll-medical-members">
         <div class="hint">Member + dependants, e.g. 3 for member + spouse + 1 child. Leave 0/blank for no medical aid.</div>
@@ -705,6 +717,14 @@
     <div class="field">
       <label><input type="checkbox" id="payroll-uif-exempt" style="width:auto; margin-right:6px;">UIF exempt</label>
       <div class="hint">Typically only directors/members not under a contract of employment — confirm with your accountant before ticking this.</div>
+    </div>
+    <div class="field">
+      <label>Employment type</label>
+      <select id="payroll-employment-type">
+        <option value="Permanent">Permanent</option>
+        <option value="Non-permanent">Non-permanent</option>
+      </select>
+      <div class="hint">Feeds the permanent/non-permanent employee counts on the EMP201 report.</div>
     </div>
     <div class="error-text" id="payroll-error"></div>
     <div style="display:flex; gap:10px; align-items:center;">
@@ -800,7 +820,6 @@
             <input type="text" id="payroll-search" placeholder="Search by name...">
             <select id="payroll-dept-filter"><option value="">All departments</option></select>
             <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show discharged</label>
-            <button class="btn secondary small" id="payroll-print-selected-btn">Print selected payslips</button>
           </div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="payroll-table"></table>
@@ -907,33 +926,85 @@
       </div>
 
       <div class="payroll-subview" id="payroll-sub-reports">
+        <!-- 1. EMP201 -->
         <div class="panel">
-          <h2>Run Payroll &amp; SARS (EMP201)</h2>
+          <h2>EMP201</h2>
           <p class="panel-sub" id="payrollrun-sub"></p>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
             <span class="save-status" id="payrollrun-status"></span>
           </div>
           <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
-          <div style="overflow-x:auto; margin-top:16px;">
+          <div class="kpi-grid" id="emp201-declaration-grid" style="margin-top:10px;"></div>
+          <p class="panel-sub" style="margin-top:18px; margin-bottom:4px;">Per employee — current period and year to date (tax year <span id="emp201-taxyear-label"></span>).</p>
+          <div style="overflow-x:auto;">
             <table class="data-table" id="payslips-table"></table>
           </div>
         </div>
 
+        <!-- 2. Payslips -->
         <div class="panel">
-          <h2>IRP5 / Tax Certificates</h2>
+          <h2>Payslips</h2>
+          <p class="panel-sub" id="reports-payslips-sub"></p>
+          <div class="toolbar">
+            <button class="btn secondary small" id="reports-print-selected-btn">Print selected payslips</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="reports-payslips-table"></table>
+          </div>
+        </div>
+
+        <!-- 3. IRP5 / IT3(a) -->
+        <div class="panel">
+          <h2>IRP5 / IT3(a)</h2>
           <p class="panel-sub" id="irp5-sub"></p>
           <div class="hint" style="margin-bottom:12px;">
             This gives you the correctly-coded figures for each employee's annual certificate — it does not submit anything
-            to SARS or generate a SARS e@syFile bulk-import file. Capture these into e@syFile/eFiling yourself, or hand the
-            CSV to whoever does your SARS submissions.
+            to SARS. Use the Employer Reconciliation panel below for the SARS e@syFile bulk-import file, or hand this CSV to
+            whoever does your SARS submissions.
           </div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <button class="btn secondary" id="irp5-download-btn">Download IRP5 data (CSV)</button>
+            <button class="btn secondary" id="irp5-download-btn">Export CSV</button>
           </div>
           <div style="overflow-x:auto; margin-top:16px;">
             <table class="data-table" id="irp5-table"></table>
           </div>
+        </div>
+
+        <!-- 4. Employer Reconciliation -->
+        <div class="panel">
+          <h2>Employer Reconciliation (e@syFile)</h2>
+          <p class="panel-sub" style="margin-top:0;">Generates the SARS bulk-import CSV for an Interim or Final/Annual EMP501 recon, for submission through SARS e@syFile Employer.</p>
+          <div class="hint" style="margin-bottom:12px;">
+            This has not been checked against a real Daily Fruit e@syFile import — generate in Test mode and test-import it
+            into e@syFile first; only switch to Live once that comes back clean. If your previous payroll provider can give
+            you an old e@syFile export, send it over so this can be validated field-by-field against it.
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Tax year</label>
+              <select id="recon-taxyear"></select>
+            </div>
+            <div class="field">
+              <label>Period</label>
+              <select id="recon-period">
+                <option value="interim">Interim (Mar–Aug)</option>
+                <option value="final">Final / Annual (Mar–Feb)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Mode</label>
+              <select id="recon-mode">
+                <option value="true">Test</option>
+                <option value="false">Live</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn secondary" id="recon-download-btn">Download recon CSV</button>
+            <span class="save-status" id="recon-status"></span>
+          </div>
+          <div id="recon-warnings"></div>
         </div>
       </div>
 
@@ -1186,7 +1257,7 @@
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
     getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
-    runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true,
+    runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true
@@ -1976,15 +2047,21 @@
     deptFilter.value = currentFilter;
 
     renderPayrollTable();
+    // Keeps the Reports > Payslips checkbox table (a separate view over the
+    // same roster) in sync whenever the roster itself changes — e.g. right
+    // after adding/editing/discharging an employee.
+    renderReportsPayslipsTable();
   }
 
-  // Employees ticked for a batch "Print selected payslips" run — kept
-  // outside renderPayrollTable() so the selection survives a re-render
-  // (search/filter changes rebuild the table's HTML from scratch).
+  // Employees ticked for a batch "Print selected payslips" run, in the
+  // Reports > Payslips panel — kept outside its render function so the
+  // selection survives a re-render (month change rebuilds the table's HTML
+  // from scratch). Consolidated here (see Reports tab) rather than living on
+  // the Roster, so there's one place to select and print payslips from.
   var selectedPayslipIds = new Set();
 
   function updatePrintSelectedButton() {
-    var btn = document.getElementById('payroll-print-selected-btn');
+    var btn = document.getElementById('reports-print-selected-btn');
     if (!btn) return;
     var n = selectedPayslipIds.size;
     btn.textContent = n > 0 ? 'Print selected payslips (' + n + ')' : 'Print selected payslips';
@@ -2018,10 +2095,9 @@
     });
 
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th><input type="checkbox" id="payroll-select-all" title="Select all shown"></th><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th><th></th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th><th></th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
-        '<td><input type="checkbox" class="payroll-select-cb" data-select-id="' + esc(e.id) + '" ' + (selectedPayslipIds.has(String(e.id)) ? 'checked' : '') + ' style="width:auto;"></td>' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
@@ -2049,32 +2125,6 @@
         openPayslip(btn.getAttribute('data-payslip-id'));
       });
     });
-
-    Array.prototype.forEach.call(table.querySelectorAll('[data-select-id]'), function (cb) {
-      cb.addEventListener('change', function () {
-        var id = cb.getAttribute('data-select-id');
-        if (cb.checked) selectedPayslipIds.add(id); else selectedPayslipIds.delete(id);
-        updatePrintSelectedButton();
-        var selectAllCb = document.getElementById('payroll-select-all');
-        if (selectAllCb) selectAllCb.checked = rows.length > 0 && rows.every(function (r) { return selectedPayslipIds.has(String(r.id)); });
-      });
-    });
-
-    // "Select all" only ever applies to the currently filtered/searched
-    // rows shown in the table, not the whole roster — so filtering by
-    // department first and then "select all" does what it looks like it
-    // does.
-    var selectAllCb = table.querySelector('#payroll-select-all');
-    if (selectAllCb) {
-      selectAllCb.checked = rows.length > 0 && rows.every(function (e) { return selectedPayslipIds.has(String(e.id)); });
-      selectAllCb.addEventListener('change', function () {
-        rows.forEach(function (e) {
-          if (selectAllCb.checked) selectedPayslipIds.add(String(e.id)); else selectedPayslipIds.delete(String(e.id));
-        });
-        renderPayrollTable();
-      });
-    }
-    updatePrintSelectedButton();
   }
 
   document.getElementById('payroll-search').addEventListener('input', renderPayrollTable);
@@ -2128,8 +2178,18 @@
   // Remuneration" payslip format Shane's asked to match.
   function slashDate(iso) { return iso ? String(iso).split('-').join('/') : '—'; }
 
+  // Appends " - <note>" to a line-item label when an adjustment note exists
+  // for that type (e.g. "Deduction - Uniform") — built from the note text
+  // getPayslip returns per type (see notesByTypeForMonth_ in Code.gs).
+  // Multiple notes on the same type in one month arrive already joined with
+  // '; ' from the backend.
+  function withNote(label, type, notesByType) {
+    var note = (notesByType || {})[type];
+    return note ? label + ' - ' + note : label;
+  }
+
   function renderPayslipHtml(res) {
-    var emp = res.employee, co = res.company, c = res.calc, y = res.ytdTotals || {};
+    var emp = res.employee, co = res.company, c = res.calc, y = res.ytdTotals || {}, notesByType = res.notesByType || {};
 
     var companyBlock = co
       ? '<div class="ps-company">' + esc(co.name || 'Company') + '</div>' +
@@ -2149,13 +2209,14 @@
     if (c.adjustments.Overtime && c.overtimeHours && res.hourRate) {
       overtimeLabel = 'Overtime — ' + c.overtimeHours.toFixed(2) + ' Hrs @ Rate ' + moneyExact(res.hourRate);
     }
+    overtimeLabel = withNote(overtimeLabel, 'Overtime', notesByType);
 
     var earningsRows = [
       ['Basic Salary', c.baseAmount],
-      c.adjustments.Commission ? ['Commission', c.adjustments.Commission] : null,
-      c.adjustments.Bonus ? ['Bonus', c.adjustments.Bonus] : null,
+      c.adjustments.Commission ? [withNote('Commission', 'Commission', notesByType), c.adjustments.Commission] : null,
+      c.adjustments.Bonus ? [withNote('Bonus', 'Bonus', notesByType), c.adjustments.Bonus] : null,
       c.adjustments.Overtime ? [overtimeLabel, c.adjustments.Overtime] : null,
-      c.adjustments.Other ? ['Other taxable addition', c.adjustments.Other] : null
+      c.adjustments.Other ? [withNote('Other taxable addition', 'Other', notesByType), c.adjustments.Other] : null
     ].filter(Boolean);
 
     var deductionRows = [
@@ -2163,8 +2224,8 @@
       c.uifEmployee ? ['Unemployment Insurance Fund (UIF)', c.uifEmployee] : null,
       c.retirementDeduction ? ['Retirement contribution', c.retirementDeduction] : null,
       c.medicalContribution ? ['Medical aid contribution', c.medicalContribution] : null,
-      c.adjustments.Deduction ? ['Deduction', c.adjustments.Deduction] : null,
-      c.adjustments.AdvanceRepayment ? ['Advance repayment', c.adjustments.AdvanceRepayment] : null
+      c.adjustments.Deduction ? [withNote('Deduction', 'Deduction', notesByType), c.adjustments.Deduction] : null,
+      c.adjustments.AdvanceRepayment ? [withNote('Advance repayment', 'AdvanceRepayment', notesByType), c.adjustments.AdvanceRepayment] : null
     ].filter(Boolean);
 
     var deductionsTotal = deductionRows.reduce(function (sum, r) { return sum + r[1]; }, 0);
@@ -2266,14 +2327,6 @@
   });
   document.getElementById('payslip-print-btn').addEventListener('click', function () {
     window.print();
-  });
-
-  document.getElementById('payroll-print-selected-btn').addEventListener('click', function () {
-    if (selectedPayslipIds.size === 0) {
-      window.alert('Tick the checkbox next to one or more employees in the Roster first.');
-      return;
-    }
-    printSelectedPayslips(Array.from(selectedPayslipIds));
   });
 
   // ================= PAY ADJUSTMENTS =================
@@ -2653,8 +2706,13 @@
     var pr = state.payrollRun;
     document.getElementById('payrollrun-sub').textContent = monthLabel(state.selectedMonth) +
       (pr.hasRun ? ' — figures below are as of the last time payroll was run for this month.' : ' — payroll has not been run for this month yet.');
+    document.getElementById('emp201-taxyear-label').textContent = pr.taxYear || '';
 
-    var e = pr.emp201 || { paye: 0, uifTotal: 0, sdl: 0, eti: 0, netToSars: 0, grossPayroll: 0 };
+    var e = pr.emp201 || {
+      paye: 0, uifTotal: 0, sdl: 0, eti: 0, netToSars: 0, grossPayroll: 0,
+      leviableAmount: 0, amountPayable: 0, controlTotal: 0,
+      permCount: 0, nonPermCount: 0, sdlContributingCount: 0, uifContributingCount: 0
+    };
     var kpiGrid = document.getElementById('emp201-kpi-grid');
     kpiGrid.innerHTML =
       '<div class="kpi-card"><div class="kpi-head"><span class="name">PAYE</span></div>' +
@@ -2670,9 +2728,27 @@
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Gross payroll</span></div>' +
       '<div class="kpi-row hero"><span>All active employees</span><span class="val">' + money(e.grossPayroll) + '</span></div></div>';
 
+    // EMP201's own declaration figures/counts — matches the layout of the
+    // SARS EMP201 form itself rather than a plain totals summary.
+    var declGrid = document.getElementById('emp201-declaration-grid');
+    declGrid.innerHTML =
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Balance of Remuneration / Leviable Amount</span></div>' +
+      '<div class="kpi-row hero"><span>Total remuneration</span><span class="val">' + money(e.leviableAmount) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Amount Payable</span></div>' +
+      '<div class="kpi-row hero"><span>Due to SARS</span><span class="val">' + money(e.amountPayable) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Control Total</span></div>' +
+      '<div class="kpi-row hero"><span>PAYE + SDL + UIF, before ETI</span><span class="val">' + money(e.controlTotal) + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Employees</span></div>' +
+      '<div class="kpi-row"><span>Permanent</span><span class="val">' + e.permCount + '</span></div>' +
+      '<div class="kpi-row"><span>Non-permanent</span><span class="val">' + e.nonPermCount + '</span></div></div>' +
+      '<div class="kpi-card"><div class="kpi-head"><span class="name">Contributing</span></div>' +
+      '<div class="kpi-row"><span>SDL</span><span class="val">' + e.sdlContributingCount + '</span></div>' +
+      '<div class="kpi-row"><span>UIF</span><span class="val">' + e.uifContributingCount + '</span></div></div>';
+
     var table = document.getElementById('payslips-table');
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th>' +
-      '<th>Base</th><th style="text-align:left;">Adjustments</th><th>Gross</th><th>PAYE</th><th>UIF (ee)</th>' +
+      '<th>Base</th><th style="text-align:left;">Adjustments</th><th>Gross</th>' +
+      '<th>PAYE</th><th>PAYE YTD</th><th>UIF (ee)</th><th>UIF YTD</th><th>SDL</th><th>SDL YTD</th>' +
       '<th>Retirement</th><th>Medical credit</th><th>ETI</th><th>Net pay</th></tr></thead>';
     var rows = pr.payslips || [];
     var body = '<tbody>' + (rows.length ? rows.map(function (ps) {
@@ -2683,15 +2759,81 @@
         '<td style="text-align:left; max-width:260px; white-space:normal; font-size:12px; color:var(--text-secondary);">' + esc(adjustmentsSummary(ps)) + '</td>' +
         '<td>' + money(ps.gross) + '</td>' +
         '<td>' + money(ps.paye) + '</td>' +
+        '<td>' + money(ps.payeYtd) + '</td>' +
         '<td>' + money(ps.uifEmployee) + '</td>' +
+        '<td>' + money(ps.uifYtd) + '</td>' +
+        '<td>' + money(ps.sdlEmployer) + '</td>' +
+        '<td>' + money(ps.sdlYtd) + '</td>' +
         '<td>' + money(ps.retirementDeduction) + '</td>' +
         '<td>' + money(ps.medicalCredit) + '</td>' +
         '<td>' + money(ps.eti) + '</td>' +
         '<td>' + money(ps.net) + '</td>' +
         '</tr>';
-    }).join('') : '<tr><td colspan="11" style="text-align:center; color:var(--text-muted);">No payroll run recorded for this month yet — click "Run payroll for this month" above.</td></tr>') + '</tbody>';
+    }).join('') : '<tr><td colspan="15" style="text-align:center; color:var(--text-muted);">No payroll run recorded for this month yet — click "Run payroll for this month" above.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
+
+    renderReportsPayslipsTable();
   }
+
+  // ================= REPORTS > PAYSLIPS =================
+  // Checkbox table of every active employee for the selected month, moved
+  // here from the Roster so payslip printing lives in one place (Reports)
+  // alongside EMP201 and IRP5/IT3(a) rather than scattered across tabs.
+  function renderReportsPayslipsTable() {
+    if (!state.payroll) return;
+    var rows = state.payroll.employees.filter(function (e) { return e.active; })
+      .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+    document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) +
+      ' — tick employees below, then Print selected payslips (opens one combined print job).';
+
+    var table = document.getElementById('reports-payslips-table');
+    var head = '<thead><tr><th><input type="checkbox" id="reports-select-all" title="Select all shown"></th>' +
+      '<th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th style="text-align:left;">Status</th><th></th></tr></thead>';
+    var body = '<tbody>' + (rows.length ? rows.map(function (e) {
+      return '<tr>' +
+        '<td><input type="checkbox" class="reports-select-cb" data-select-id="' + esc(e.id) + '" ' + (selectedPayslipIds.has(String(e.id)) ? 'checked' : '') + ' style="width:auto;"></td>' +
+        '<td style="text-align:left;">' + esc(e.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(e.department) + '</td>' +
+        '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
+        '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
+        '</tr>';
+    }).join('') : '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No active employees.</td></tr>') + '</tbody>';
+    table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-payslip-id]'), function (btn) {
+      btn.addEventListener('click', function () { openPayslip(btn.getAttribute('data-payslip-id')); });
+    });
+    Array.prototype.forEach.call(table.querySelectorAll('[data-select-id]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-select-id');
+        if (cb.checked) selectedPayslipIds.add(id); else selectedPayslipIds.delete(id);
+        updatePrintSelectedButton();
+        var selectAllCb = document.getElementById('reports-select-all');
+        if (selectAllCb) selectAllCb.checked = rows.length > 0 && rows.every(function (r) { return selectedPayslipIds.has(String(r.id)); });
+      });
+    });
+    // "Select all" only ever applies to the currently shown (active, this
+    // month) rows, same behaviour as the old Roster checkbox had.
+    var selectAllCb = table.querySelector('#reports-select-all');
+    if (selectAllCb) {
+      selectAllCb.checked = rows.length > 0 && rows.every(function (e) { return selectedPayslipIds.has(String(e.id)); });
+      selectAllCb.addEventListener('change', function () {
+        rows.forEach(function (e) {
+          if (selectAllCb.checked) selectedPayslipIds.add(String(e.id)); else selectedPayslipIds.delete(String(e.id));
+        });
+        renderReportsPayslipsTable();
+      });
+    }
+    updatePrintSelectedButton();
+  }
+
+  document.getElementById('reports-print-selected-btn').addEventListener('click', function () {
+    if (selectedPayslipIds.size === 0) {
+      window.alert('Tick the checkbox next to one or more employees above first.');
+      return;
+    }
+    printSelectedPayslips(Array.from(selectedPayslipIds));
+  });
 
   // One-line "+Commission R200, −Deduction R50" style summary of a payslip's
   // adjustment breakdown, for the compact Adjustments column above. Blank
@@ -2746,7 +2888,7 @@
     var table = document.getElementById('irp5-table');
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">ID number</th>' +
       '<th style="text-align:left;">Tax number</th><th>Type</th><th>Months paid</th><th>Gross (3601)</th>' +
-      '<th>PAYE (4102)</th><th>UIF (4141)</th><th>SDL (4142)</th><th>Retirement (4001)</th><th>Medical (4005)</th></tr></thead>';
+      '<th>PAYE (4102)</th><th>UIF (4141)</th><th>SDL (4142)</th><th>Retirement (4001)</th><th>Medical (4005)</th><th></th></tr></thead>';
     var body = '<tbody>' + (certs.length ? certs.map(function (c) {
       return '<tr>' +
         '<td style="text-align:left;">' + esc(c.name) + '</td>' +
@@ -2760,9 +2902,45 @@
         '<td>' + money(c.sdlContribution_4142) + '</td>' +
         '<td>' + money(c.retirementContribution_4001) + '</td>' +
         '<td>' + money(c.medicalContribution_4005) + '</td>' +
+        '<td><button class="btn secondary small" data-irp5-cert-id="' + esc(c.employeeId) + '">Print</button></td>' +
         '</tr>';
-    }).join('') : '<tr><td colspan="11" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
+    }).join('') : '<tr><td colspan="12" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
+
+    Array.prototype.forEach.call(table.querySelectorAll('[data-irp5-cert-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var c = certs.filter(function (x) { return String(x.employeeId) === btn.getAttribute('data-irp5-cert-id'); })[0];
+        if (c) openIrp5Certificate(c, state.irp5.taxYear);
+      });
+    });
+  }
+
+  // Reuses the payslip print modal to show/print one employee's IRP5/IT3(a)
+  // certificate — a simple SARS-coded summary, not a full replica of the
+  // official SARS certificate layout.
+  function openIrp5Certificate(c, taxYear) {
+    var modal = document.getElementById('payslip-modal');
+    document.getElementById('payslip-modal-title').textContent = c.certificateType + ' — ' + c.name;
+    document.getElementById('payslip-content').innerHTML = '<div class="ps-print-page">' +
+      '<div class="ps-header"><div class="ps-company">' + esc(c.certificateType) + ' Certificate</div>' +
+      '<div class="ps-doc-period">Tax year ' + esc(taxYear) + '</div></div>' +
+      '<div class="ps-emp-name">' + esc(c.name) + '</div>' +
+      '<div class="ps-info-list">' +
+        '<div class="row"><span class="k">ID number</span><span class="v">' + esc(c.idNumber || '—') + '</span></div>' +
+        '<div class="row"><span class="k">Tax number</span><span class="v">' + esc(c.taxNumber || '—') + '</span></div>' +
+        '<div class="row"><span class="k">Months paid</span><span class="v">' + c.monthsPaid + '</span></div>' +
+      '</div>' +
+      '<table class="ps-table" style="margin-top:14px;"><thead><tr><th>Description</th><th>SARS Code</th><th class="amt">Amount</th></tr></thead><tbody>' +
+        '<tr><td>Gross income</td><td>3601</td><td class="amt">' + moneyExact(c.grossIncome_3601) + '</td></tr>' +
+        (c.payeDeducted_4102 ? '<tr><td>PAYE</td><td>4102</td><td class="amt">' + moneyExact(c.payeDeducted_4102) + '</td></tr>' : '') +
+        '<tr><td>UIF</td><td>4141</td><td class="amt">' + moneyExact(c.uifContribution_4141) + '</td></tr>' +
+        '<tr><td>SDL</td><td>4142</td><td class="amt">' + moneyExact(c.sdlContribution_4142) + '</td></tr>' +
+        (c.retirementContribution_4001 ? '<tr><td>Retirement</td><td>4001</td><td class="amt">' + moneyExact(c.retirementContribution_4001) + '</td></tr>' : '') +
+        (c.medicalContribution_4005 ? '<tr><td>Medical</td><td>4005</td><td class="amt">' + moneyExact(c.medicalContribution_4005) + '</td></tr>' : '') +
+      '</tbody></table>' +
+      '<p class="ps-note">This is a SARS-coded figures summary, generated ' + esc(new Date().toLocaleDateString('en-ZA')) + ' — it is not a facsimile of the official SARS IRP5/IT3(a) certificate.</p>' +
+      '</div>';
+    modal.classList.add('active');
   }
 
   document.getElementById('irp5-download-btn').addEventListener('click', function () {
@@ -2795,6 +2973,56 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  });
+
+  // ================= EMPLOYER RECONCILIATION (e@syFile) =================
+  // Populates the tax-year picker with the current SA tax year plus the
+  // previous two and the next one — same "March start" logic as the
+  // backend's saTaxYearForMonth_, computed client-side just for the option
+  // labels/values (the actual figures always come from the server).
+  function populateReconTaxYearPicker_() {
+    var sel = document.getElementById('recon-taxyear');
+    if (!sel) return;
+    var now = new Date();
+    var currentStartYear = (now.getMonth() + 1 >= 3) ? now.getFullYear() : now.getFullYear() - 1;
+    var years = [currentStartYear + 1, currentStartYear, currentStartYear - 1, currentStartYear - 2];
+    sel.innerHTML = years.map(function (y) {
+      return '<option value="' + y + '">' + y + '/' + (y + 1) + '</option>';
+    }).join('');
+    sel.value = String(currentStartYear);
+  }
+  populateReconTaxYearPicker_();
+
+  document.getElementById('recon-download-btn').addEventListener('click', function () {
+    var status = document.getElementById('recon-status');
+    var warningsBox = document.getElementById('recon-warnings');
+    warningsBox.innerHTML = '';
+    var taxYearStartYear = document.getElementById('recon-taxyear').value;
+    var period = document.getElementById('recon-period').value;
+    var testMode = document.getElementById('recon-mode').value;
+    flashStatus(status, 'Generating…', 'save-status', 0);
+    callApi('getEmployerRecon', { taxYearStartYear: taxYearStartYear, period: period, testMode: testMode, companyGroup: state.companyGroup }).then(function (res) {
+      if (!res.ok) {
+        flashStatus(status, res.error || 'Failed', 'save-status err', 8000);
+        return;
+      }
+      flashStatus(status, res.employeeCount + ' certificate' + (res.employeeCount === 1 ? '' : 's') + ' — downloaded', 'save-status ok', 5000);
+      if (res.warnings && res.warnings.length) {
+        warningsBox.innerHTML = '<div class="hint" style="color:var(--text-secondary);"><strong>Check before relying on this file:</strong><br>' +
+          res.warnings.map(function (w) { return '• ' + esc(w); }).join('<br>') + '</div>';
+      }
+      var blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = res.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }).catch(function () {
+      flashStatus(status, 'Network error', 'save-status err', 5000);
+    });
   });
 
   // Builds the Add/Edit employee form's Department dropdown from the
@@ -2833,6 +3061,7 @@
     document.getElementById('payroll-amount').value = e.amount;
     document.getElementById('payroll-date').value = e.dateEmployed || '';
     document.getElementById('payroll-address').value = e.address || '';
+    document.getElementById('payroll-contact-number').value = e.contactNumber || '';
     document.getElementById('payroll-notes').value = e.notes || '';
     document.getElementById('payroll-bank-name').value = e.bankName || '';
     document.getElementById('payroll-branch-code').value = e.branchCode || '';
@@ -2841,10 +3070,12 @@
     document.getElementById('payroll-id-number').value = e.idNumber || '';
     document.getElementById('payroll-tax-number').value = e.taxNumber || '';
     document.getElementById('payroll-dob').value = e.dateOfBirth || '';
+    document.getElementById('payroll-id-passport-country').value = e.idPassportCountry || '';
     document.getElementById('payroll-medical-members').value = e.medicalMembers || '';
     document.getElementById('payroll-medical-contribution').value = e.medicalContribution || '';
     document.getElementById('payroll-retirement').value = e.retirementContribution || '';
     document.getElementById('payroll-uif-exempt').checked = !!e.uifExempt;
+    document.getElementById('payroll-employment-type').value = e.employmentType || 'Permanent';
     document.getElementById('payroll-save-btn').textContent = 'Update employee';
     document.getElementById('payroll-cancel-btn').style.display = '';
     document.getElementById('payroll-error').textContent = '';
@@ -2912,6 +3143,7 @@
     document.getElementById('payroll-amount').value = '';
     document.getElementById('payroll-date').value = '';
     document.getElementById('payroll-address').value = '';
+    document.getElementById('payroll-contact-number').value = '';
     document.getElementById('payroll-notes').value = '';
     document.getElementById('payroll-bank-name').value = '';
     document.getElementById('payroll-branch-code').value = '';
@@ -2920,10 +3152,12 @@
     document.getElementById('payroll-id-number').value = '';
     document.getElementById('payroll-tax-number').value = '';
     document.getElementById('payroll-dob').value = '';
+    document.getElementById('payroll-id-passport-country').value = '';
     document.getElementById('payroll-medical-members').value = '';
     document.getElementById('payroll-medical-contribution').value = '';
     document.getElementById('payroll-retirement').value = '';
     document.getElementById('payroll-uif-exempt').checked = false;
+    document.getElementById('payroll-employment-type').value = 'Permanent';
     document.getElementById('payroll-save-btn').textContent = 'Save employee';
     document.getElementById('payroll-cancel-btn').style.display = 'none';
     document.getElementById('payroll-error').textContent = '';
@@ -2949,7 +3183,8 @@
     var status = document.getElementById('payroll-save-status');
     var name = document.getElementById('payroll-name').value.trim();
     var department = document.getElementById('payroll-department').value.trim();
-    if (!name || !department) { errEl.textContent = 'Name and department are required.'; return; }
+    var contactNumber = document.getElementById('payroll-contact-number').value.trim();
+    if (!name || !department || !contactNumber) { errEl.textContent = 'Name, department and contact number are required.'; return; }
     errEl.textContent = '';
 
     var payload = {
@@ -2961,6 +3196,7 @@
       amount: document.getElementById('payroll-amount').value,
       dateEmployed: document.getElementById('payroll-date').value.trim(),
       address: document.getElementById('payroll-address').value.trim(),
+      contactNumber: contactNumber,
       notes: document.getElementById('payroll-notes').value.trim(),
       bankName: document.getElementById('payroll-bank-name').value.trim(),
       branchCode: document.getElementById('payroll-branch-code').value.trim(),
@@ -2969,10 +3205,12 @@
       idNumber: document.getElementById('payroll-id-number').value.trim(),
       taxNumber: document.getElementById('payroll-tax-number').value.trim(),
       dateOfBirth: document.getElementById('payroll-dob').value.trim(),
+      idPassportCountry: document.getElementById('payroll-id-passport-country').value.trim(),
       medicalMembers: document.getElementById('payroll-medical-members').value,
       medicalContribution: document.getElementById('payroll-medical-contribution').value,
       retirementContribution: document.getElementById('payroll-retirement').value,
-      uifExempt: document.getElementById('payroll-uif-exempt').checked
+      uifExempt: document.getElementById('payroll-uif-exempt').checked,
+      employmentType: document.getElementById('payroll-employment-type').value
     };
 
     var action, extra;
@@ -3329,6 +3567,10 @@
           '<div class="field"><label>UIF number</label><input type="text" data-idx="' + i + '" data-field="uifNumber" value="' + esc(co.uifNumber) + '"></div>' +
           '<div class="field"><label>SDL number</label><input type="text" data-idx="' + i + '" data-field="sdlNumber" value="' + esc(co.sdlNumber) + '"></div>' +
           '<div class="field"><label>Address (optional — shown on payslips)</label><input type="text" data-idx="' + i + '" data-field="address" value="' + esc(co.address) + '"></div>' +
+          '<div class="field"><label>SIC7 code</label><input type="text" data-idx="' + i + '" data-field="sic7Code" value="' + esc(co.sic7Code || '') + '">' +
+            '<div class="hint">SARS 5-digit industry code — required on the Employer Reconciliation export.</div></div>' +
+          '<div class="field"><label>SDL registered from</label><input type="text" data-idx="' + i + '" data-field="sdlRegisteredFrom" placeholder="YYYY-MM-DD" value="' + esc(co.sdlRegisteredFrom || '') + '">' +
+            '<div class="hint">Leave blank if always registered. Set this if SDL registration only started partway through a tax year — months before this date report SDL as R0 on the Employer Reconciliation export.</div></div>' +
         '</div>' +
         '<input type="hidden" data-field="id" value="' + esc(co.id || '') + '">' +
         '<div style="display:flex; justify-content:space-between; align-items:center;">' +
@@ -3351,7 +3593,7 @@
 
   document.getElementById('add-company-btn').addEventListener('click', function () {
     state.companies = state.companies || [];
-    state.companies.push({ id: '', name: '', payeNumber: '', uifNumber: '', sdlNumber: '', address: '', active: true });
+    state.companies.push({ id: '', name: '', payeNumber: '', uifNumber: '', sdlNumber: '', address: '', sic7Code: '', sdlRegisteredFrom: '', active: true });
     renderCompanySettings();
   });
 
@@ -3366,6 +3608,8 @@
         uifNumber: row.querySelector('[data-field="uifNumber"]').value.trim(),
         sdlNumber: row.querySelector('[data-field="sdlNumber"]').value.trim(),
         address: row.querySelector('[data-field="address"]').value.trim(),
+        sic7Code: row.querySelector('[data-field="sic7Code"]').value.trim(),
+        sdlRegisteredFrom: row.querySelector('[data-field="sdlRegisteredFrom"]').value.trim(),
         active: row.querySelector('[data-field="active"]').checked
       });
     });
