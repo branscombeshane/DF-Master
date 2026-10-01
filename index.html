@@ -1221,13 +1221,34 @@
             <input type="text" id="user-password" placeholder="Min. 8 characters" autocomplete="off">
           </div>
         </div>
-        <div class="field">
-          <label>Sections this account can access</label>
-          <div class="checkbox-grid" id="user-sections-grid"></div>
+        <div class="field" id="user-role-field">
+          <label>Account type</label>
+          <select id="user-role">
+            <option value="staff">Staff — pick sections and entities below</option>
+            <option value="hr">HR — Payroll only, scoped to one company and its departments, Basic Salary hidden</option>
+          </select>
         </div>
-        <div class="field">
-          <label>Entities this account can access</label>
-          <div class="checkbox-grid" id="user-entities-grid"></div>
+        <div id="user-staff-fields">
+          <div class="field">
+            <label>Sections this account can access</label>
+            <div class="checkbox-grid" id="user-sections-grid"></div>
+          </div>
+          <div class="field">
+            <label>Entities this account can access</label>
+            <div class="checkbox-grid" id="user-entities-grid"></div>
+          </div>
+        </div>
+        <div id="user-hr-fields" style="display:none;">
+          <div class="field">
+            <label>Company</label>
+            <select id="user-company"><option value="">Select a company…</option></select>
+            <div class="hint">This HR account only ever sees Payroll, scoped to this one company.</div>
+          </div>
+          <div class="field">
+            <label>Departments within that company</label>
+            <div class="checkbox-grid" id="user-departments-grid"></div>
+            <div class="hint" id="user-departments-hint">Pick a company above to list its departments.</div>
+          </div>
         </div>
         <div class="field" id="user-active-field" style="display:none;">
           <label><input type="checkbox" id="user-active" checked style="width:auto; margin-right:6px;">Active</label>
