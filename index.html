@@ -1226,7 +1226,7 @@
           <label>Account type</label>
           <select id="user-role">
             <option value="staff">Staff — pick sections and entities below</option>
-            <option value="hr">HR — Payroll only, scoped to one company and its departments, Basic Salary hidden</option>
+            <option value="hr">HR — Payroll only, scoped to one or more companies and their departments, Basic Salary hidden</option>
           </select>
         </div>
         <div id="user-staff-fields">
@@ -1241,14 +1241,14 @@
         </div>
         <div id="user-hr-fields" style="display:none;">
           <div class="field">
-            <label>Company</label>
-            <select id="user-company"><option value="">Select a company…</option></select>
-            <div class="hint">This HR account only ever sees Payroll, scoped to this one company.</div>
+            <label>Companies</label>
+            <div class="checkbox-grid" id="user-companies-grid"></div>
+            <div class="hint">Tick every company this HR account should see — they must all belong to the same company group. Its Payroll view is scoped to just these companies' departments.</div>
           </div>
           <div class="field">
-            <label>Departments within that company</label>
+            <label>Departments within those companies</label>
             <div class="checkbox-grid" id="user-departments-grid"></div>
-            <div class="hint" id="user-departments-hint">Pick a company above to list its departments.</div>
+            <div class="hint" id="user-departments-hint">Tick a company above to list its departments.</div>
           </div>
         </div>
         <div class="field" id="user-active-field" style="display:none;">
@@ -1293,7 +1293,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.32-hr-role-editable';
+  var FRONTEND_BUILD = '2026-10-01.33-hr-multi-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -4390,45 +4390,84 @@
     }).join('');
 
     // Same "every group, not just the active tile" reasoning as Entities
-    // above — an HR account's Company is an admin setting, not scoped to
-    // whichever tile the Owner happens to be viewing right now.
-    var companySelect = document.getElementById('user-company');
-    companySelect.innerHTML = '<option value="">Select a company…</option>' + state.allCompanies.map(function (c) {
+    // above — an HR account's Companies are an admin setting, not scoped to
+    // whichever tile the Owner happens to be viewing right now. A checkbox
+    // grid, not a single-select — an HR account can be scoped to more than
+    // one company at once (e.g. Pyroca + Daily Fruit Veg), as long as they
+    // share a company group (enforced server-side in validateHrScope_).
+    var companiesGrid = document.getElementById('user-companies-grid');
+    companiesGrid.innerHTML = state.allCompanies.map(function (c) {
       var label = showGroupPrefix ? (groupNameByKey[c.companyGroup] || c.companyGroup) + ' — ' + c.name : c.name;
-      return '<option value="' + esc(c.id) + '">' + esc(label) + '</option>';
+      return '<label><input type="checkbox" value="' + esc(c.id) + '" class="user-company-cb" style="width:auto;">' + esc(label) + '</label>';
     }).join('');
+  }
+
+  function checkedCompanyIds_() {
+    return Array.prototype.filter.call(document.querySelectorAll('.user-company-cb'), function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
   }
 
   function SECTION_KEYS_LOCAL() { return ['dashboard', 'history', 'payroll', 'vehicles']; }
 
-  // Repopulates the Departments checkbox grid for whichever Company is
-  // currently selected — a department only ever belongs to one company (see
-  // CompanyId on Settings > Departments), so this is the same "pick a
-  // company, then its departments" scoping an HR account itself gets.
-  // checkedNames pre-checks the given ones (used when re-entering Manage on
-  // an existing HR account) — omit it to start with nothing checked.
-  function renderUserDepartmentsGrid(companyId, checkedNames) {
+  // Repopulates the Departments checkbox grid for whichever Company/ies are
+  // currently ticked above — a department belongs to exactly one company
+  // (see CompanyId on Settings > Departments), so this unions together every
+  // ticked company's departments. Grouped under a company heading once more
+  // than one company is ticked, so it's clear which department belongs to
+  // which when names could otherwise be mistaken for each other.
+  // checkedNames pre-checks the given ones by name (used when re-entering
+  // Manage on an existing HR account) — omit it to start with nothing
+  // checked. HR's own department scoping (hrCanSeeEmployee_ etc., in
+  // Code.gs) is by department name alone, same as before this account could
+  // span more than one company — so two ticked companies that happen to
+  // share a department name resolve to that one name being permitted; the
+  // dedupe below just keeps that from rendering as two identical-looking
+  // checkboxes.
+  function renderUserDepartmentsGrid(companyIds, checkedNames) {
     var grid = document.getElementById('user-departments-grid');
     var hint = document.getElementById('user-departments-hint');
-    var depts = companyId ? state.allDepartments.filter(function (d) { return d.companyId === companyId; }) : [];
-    if (!companyId) {
+    companyIds = companyIds || [];
+    var companyNameById = {};
+    state.allCompanies.forEach(function (c) { companyNameById[c.id] = c.name; });
+    if (!companyIds.length) {
       grid.innerHTML = '';
       hint.style.display = '';
-      hint.textContent = 'Pick a company above to list its departments.';
-    } else if (!depts.length) {
-      grid.innerHTML = '';
-      hint.style.display = '';
-      hint.textContent = 'This company has no departments set up yet — add some under Settings > Departments first.';
-    } else {
-      hint.style.display = 'none';
-      grid.innerHTML = depts.map(function (d) {
+      hint.textContent = 'Tick a company above to list its departments.';
+      return;
+    }
+    var seenNames = {};
+    var html = '';
+    var anyDepts = false;
+    companyIds.forEach(function (companyId) {
+      var depts = state.allDepartments.filter(function (d) { return d.companyId === companyId; });
+      var rows = depts.filter(function (d) { return !seenNames[d.name]; });
+      rows.forEach(function (d) { seenNames[d.name] = true; });
+      if (!depts.length) return;
+      anyDepts = true;
+      if (companyIds.length > 1) html += '<div style="font-size:12px; font-weight:600; margin:8px 0 2px; width:100%;">' + esc(companyNameById[companyId] || companyId) + '</div>';
+      html += rows.map(function (d) {
         var checked = checkedNames && checkedNames.indexOf(d.name) !== -1;
         return '<label><input type="checkbox" value="' + esc(d.name) + '" class="user-department-cb"' + (checked ? ' checked' : '') + ' style="width:auto;">' + esc(d.name) + '</label>';
       }).join('');
+    });
+    if (!anyDepts) {
+      grid.innerHTML = '';
+      hint.style.display = '';
+      hint.textContent = 'These companies have no departments set up yet — add some under Settings > Departments first.';
+    } else {
+      hint.style.display = 'none';
+      grid.innerHTML = html;
     }
   }
-  document.getElementById('user-company').addEventListener('change', function () {
-    renderUserDepartmentsGrid(this.value, null);
+  document.getElementById('user-companies-grid').addEventListener('change', function (e) {
+    if (!e.target.classList.contains('user-company-cb')) return;
+    // Keep whatever departments are already ticked (e.g. ticking a second
+    // company shouldn't clear the first company's picks) — only a company
+    // being unticked actually drops its departments, which the rebuild does
+    // naturally since that company's rows just aren't in the grid anymore.
+    var stillChecked = Array.prototype.filter.call(document.querySelectorAll('.user-department-cb'), function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
+    renderUserDepartmentsGrid(checkedCompanyIds_(), stillChecked);
   });
 
   function setUserRoleFieldsVisibility(role) {
@@ -4450,8 +4489,9 @@
       };
       var scopeHtml;
       if (u.role === 'hr') {
-        var companyLabel = companyNameById[u.company] || '(no company set)';
-        scopeHtml = '<div style="font-size:12px; margin-bottom:4px;">' + esc(companyLabel) + '</div>' + chips(u.departments);
+        var companyLabels = (u.companyIds || []).map(function (id) { return companyNameById[id] || id; });
+        var companyLine = companyLabels.length ? companyLabels.join(', ') : '(no company set)';
+        scopeHtml = '<div style="font-size:12px; margin-bottom:4px;">' + esc(companyLine) + '</div>' + chips(u.departments);
       } else {
         scopeHtml = chips(u.entities);
       }
@@ -4494,8 +4534,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) {
       cb.checked = u.entities.indexOf(cb.value) !== -1;
     });
-    document.getElementById('user-company').value = u.company || '';
-    renderUserDepartmentsGrid(u.company || '', u.departments || []);
+    var uCompanyIds = u.companyIds || [];
+    Array.prototype.forEach.call(document.querySelectorAll('.user-company-cb'), function (cb) {
+      cb.checked = uCompanyIds.indexOf(cb.value) !== -1;
+    });
+    renderUserDepartmentsGrid(uCompanyIds, u.departments || []);
     document.getElementById('user-active').checked = u.active;
     document.getElementById('user-active-field').style.display = '';
     document.getElementById('user-save-btn').textContent = 'Save changes';
@@ -4518,8 +4561,8 @@
     setUserRoleFieldsVisibility('staff');
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) { cb.checked = false; });
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) { cb.checked = false; });
-    document.getElementById('user-company').value = '';
-    renderUserDepartmentsGrid('', null);
+    Array.prototype.forEach.call(document.querySelectorAll('.user-company-cb'), function (cb) { cb.checked = false; });
+    renderUserDepartmentsGrid([], null);
     document.getElementById('user-active-field').style.display = 'none';
     document.getElementById('user-save-btn').textContent = 'Add staff account';
     document.getElementById('user-cancel-btn').style.display = 'none';
@@ -4540,7 +4583,7 @@
       .map(function (cb) { return cb.value; });
     var entities = Array.prototype.filter.call(document.querySelectorAll('.user-entity-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
-    var company = document.getElementById('user-company').value;
+    var companyIds = checkedCompanyIds_();
     var departments = Array.prototype.filter.call(document.querySelectorAll('.user-department-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
 
@@ -4552,9 +4595,9 @@
       // Staff -> HR to allocate a company/departments) actually takes effect.
       var updateParams = { name: editName, active: active, role: role };
       if (role === 'hr') {
-        if (!company) { errEl.textContent = 'Pick a company for this HR account.'; return; }
-        if (!departments.length) { errEl.textContent = 'Pick at least one department within that company.'; return; }
-        updateParams.company = company;
+        if (!companyIds.length) { errEl.textContent = 'Pick at least one company for this HR account.'; return; }
+        if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
+        updateParams.company = companyIds.join(',');
         updateParams.departments = departments.join(',');
       } else {
         updateParams.sections = sections.join(',');
@@ -4578,9 +4621,9 @@
       if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
       var addParams = { name: name, password: newPassword, role: role };
       if (role === 'hr') {
-        if (!company) { errEl.textContent = 'Pick a company for this HR account.'; return; }
-        if (!departments.length) { errEl.textContent = 'Pick at least one department within that company.'; return; }
-        addParams.company = company;
+        if (!companyIds.length) { errEl.textContent = 'Pick at least one company for this HR account.'; return; }
+        if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
+        addParams.company = companyIds.join(',');
         addParams.departments = departments.join(',');
       } else {
         addParams.sections = sections.join(',');
