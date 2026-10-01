@@ -466,7 +466,6 @@
   #payslip-content .ps-company-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.6; }
   #payslip-content .ps-doc-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; margin-top: 10px; }
   #payslip-content .ps-doc-period { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-  #payslip-content .ps-preview-flag { font-size: 11px; color: var(--brand-ink, #92400e); background: var(--brand); display: inline-block; padding: 2px 8px; border-radius: 999px; margin-top: 6px; }
   #payslip-content .ps-emp-name { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
   #payslip-content .ps-two-col { display: flex; gap: 26px; margin-bottom: 18px; }
   #payslip-content .ps-two-col > div { flex: 1; min-width: 0; }
@@ -480,7 +479,6 @@
   #payslip-content table.ps-table th.amt, #payslip-content table.ps-table td.amt { text-align: right; font-variant-numeric: tabular-nums; }
   #payslip-content table.ps-table td { padding: 6px 4px; border-bottom: 1px solid var(--gridline); }
   #payslip-content .ps-net-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; padding: 10px 0; border-top: 2px solid var(--text-primary); border-bottom: 2px solid var(--text-primary); margin-bottom: 18px; }
-  #payslip-content .ps-note { font-size: 11px; color: var(--text-muted); margin-top: 14px; }
   #payslip-content .ps-print-page:not(:first-child) { margin-top: 30px; padding-top: 30px; border-top: 2px dashed var(--gridline); }
   @media (max-width: 640px) {
     #payslip-content .ps-two-col { flex-direction: column; gap: 4px; }
@@ -982,6 +980,7 @@
           <h2>Payslips</h2>
           <p class="panel-sub" id="reports-payslips-sub"></p>
           <div class="toolbar">
+            <select id="reports-payslips-dept-filter"><option value="">All departments</option></select>
             <button class="btn secondary small" id="reports-print-selected-btn">Download selected payslips (PDF)</button>
           </div>
           <div style="overflow-x:auto;">
@@ -1306,7 +1305,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.36-adj-emp-summary';
+  var FRONTEND_BUILD = '2026-10-01.37-payslip-cleanup';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2306,6 +2305,19 @@
   // fit the page while preserving its aspect ratio.
   var lastPdfFilenameHint = 'Document';
 
+  // The on-screen payslip modal is deliberately narrow (comfortable to read
+  // on a laptop) — but capturing it at that width produces a tall, narrow
+  // image that's much more portrait than an A4 page, so fitting it to the
+  // page by height (below) left big empty margins down both sides. html2canvas's
+  // onclone lets us widen an invisible CLONE of the content purely for this
+  // capture (the live modal on screen is never touched, so there's no visual
+  // jump while "Generating…" is showing) — at this width the payslip's
+  // actual content happens to come out close to A4's own proportions, so it
+  // fills the page width edge-to-edge with little left over. If a given
+  // payslip is unusually long (lots of adjustment lines), the normal
+  // fit-by-height fallback below still applies, so nothing overflows the page.
+  var PDF_CAPTURE_WIDTH_PX = 720;
+
   // Keeps a download filename filesystem-safe across Windows/macOS — swaps
   // anything that isn't a letter/number/space/dash/underscore for an
   // underscore, and collapses repeats.
@@ -2329,7 +2341,18 @@
         doc.save(filename);
         return Promise.resolve();
       }
-      return window.html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', useCORS: true }).then(function (canvas) {
+      return window.html2canvas(pages[i], {
+        scale: 2, backgroundColor: '#ffffff', useCORS: true,
+        onclone: function (clonedDoc) {
+          // containerEl is #payslip-content — its id survives the clone, so
+          // this only ever widens the invisible clone, never the live modal.
+          var clonedContent = clonedDoc.getElementById(containerEl.id);
+          if (!clonedContent) return;
+          clonedContent.style.width = PDF_CAPTURE_WIDTH_PX + 'px';
+          var clonedModalCard = clonedContent.closest('.modal-card');
+          if (clonedModalCard) clonedModalCard.style.maxWidth = 'none';
+        }
+      }).then(function (canvas) {
         var imgWmm = usableWidth;
         var imgHmm = canvas.height * imgWmm / canvas.width;
         if (imgHmm > usableHeight) {
@@ -2495,7 +2518,6 @@
         companyBlock +
         '<div class="ps-doc-title">Schedule of Remuneration</div>' +
         '<div class="ps-doc-period">' + esc(monthLabel(res.month)) + '</div>' +
-        (res.isFinal ? '' : '<div class="ps-preview-flag">Preview — payroll not yet run for this month</div>') +
       '</div>' +
       '<div class="ps-emp-name">' + esc(emp.name) + '</div>' +
       '<div class="ps-two-col">' +
@@ -2566,9 +2588,7 @@
             '<tr><td>Unemployment Insurance Fund (UIF)</td><td>4141</td><td class="amt">' + moneyExact(y.uif || 0) + '</td></tr>' +
           '</tbody></table>' +
         '</div>' +
-      '</div>' +
-      '<p class="ps-note">Generated ' + esc(new Date().toLocaleDateString('en-ZA')) +
-        (res.isFinal ? '' : ' — figures are a live preview and may change until payroll is run for this month.') + '</p>';
+      '</div>';
   }
 
   document.getElementById('payslip-close-btn').addEventListener('click', function () {
@@ -3143,8 +3163,25 @@
   // alongside EMP201 and IRP5/IT3(a) rather than scattered across tabs.
   function renderReportsPayslipsTable() {
     if (!state.payroll) return;
-    var rows = state.payroll.employees.filter(function (e) { return e.active; })
-      .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+
+    // Department filter — same pattern as the Roster's own filter: rebuilt
+    // from whoever's actually active this month, current selection kept
+    // across re-renders, so switching months or editing an employee doesn't
+    // silently reset it back to "All departments".
+    var deptFilterSelect = document.getElementById('reports-payslips-dept-filter');
+    var currentDeptFilter = deptFilterSelect.value;
+    var activeDeptNames = Array.from(new Set(state.payroll.employees.filter(function (e) { return e.active; })
+      .map(function (e) { return e.department; }))).sort();
+    deptFilterSelect.innerHTML = '<option value="">All departments</option>' +
+      activeDeptNames.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
+    if (currentDeptFilter && activeDeptNames.indexOf(currentDeptFilter) !== -1) deptFilterSelect.value = currentDeptFilter;
+    var deptFilterVal = deptFilterSelect.value;
+
+    var rows = state.payroll.employees.filter(function (e) {
+      if (!e.active) return false;
+      if (deptFilterVal && e.department !== deptFilterVal) return false;
+      return true;
+    }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) +
       ' — tick employees below, then Download selected payslips (bundles them into one PDF).';
 
@@ -3175,7 +3212,11 @@
       });
     });
     // "Select all" only ever applies to the currently shown (active, this
-    // month) rows, same behaviour as the old Roster checkbox had.
+    // month, and — now — this department) rows, same behaviour as the old
+    // Roster checkbox had. Selections made under a different department
+    // filter aren't touched or lost — selectedPayslipIds is a plain Set of
+    // ids that persists across filter changes, so switching the filter back
+    // and forth doesn't drop anyone already ticked.
     var selectAllCb = table.querySelector('#reports-select-all');
     if (selectAllCb) {
       selectAllCb.checked = rows.length > 0 && rows.every(function (e) { return selectedPayslipIds.has(String(e.id)); });
@@ -3188,6 +3229,8 @@
     }
     updatePrintSelectedButton();
   }
+
+  document.getElementById('reports-payslips-dept-filter').addEventListener('change', renderReportsPayslipsTable);
 
   document.getElementById('reports-print-selected-btn').addEventListener('click', function () {
     if (selectedPayslipIds.size === 0) {
