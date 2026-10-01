@@ -1293,7 +1293,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.31-hr-role';
+  var FRONTEND_BUILD = '2026-10-01.32-hr-role-editable';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -4486,7 +4486,7 @@
     document.getElementById('user-password-label').textContent = 'Reset password (leave blank to keep current)';
     document.getElementById('user-password').value = '';
     document.getElementById('user-role').value = u.role;
-    document.getElementById('user-role').disabled = true; // account type is fixed at creation
+    document.getElementById('user-role').disabled = false; // account type can be switched from here — apiUpdateUser_ re-validates scope for the new role
     setUserRoleFieldsVisibility(u.role);
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) {
       cb.checked = u.sections.indexOf(cb.value) !== -1;
@@ -4547,8 +4547,13 @@
     if (editName) {
       var password = document.getElementById('user-password').value;
       var active = document.getElementById('user-active').checked;
-      var updateParams = { name: editName, active: active };
-      if (editRole === 'hr') {
+      // Use the currently-selected role, not the one the account had when
+      // Manage was opened — editRole — so switching Account type here (e.g.
+      // Staff -> HR to allocate a company/departments) actually takes effect.
+      var updateParams = { name: editName, active: active, role: role };
+      if (role === 'hr') {
+        if (!company) { errEl.textContent = 'Pick a company for this HR account.'; return; }
+        if (!departments.length) { errEl.textContent = 'Pick at least one department within that company.'; return; }
         updateParams.company = company;
         updateParams.departments = departments.join(',');
       } else {
