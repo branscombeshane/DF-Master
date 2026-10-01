@@ -929,6 +929,11 @@
                 </div>
                 <div class="hint" style="margin-top:4px;">This only changes their pay for the month shown above — it never touches their standing salary on the Payroll roster.</div>
               </div>
+
+              <div style="margin-top:14px; min-width:220px;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; font-weight:700; margin-bottom:4px;">This month's adjustments</div>
+                <div style="font-size:13px;" id="adj-emp-adjustments-summary"></div>
+              </div>
             </div>
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
               <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
@@ -1301,7 +1306,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.35-payroll-table-cleanup';
+  var FRONTEND_BUILD = '2026-10-01.36-adj-emp-summary';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2722,6 +2727,7 @@
       finalizeBtn.disabled = true;
       advanceBtn.disabled = true;
       renderBasicSalaryView(null);
+      renderAdjEmpAdjustmentsSummary(null);
       return;
     }
     nameEl.textContent = emp.name;
@@ -2730,6 +2736,39 @@
     finalizeBtn.disabled = false;
     advanceBtn.disabled = false;
     renderBasicSalaryView(emp);
+    renderAdjEmpAdjustmentsSummary(emp);
+  }
+
+  // Compact "this month's adjustments" list inside the Selected-employee
+  // status strip, so Shane can see what's already been added for this
+  // employee without scrolling down to the full "This month's adjustments"
+  // table below (which lists every employee, not just the selected one).
+  // Matched by employeeId (not name) — item.name can collide across
+  // employees that happen to share a name, and item.employeeId is exactly
+  // what apiGetPayrollAdjustments_ already keys its items by.
+  function renderAdjEmpAdjustmentsSummary(emp) {
+    var wrap = document.getElementById('adj-emp-adjustments-summary');
+    if (!emp) { wrap.innerHTML = ''; return; }
+    var pa = state.payrollAdjustments;
+    var items = ((pa && pa.items) || []).filter(function (it) { return it.employeeId === emp.id; });
+    if (!items.length) {
+      wrap.innerHTML = '<span class="hint" style="margin:0;">Nothing added for ' + esc(monthLabel(state.selectedMonth)) + ' yet.</span>';
+      return;
+    }
+    wrap.innerHTML = items.map(function (it) {
+      // Same hidden-amount / hours-suffix rules as the full table below
+      // (hrFilterAdjustmentsData_ nulls amount for Overtime/Absent on HR).
+      var amountText = (it.amount === null)
+        ? '<span class="hint" style="margin:0;">hidden</span>'
+        : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
+      var extra = (it.type === 'Overtime' && it.hours) ? ' (' + it.hours + 'h)'
+        : (it.type === 'Absent' && it.hours) ? ' (' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')' : '';
+      return '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:2px 0;">' +
+        '<span>' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + extra +
+        (it.note ? ' <span class="hint" style="margin:0;">— ' + esc(it.note) + '</span>' : '') + '</span>' +
+        '<span style="white-space:nowrap; font-weight:600;">' + amountText + '</span>' +
+        '</div>';
+    }).join('');
   }
 
   // ---- Basic salary (view + one-month-only edit) ----
