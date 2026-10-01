@@ -604,7 +604,7 @@
         <input type="number" step="0.5" id="payroll-days">
         <div class="hint">Leave blank for a fixed monthly salary (e.g. Directors) — no day/hour rate is calculated.</div>
       </div>
-      <div class="field">
+      <div class="field" id="payroll-amount-field">
         <label>Monthly amount (R)</label>
         <input type="number" step="0.01" id="payroll-amount">
       </div>
@@ -905,7 +905,7 @@
               <div style="font-size:14px; font-weight:700;" id="adj-emp-status-name">—</div>
               <div style="margin-top:6px;"><span class="status-badge" id="adj-emp-status-badge"></span></div>
 
-              <div style="margin-top:12px; font-size:13px;">
+              <div style="margin-top:12px; font-size:13px;" id="adj-basic-salary-block">
                 <span style="color:var(--text-muted);">Basic salary:</span>
                 <span id="adj-basic-salary-view">
                   <strong id="adj-basic-salary-amount">—</strong>
@@ -1211,6 +1211,7 @@
       <div class="panel">
         <h2 id="users-form-title">Add staff account</h2>
         <input type="hidden" id="user-edit-name">
+        <input type="hidden" id="user-edit-role">
         <div class="form-grid">
           <div class="field">
             <label id="user-name-label">Name</label>
@@ -1292,7 +1293,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-09-30.30-button-loading-states';
+  var FRONTEND_BUILD = '2026-10-01.31-hr-role';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1734,7 +1735,13 @@
     }
     if (hasSection('payroll')) {
       var payrollReady = loadPayroll();
-      loadPayrollRun(); loadIrp5(); loadAdjustments();
+      // HR accounts never see the Payroll Dashboard or Reports sub-tabs
+      // (payslips/EMP201/IRP5/recon all show Basic-Salary-derived figures
+      // HR isn't permitted to see — see renderPayrollSubNav), so there's no
+      // point loading the data that backs them; the backend would just
+      // refuse these calls anyway.
+      if (state.role !== 'hr') { loadPayrollRun(); loadIrp5(); }
+      loadAdjustments();
       if (state.activeTab === 'payroll') activeTabReady = payrollReady;
     }
     if (hasSection('vehicles')) {
@@ -1807,17 +1814,28 @@
     { key: 'reports', label: 'Reports' },
     { key: 'casuals', label: 'Casuals' }
   ];
+  // HR accounts never get a Dashboard (Total Monthly Cost + per-department
+  // cost totals — pure Basic Salary aggregates) or Reports (EMP201/Payslips/
+  // IRP5/Employer Recon — every one of those shows Gross/Net figures HR
+  // can't see) sub-tab — the backend refuses those calls outright too (see
+  // apiGetPayrollRun_/apiGetIrp5_/apiGetEmployerRecon_/apiGetPayslip_), this
+  // just keeps HR from ever seeing a tab that leads nowhere.
+  function visiblePayrollSubtabs_() {
+    if (state.role !== 'hr') return PAYROLL_SUBTABS;
+    return PAYROLL_SUBTABS.filter(function (t) { return t.key !== 'dashboard' && t.key !== 'reports'; });
+  }
   function renderPayrollSubNav() {
     var nav = document.getElementById('payroll-subtabs');
-    if (!nav || nav.childElementCount) { showPayrollSubTab(state.payrollSubTab || 'dashboard'); return; }
-    PAYROLL_SUBTABS.forEach(function (t) {
+    var defaultSubTab = state.role === 'hr' ? 'roster' : 'dashboard';
+    if (!nav || nav.childElementCount) { showPayrollSubTab(state.payrollSubTab || defaultSubTab); return; }
+    visiblePayrollSubtabs_().forEach(function (t) {
       var btn = document.createElement('button');
       btn.textContent = t.label;
       btn.setAttribute('data-subview', t.key);
       btn.addEventListener('click', function () { showPayrollSubTab(t.key); });
       nav.appendChild(btn);
     });
-    showPayrollSubTab(state.payrollSubTab || 'dashboard');
+    showPayrollSubTab(state.payrollSubTab || defaultSubTab);
   }
   function showPayrollSubTab(key) {
     if (!key) return;
@@ -2124,25 +2142,32 @@
   function renderPayroll() {
     if (!state.payroll) return;
     document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
-    var kpiGrid = document.getElementById('payroll-kpi-grid');
-    kpiGrid.innerHTML =
-      '<div class="kpi-card"><div class="kpi-head"><span class="name">Headcount (active)</span></div>' +
-      '<div class="kpi-row hero"><span>Employees</span><span class="val">' + state.payroll.headcount + '</span></div></div>' +
-      '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Monthly Cost</span></div>' +
-      '<div class="kpi-row hero"><span>Payroll</span><span class="val">' + money(state.payroll.totalMonthlyCost) + '</span></div></div>' +
-      '<div class="kpi-card"><div class="kpi-head"><span class="name">Payslips Finalized</span></div>' +
-      '<div class="kpi-row hero"><span>' + monthLabel(state.selectedMonth) + '</span><span class="val">' + state.payroll.processedCount + ' / ' + state.payroll.headcount + '</span></div></div>';
+    // HR accounts have no Payroll Dashboard sub-tab at all (see
+    // visiblePayrollSubtabs_) — it's pure Basic Salary cost aggregates
+    // (totalMonthlyCost, per-department totals), which the backend doesn't
+    // even send them (hrFilterPayrollData_), so there's nothing to build
+    // here for that role.
+    if (state.role !== 'hr') {
+      var kpiGrid = document.getElementById('payroll-kpi-grid');
+      kpiGrid.innerHTML =
+        '<div class="kpi-card"><div class="kpi-head"><span class="name">Headcount (active)</span></div>' +
+        '<div class="kpi-row hero"><span>Employees</span><span class="val">' + state.payroll.headcount + '</span></div></div>' +
+        '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Monthly Cost</span></div>' +
+        '<div class="kpi-row hero"><span>Payroll</span><span class="val">' + money(state.payroll.totalMonthlyCost) + '</span></div></div>' +
+        '<div class="kpi-card"><div class="kpi-head"><span class="name">Payslips Finalized</span></div>' +
+        '<div class="kpi-row hero"><span>' + monthLabel(state.selectedMonth) + '</span><span class="val">' + state.payroll.processedCount + ' / ' + state.payroll.headcount + '</span></div></div>';
 
-    var deptGrid = document.getElementById('payroll-dept-grid');
-    deptGrid.innerHTML = '';
-    state.payroll.departments.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (d) {
-      var card = document.createElement('div');
-      card.className = 'dept-card';
-      card.innerHTML = '<div class="dept-name">' + esc(d.department) + '</div>' +
-        '<div class="dept-row"><span>Headcount</span><span>' + d.count + '</span></div>' +
-        '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>';
-      deptGrid.appendChild(card);
-    });
+      var deptGrid = document.getElementById('payroll-dept-grid');
+      deptGrid.innerHTML = '';
+      state.payroll.departments.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (d) {
+        var card = document.createElement('div');
+        card.className = 'dept-card';
+        card.innerHTML = '<div class="dept-name">' + esc(d.department) + '</div>' +
+          '<div class="dept-row"><span>Headcount</span><span>' + d.count + '</span></div>' +
+          '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>';
+        deptGrid.appendChild(card);
+      });
+    }
 
     var deptFilter = document.getElementById('payroll-dept-filter');
     // The roster's own filter dropdown reflects whatever's actually on the
@@ -2204,21 +2229,30 @@
       return a.name < b.name ? -1 : 1;
     });
 
+    // HR accounts never see Basic Salary, in any shape — not the figure
+    // itself, not the day/hour rate it implies (see hrRedactEmployee_) — and
+    // never see payslips at all (apiGetPayslip_ refuses them outright), so
+    // those columns/the Payslip button simply aren't part of their table.
+    var isHr = state.role === 'hr';
     var table = document.getElementById('payroll-table');
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th><th>Amount</th><th>Day rate</th><th>Hour rate</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th><th></th><th></th></tr></thead>';
+    var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th>' + (isHr ? '' : '<th></th>') + '<th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
+      var salaryCells = isHr ? '' :
+        '<td>' + money(e.amount) + '</td>' +
+        '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
+        '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
+      var payslipCell = isHr ? '' : '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>';
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
-        '<td>' + money(e.amount) + '</td>' +
-        '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
-        '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>' +
+        salaryCells +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
-        '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
+        payslipCell +
         '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
         '</tr>';
     }).join('') + '</tbody>';
@@ -2600,10 +2634,17 @@
       '<th>Amount</th><th style="text-align:left;">Note</th><th></th></tr></thead>';
     var items = (pa && pa.items) || [];
     var body = '<tbody>' + (items.length ? items.map(function (it) {
+      // it.amount comes back null for Overtime/Absent on an HR account
+      // (hrFilterAdjustmentsData_) — that Rand figure is Basic-Salary-
+      // derived (rate x hours/days), so HR sees the hours/days it entered
+      // but not what they translated to.
+      var amountCell = (it.amount === null)
+        ? '<span class="hint" style="margin:0;">hidden</span>'
+        : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
       return '<tr>' +
         '<td style="text-align:left;">' + esc(it.name) + '</td>' +
         '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
-        '<td>' + (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount) +
+        '<td>' + amountCell +
         (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') +
         (it.type === 'Absent' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')</span>' : '') + '</td>' +
         '<td style="text-align:left;">' + esc(it.note) + '</td>' +
@@ -2677,7 +2718,15 @@
   }
 
   // ---- Basic salary (view + one-month-only edit) ----
+  // HR accounts never see this block at all — not the figure, not the
+  // Edit/Revert controls (apiSetBaseAmountOverride_ refuses HR outright
+  // anyway) — since the employee object they're handed has no amount/
+  // defaultAmount/amountOverridden fields to show in the first place (see
+  // hrRedactEmployee_).
   function renderBasicSalaryView(emp) {
+    var block = document.getElementById('adj-basic-salary-block');
+    if (state.role === 'hr') { block.style.display = 'none'; return; }
+    block.style.display = '';
     var amountEl = document.getElementById('adj-basic-salary-amount');
     var noteEl = document.getElementById('adj-basic-salary-overridden-note');
     var revertBtn = document.getElementById('adj-basic-salary-revert-btn');
@@ -2820,9 +2869,24 @@
     document.getElementById('adj-hours-field').style.display = isOvertime ? '' : 'none';
     document.getElementById('adj-days-field').style.display = isAbsent ? '' : 'none';
     var amountInput = document.getElementById('adj-amount');
+    var amountField = document.getElementById('adj-amount-field');
     amountInput.readOnly = isOvertime || isAbsent;
     amountInput.style.opacity = (isOvertime || isAbsent) ? '0.7' : '';
-    if (!isOvertime && !isAbsent) return;
+    if (!isOvertime && !isAbsent) { amountField.style.display = ''; return; }
+
+    // HR accounts never see this employee's rate (it's Basic-Salary-derived,
+    // same as dayRate/hourRate on the roster — see hrRedactEmployee_), so
+    // there's no rate to preview the amount with here, and the Amount field
+    // itself is hidden rather than shown empty/misleading — the real number
+    // is only ever computed server-side (see apiAddAdjustment_) and comes
+    // back redacted on every subsequent read (hrFilterAdjustmentsData_).
+    if (state.role === 'hr') {
+      amountField.style.display = 'none';
+      var hrHint = document.getElementById(isOvertime ? 'adj-hours-rate-hint' : 'adj-days-rate-hint');
+      hrHint.textContent = 'The Rand amount is calculated automatically from this employee\'s rate and isn\'t shown to HR accounts.';
+      return;
+    }
+    amountField.style.display = '';
 
     var emp = selectedAdjEmployee();
 
@@ -2876,31 +2940,43 @@
 
     if (!employeeId) { errEl.textContent = 'Choose an employee.'; return; }
 
+    // HR accounts never compute this amount client-side — they don't have
+    // the rate to do it with (see hrRedactEmployee_) — hours/days alone are
+    // sent, and apiAddAdjustment_ prices it server-side instead.
+    var isHrRateType = state.role === 'hr' && (type === 'Overtime' || type === 'Absent');
+
     if (type === 'Overtime') {
       hours = Number(document.getElementById('adj-hours').value);
       if (!hours || hours <= 0) { errEl.textContent = 'Enter the number of overtime hours.'; return; }
-      var emp = selectedAdjEmployee();
-      if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
-        errEl.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
-        return;
+      if (!isHrRateType) {
+        var emp = selectedAdjEmployee();
+        if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
+          errEl.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
+          return;
+        }
+        amount = Math.round(hours * emp.hourRate * 100) / 100;
       }
-      amount = Math.round(hours * emp.hourRate * 100) / 100;
     } else if (type === 'Absent') {
       // Sent under the same "hours" param the backend already stores
       // Overtime's hour count in — for an Absent row it holds the day
       // count instead (see apiAddAdjustment_/summarizeAdjustments_).
       hours = Number(document.getElementById('adj-days').value);
       if (!hours || hours <= 0) { errEl.textContent = 'Enter the number of absent days.'; return; }
-      var absEmp = selectedAdjEmployee();
-      if (!absEmp || absEmp.dayRate === null || absEmp.dayRate === undefined) {
-        errEl.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
-        return;
+      if (!isHrRateType) {
+        var absEmp = selectedAdjEmployee();
+        if (!absEmp || absEmp.dayRate === null || absEmp.dayRate === undefined) {
+          errEl.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
+          return;
+        }
+        amount = Math.round(hours * absEmp.dayRate * 100) / 100;
       }
-      amount = Math.round(hours * absEmp.dayRate * 100) / 100;
     }
-    if (!amount || amount <= 0) { errEl.textContent = 'Enter an amount greater than 0.'; return; }
+    if (!isHrRateType && (!amount || amount <= 0)) { errEl.textContent = 'Enter an amount greater than 0.'; return; }
 
     flashStatus(status, 'Adding…', 'save-status', 0);
+    // For HR's Overtime/Absent, 'amount' is left at whatever the (hidden,
+    // irrelevant) Amount field happens to hold — apiAddAdjustment_ ignores
+    // it entirely for that role/type combination and computes its own.
     var params = { employeeId: employeeId, month: state.selectedMonth, type: type, amount: amount, note: note, hours: (hours !== null ? hours : '') };
 
     callApi('addAdjustment', params).then(function (res) {
@@ -3293,7 +3369,11 @@
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
     document.getElementById('payroll-job-title').value = e.jobTitle || '';
     document.getElementById('payroll-days').value = e.days === null ? '' : e.days;
-    document.getElementById('payroll-amount').value = e.amount;
+    // HR accounts never receive 'amount' on the employee object at all (see
+    // hrRedactEmployee_) — the field is hidden for them (toggled below), so
+    // there's nothing to fill in here.
+    document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
+    if (state.role !== 'hr') document.getElementById('payroll-amount').value = e.amount;
     document.getElementById('payroll-date').value = e.dateEmployed || '';
     document.getElementById('payroll-address').value = e.address || '';
     document.getElementById('payroll-contact-number').value = e.contactNumber || '';
@@ -3375,6 +3455,7 @@
     document.getElementById('payroll-empnum').value = '';
     document.getElementById('payroll-job-title').value = '';
     document.getElementById('payroll-days').value = '';
+    document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
     document.getElementById('payroll-amount').value = '';
     document.getElementById('payroll-date').value = '';
     document.getElementById('payroll-address').value = '';
@@ -3428,7 +3509,6 @@
       employeeNumber: document.getElementById('payroll-empnum').value.trim(),
       jobTitle: document.getElementById('payroll-job-title').value.trim(),
       days: document.getElementById('payroll-days').value,
-      amount: document.getElementById('payroll-amount').value,
       dateEmployed: document.getElementById('payroll-date').value.trim(),
       address: document.getElementById('payroll-address').value.trim(),
       contactNumber: contactNumber,
@@ -3447,6 +3527,11 @@
       uifExempt: document.getElementById('payroll-uif-exempt').checked,
       employmentType: document.getElementById('payroll-employment-type').value
     };
+    // HR never sends 'amount' at all — the field doesn't exist in its form
+    // (see resetEmployeeForm/startEditEmployee), and the backend ignores/
+    // zeroes it for that role regardless (see apiAddEmployee_/
+    // apiUpdateEmployee_), so there's nothing correct to send here.
+    if (state.role !== 'hr') payload.amount = document.getElementById('payroll-amount').value;
 
     var action, extra;
     if (id) {
@@ -4303,17 +4388,73 @@
       var label = showGroupPrefix ? (groupNameByKey[e.companyGroup] || e.companyGroup) + ' — ' + e.name : e.name;
       return '<label><input type="checkbox" value="' + esc(e.key) + '" class="user-entity-cb" style="width:auto;">' + esc(label) + '</label>';
     }).join('');
+
+    // Same "every group, not just the active tile" reasoning as Entities
+    // above — an HR account's Company is an admin setting, not scoped to
+    // whichever tile the Owner happens to be viewing right now.
+    var companySelect = document.getElementById('user-company');
+    companySelect.innerHTML = '<option value="">Select a company…</option>' + state.allCompanies.map(function (c) {
+      var label = showGroupPrefix ? (groupNameByKey[c.companyGroup] || c.companyGroup) + ' — ' + c.name : c.name;
+      return '<option value="' + esc(c.id) + '">' + esc(label) + '</option>';
+    }).join('');
   }
 
   function SECTION_KEYS_LOCAL() { return ['dashboard', 'history', 'payroll', 'vehicles']; }
 
+  // Repopulates the Departments checkbox grid for whichever Company is
+  // currently selected — a department only ever belongs to one company (see
+  // CompanyId on Settings > Departments), so this is the same "pick a
+  // company, then its departments" scoping an HR account itself gets.
+  // checkedNames pre-checks the given ones (used when re-entering Manage on
+  // an existing HR account) — omit it to start with nothing checked.
+  function renderUserDepartmentsGrid(companyId, checkedNames) {
+    var grid = document.getElementById('user-departments-grid');
+    var hint = document.getElementById('user-departments-hint');
+    var depts = companyId ? state.allDepartments.filter(function (d) { return d.companyId === companyId; }) : [];
+    if (!companyId) {
+      grid.innerHTML = '';
+      hint.style.display = '';
+      hint.textContent = 'Pick a company above to list its departments.';
+    } else if (!depts.length) {
+      grid.innerHTML = '';
+      hint.style.display = '';
+      hint.textContent = 'This company has no departments set up yet — add some under Settings > Departments first.';
+    } else {
+      hint.style.display = 'none';
+      grid.innerHTML = depts.map(function (d) {
+        var checked = checkedNames && checkedNames.indexOf(d.name) !== -1;
+        return '<label><input type="checkbox" value="' + esc(d.name) + '" class="user-department-cb"' + (checked ? ' checked' : '') + ' style="width:auto;">' + esc(d.name) + '</label>';
+      }).join('');
+    }
+  }
+  document.getElementById('user-company').addEventListener('change', function () {
+    renderUserDepartmentsGrid(this.value, null);
+  });
+
+  function setUserRoleFieldsVisibility(role) {
+    document.getElementById('user-staff-fields').style.display = role === 'hr' ? 'none' : '';
+    document.getElementById('user-hr-fields').style.display = role === 'hr' ? '' : 'none';
+  }
+  document.getElementById('user-role').addEventListener('change', function () {
+    setUserRoleFieldsVisibility(this.value);
+  });
+
   function renderUsersTable() {
     var table = document.getElementById('users-table');
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Role</th><th>Sections</th><th>Entities</th><th>Active</th><th></th></tr></thead>';
+    var companyNameById = {};
+    state.allCompanies.forEach(function (c) { companyNameById[c.id] = c.name; });
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Role</th><th>Sections</th><th>Scope</th><th>Active</th><th></th></tr></thead>';
     var body = '<tbody>' + state.users.map(function (u) {
       var chips = function (list) {
         return '<div class="pill-list">' + (list.length ? list.map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') : '<span class="chip">—</span>') + '</div>';
       };
+      var scopeHtml;
+      if (u.role === 'hr') {
+        var companyLabel = companyNameById[u.company] || '(no company set)';
+        scopeHtml = '<div style="font-size:12px; margin-bottom:4px;">' + esc(companyLabel) + '</div>' + chips(u.departments);
+      } else {
+        scopeHtml = chips(u.entities);
+      }
       var actions = (u.role === 'owner')
         ? '<span style="font-size:11px; color:var(--text-muted);">Managed in Sheet</span>'
         : '<button class="btn secondary small" data-manage="' + esc(u.name) + '">Manage</button>';
@@ -4321,7 +4462,7 @@
         '<td style="text-align:left;">' + esc(u.name) + '</td>' +
         '<td style="text-align:left; text-transform:capitalize;">' + esc(u.role) + '</td>' +
         '<td>' + chips(u.sections) + '</td>' +
-        '<td>' + chips(u.entities) + '</td>' +
+        '<td>' + scopeHtml + '</td>' +
         '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
         '<td>' + actions + '</td>' +
         '</tr>';
@@ -4338,17 +4479,23 @@
     if (!u) return;
     document.getElementById('users-form-title').textContent = 'Manage — ' + u.name;
     document.getElementById('user-edit-name').value = u.name;
+    document.getElementById('user-edit-role').value = u.role;
     document.getElementById('user-name-label').textContent = 'Name (cannot be changed)';
     document.getElementById('user-name').value = u.name;
     document.getElementById('user-name').disabled = true;
     document.getElementById('user-password-label').textContent = 'Reset password (leave blank to keep current)';
     document.getElementById('user-password').value = '';
+    document.getElementById('user-role').value = u.role;
+    document.getElementById('user-role').disabled = true; // account type is fixed at creation
+    setUserRoleFieldsVisibility(u.role);
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) {
       cb.checked = u.sections.indexOf(cb.value) !== -1;
     });
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) {
       cb.checked = u.entities.indexOf(cb.value) !== -1;
     });
+    document.getElementById('user-company').value = u.company || '';
+    renderUserDepartmentsGrid(u.company || '', u.departments || []);
     document.getElementById('user-active').checked = u.active;
     document.getElementById('user-active-field').style.display = '';
     document.getElementById('user-save-btn').textContent = 'Save changes';
@@ -4360,13 +4507,19 @@
   function resetUserForm() {
     document.getElementById('users-form-title').textContent = 'Add staff account';
     document.getElementById('user-edit-name').value = '';
+    document.getElementById('user-edit-role').value = '';
     document.getElementById('user-name-label').textContent = 'Name';
     document.getElementById('user-name').value = '';
     document.getElementById('user-name').disabled = false;
     document.getElementById('user-password-label').textContent = 'Password';
     document.getElementById('user-password').value = '';
+    document.getElementById('user-role').value = 'staff';
+    document.getElementById('user-role').disabled = false;
+    setUserRoleFieldsVisibility('staff');
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) { cb.checked = false; });
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) { cb.checked = false; });
+    document.getElementById('user-company').value = '';
+    renderUserDepartmentsGrid('', null);
     document.getElementById('user-active-field').style.display = 'none';
     document.getElementById('user-save-btn').textContent = 'Add staff account';
     document.getElementById('user-cancel-btn').style.display = 'none';
@@ -4377,20 +4530,33 @@
 
   document.getElementById('user-save-btn').addEventListener('click', function () {
     var editName = document.getElementById('user-edit-name').value;
+    var editRole = document.getElementById('user-edit-role').value;
     var errEl = document.getElementById('user-error');
     var status = document.getElementById('user-save-status');
     errEl.textContent = '';
 
+    var role = document.getElementById('user-role').value === 'hr' ? 'hr' : 'staff';
     var sections = Array.prototype.filter.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
     var entities = Array.prototype.filter.call(document.querySelectorAll('.user-entity-cb'), function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
+    var company = document.getElementById('user-company').value;
+    var departments = Array.prototype.filter.call(document.querySelectorAll('.user-department-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
 
     if (editName) {
       var password = document.getElementById('user-password').value;
       var active = document.getElementById('user-active').checked;
+      var updateParams = { name: editName, active: active };
+      if (editRole === 'hr') {
+        updateParams.company = company;
+        updateParams.departments = departments.join(',');
+      } else {
+        updateParams.sections = sections.join(',');
+        updateParams.entities = entities.join(',');
+      }
       flashStatus(status, 'Saving…', 'save-status', 0);
-      var updateReq = callApi('updateUser', { name: editName, sections: sections.join(','), entities: entities.join(','), active: active });
+      var updateReq = callApi('updateUser', updateParams);
       var chain = password ? updateReq.then(function () { return callApi('resetPassword', { name: editName, newPassword: password }); }) : updateReq;
       chain.then(function (res) {
         if (res.ok) {
@@ -4405,8 +4571,18 @@
       var newPassword = document.getElementById('user-password').value;
       if (!name) { errEl.textContent = 'Name is required.'; return; }
       if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+      var addParams = { name: name, password: newPassword, role: role };
+      if (role === 'hr') {
+        if (!company) { errEl.textContent = 'Pick a company for this HR account.'; return; }
+        if (!departments.length) { errEl.textContent = 'Pick at least one department within that company.'; return; }
+        addParams.company = company;
+        addParams.departments = departments.join(',');
+      } else {
+        addParams.sections = sections.join(',');
+        addParams.entities = entities.join(',');
+      }
       flashStatus(status, 'Saving…', 'save-status', 0);
-      callApi('addUser', { name: name, password: newPassword, sections: sections.join(','), entities: entities.join(',') }).then(function (res) {
+      callApi('addUser', addParams).then(function (res) {
         if (res.ok) {
           flashStatus(status, 'Added', 'save-status ok', 3000);
           state.users = res.users;
