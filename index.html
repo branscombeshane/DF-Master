@@ -593,7 +593,8 @@
       </div>
       <div class="field">
         <label>Employee number</label>
-        <input type="text" id="payroll-empnum">
+        <input type="text" id="payroll-empnum" disabled>
+        <div class="hint" id="payroll-empnum-hint">Assigned automatically when you save a new employee.</div>
       </div>
       <div class="field">
         <label>Job title</label>
@@ -1293,7 +1294,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.33-hr-multi-company';
+  var FRONTEND_BUILD = '2026-10-01.34-employee-number-autogen';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3367,6 +3368,7 @@
     document.getElementById('payroll-name').value = e.name;
     populateEmployeeDepartmentSelect_(e.department);
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
+    document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when this employee was created — edit the Sheet directly if it genuinely needs correcting.';
     document.getElementById('payroll-job-title').value = e.jobTitle || '';
     document.getElementById('payroll-days').value = e.days === null ? '' : e.days;
     // HR accounts never receive 'amount' on the employee object at all (see
@@ -3453,6 +3455,7 @@
     document.getElementById('payroll-name').value = '';
     populateEmployeeDepartmentSelect_('');
     document.getElementById('payroll-empnum').value = '';
+    document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when you save a new employee.';
     document.getElementById('payroll-job-title').value = '';
     document.getElementById('payroll-days').value = '';
     document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
