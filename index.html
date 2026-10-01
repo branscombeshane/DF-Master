@@ -369,8 +369,15 @@
   table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.data-table th, table.data-table td {
     text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--gridline);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  /* Free-text columns (e.g. Notes) opt back into wrapping explicitly via a
+     .wrap class, rather than every column defaulting to it — a table reads
+     like a tidy grid when short values (dates, rates, counts) never
+     mid-word wrap, and the panel around it already scrolls horizontally
+     (see the Roster's overflow-x:auto wrapper) for anything genuinely too
+     wide, the same way a spreadsheet behaves. */
+  table.data-table td.wrap { white-space: normal; }
   table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
   table.data-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
   table.data-table tr.inactive td { opacity: 0.45; }
@@ -1294,7 +1301,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.34-employee-number-autogen';
+  var FRONTEND_BUILD = '2026-10-01.35-payroll-table-cleanup';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2236,14 +2243,22 @@
     // those columns/the Payslip button simply aren't part of their table.
     var isHr = state.role === 'hr';
     var table = document.getElementById('payroll-table');
+    // Notes is free text that's blank for most employees most of the time —
+    // showing an empty column across the whole roster is pure clutter, so it
+    // only appears at all once something in the current (filtered) view
+    // actually has a note.
+    var anyNotes = rows.some(function (e) { return e.notes && String(e.notes).trim(); });
     var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th><th style="text-align:left;">Notes</th><th style="text-align:left;">Status</th>' + (isHr ? '' : '<th></th>') + '<th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (e) {
       var salaryCells = isHr ? '' :
         '<td>' + money(e.amount) + '</td>' +
         '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
         '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
-      var payslipCell = isHr ? '' : '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>';
+      // One combined Actions column instead of two separate buttons each
+      // with their own blank header — same actions, less visual noise.
+      var actions = (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button> ') +
+        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button>';
       return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
@@ -2251,10 +2266,9 @@
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
         salaryCells +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
-        '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(e.notes) + '</td>' +
+        (anyNotes ? '<td class="wrap" style="text-align:left; max-width:220px;">' + esc(e.notes) + '</td>' : '') +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
-        payslipCell +
-        '<td><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></td>' +
+        '<td style="text-align:right; white-space:nowrap;">' + actions + '</td>' +
         '</tr>';
     }).join('') + '</tbody>';
     table.innerHTML = head + body;
