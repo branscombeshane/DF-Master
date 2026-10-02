@@ -306,6 +306,7 @@
   .status-badge.not-started { background: var(--gridline); color: var(--text-secondary); }
   .status-badge.in-progress { background: rgba(250,178,25,0.18); color: var(--warning); }
   .status-badge.finalized { background: rgba(12,163,12,0.15); color: var(--good); }
+  .status-badge.locked { background: rgba(208,59,59,0.14); color: var(--critical); }
 
   .kpi-grid {
     display: grid;
@@ -575,6 +576,22 @@
     <div class="modal-actions">
       <button class="btn secondary" id="cp-cancel">Cancel</button>
       <button class="btn" id="cp-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="owner-unlock-modal">
+  <div class="modal-card">
+    <h2>Owner password required</h2>
+    <p class="sub" id="ou-message">Payroll has already been run for this month. Enter the Owner password to make changes.</p>
+    <div class="field">
+      <label for="ou-password">Owner password</label>
+      <input id="ou-password" type="password" autocomplete="current-password">
+    </div>
+    <div class="error-text" id="ou-error"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="ou-cancel">Cancel</button>
+      <button class="btn" id="ou-confirm">Unlock &amp; continue</button>
     </div>
   </div>
 </div>
@@ -1317,7 +1334,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-01.38-payslip-sections-ytd-fix';
+  var FRONTEND_BUILD = '2026-10-02.40-payroll-month-lock';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1459,6 +1476,81 @@
       .finally(function () {
         if (loadingBtn) endButtonLoading_(loadingBtn);
       });
+  }
+
+  // Wraps callApi() for the handful of payroll-mutating actions that can be
+  // refused once a month has been run (see checkMonthLockOrOwnerPassword_
+  // on the backend) — adding/deleting a Pay Adjustment, a Basic Salary
+  // override, Finalize/In-progress status, and re-running payroll itself.
+  // On an ordinary response (not locked) this behaves exactly like
+  // callApi() — same promise, same resolved shape — so every existing
+  // `.then(function (res) {...})` call site keeps working completely
+  // unchanged. Only when the server comes back with `locked:true` does
+  // this pop an Owner-password prompt, retry the SAME action+params with
+  // the entered password attached, and keep prompting (showing the
+  // server's own error inline, e.g. "Incorrect Owner password") until the
+  // user either succeeds or cancels. Cancelling resolves with the original
+  // locked response, so a caller's normal `if (!res.ok) ...` handling just
+  // shows the "payroll already run" message — there's no separate cancel
+  // path callers need to handle.
+  function callApiWithOwnerUnlock(action, params) {
+    return callApi(action, params).then(function (res) {
+      if (!res || res.locked !== true) return res;
+      return promptOwnerUnlockAndRetry_(action, params, res);
+    });
+  }
+
+  function promptOwnerUnlockAndRetry_(action, params, lockedRes) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('owner-unlock-modal');
+      var input = document.getElementById('ou-password');
+      var messageEl = document.getElementById('ou-message');
+      var errorEl = document.getElementById('ou-error');
+      var confirmBtn = document.getElementById('ou-confirm');
+      var cancelBtn = document.getElementById('ou-cancel');
+
+      messageEl.textContent = lockedRes.error || 'Payroll has already been run for this month. Enter the Owner password to make changes.';
+      errorEl.textContent = '';
+      input.value = '';
+      modal.classList.add('active');
+      setTimeout(function () { input.focus(); }, 0);
+
+      function cleanup() {
+        modal.classList.remove('active');
+        confirmBtn.removeEventListener('click', onConfirm);
+        cancelBtn.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKeydown);
+      }
+      function onCancel() {
+        cleanup();
+        resolve(lockedRes);
+      }
+      function onConfirm() {
+        var pw = input.value;
+        if (!pw) { errorEl.textContent = 'Enter the Owner password.'; return; }
+        confirmBtn.disabled = true;
+        cancelBtn.disabled = true;
+        var prevLabel = confirmBtn.textContent;
+        confirmBtn.textContent = 'Checking…';
+        callApi(action, Object.assign({}, params, { ownerPassword: pw })).then(function (res2) {
+          confirmBtn.disabled = false;
+          cancelBtn.disabled = false;
+          confirmBtn.textContent = prevLabel;
+          if (res2 && res2.locked === true) {
+            errorEl.textContent = res2.error || 'Incorrect Owner password.';
+            input.value = '';
+            input.focus();
+            return;
+          }
+          cleanup();
+          resolve(res2);
+        });
+      }
+      function onKeydown(e) { if (e.key === 'Enter') onConfirm(); }
+      confirmBtn.addEventListener('click', onConfirm);
+      cancelBtn.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKeydown);
+    });
   }
 
   // ================= FORMATTING =================
@@ -1713,6 +1805,7 @@
     state.historyEntity = 'total';
     state.payroll = null;
     state.payrollAdjustments = null;
+    state.monthLocked = false;
 
     document.getElementById('group-picker-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2157,6 +2250,7 @@
     return callApi('getPayroll', { month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         state.payroll = res.payroll;
+        state.monthLocked = !!res.monthLocked;
         renderPayroll();
       }
       return res;
@@ -2166,6 +2260,7 @@
   function renderPayroll() {
     if (!state.payroll) return;
     document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
+    renderMonthLockedBadge_('payroll-roster-sub');
     // HR accounts have no Payroll Dashboard sub-tab at all (see
     // visiblePayrollSubtabs_) — it's pure Basic Salary cost aggregates
     // (totalMonthlyCost, per-department totals), which the backend doesn't
@@ -2621,10 +2716,30 @@
     return callApi('getPayrollAdjustments', { month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         state.payrollAdjustments = res.payrollAdjustments;
+        state.monthLocked = !!res.monthLocked;
         renderAdjustments();
       }
       return res;
     });
+  }
+
+  // Shows a small red "Locked" badge right after the given panel-sub
+  // element whenever payroll has already been run for state.selectedMonth
+  // (see checkMonthLockOrOwnerPassword_ on the backend) — a heads-up that
+  // further changes here will prompt for the Owner password, rather than
+  // that coming as a surprise only once something is attempted.
+  function renderMonthLockedBadge_(subElId) {
+    var subEl = document.getElementById(subElId);
+    if (!subEl) return;
+    var existing = subEl.querySelector('.status-badge.locked');
+    if (existing) existing.remove();
+    if (!state.monthLocked) return;
+    var badge = document.createElement('span');
+    badge.className = 'status-badge locked';
+    badge.style.marginLeft = '8px';
+    badge.textContent = 'Locked — payroll run';
+    subEl.appendChild(document.createTextNode(' '));
+    subEl.appendChild(badge);
   }
 
   function renderAdjustments() {
@@ -2632,6 +2747,7 @@
     var pa = state.payrollAdjustments;
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
       ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent comes off Gross before tax; deductions and advances only affect Net pay.';
+    renderMonthLockedBadge_('adjustments-sub');
 
     // Department filter — lets Shane work through payroll one department at
     // a time instead of hunting for each name in one long combined list.
@@ -2708,7 +2824,7 @@
     Array.prototype.forEach.call(table.querySelectorAll('[data-adj-delete]'), function (btn) {
       btn.addEventListener('click', function () {
         btn.disabled = true;
-        callApi('deleteAdjustment', { id: btn.getAttribute('data-adj-delete'), month: state.selectedMonth }).then(function (res) {
+        callApiWithOwnerUnlock('deleteAdjustment', { id: btn.getAttribute('data-adj-delete'), month: state.selectedMonth }).then(function (res) {
           if (res.ok) {
             state.payrollAdjustments = res.payrollAdjustments;
             renderAdjustments();
@@ -2798,9 +2914,33 @@
       return '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:2px 0;">' +
         '<span>' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + extra +
         (it.note ? ' <span class="hint" style="margin:0;">— ' + esc(it.note) + '</span>' : '') + '</span>' +
-        '<span style="white-space:nowrap; font-weight:600;">' + amountText + '</span>' +
+        '<span style="white-space:nowrap; display:flex; align-items:center; gap:8px;">' +
+          '<span style="font-weight:600;">' + amountText + '</span>' +
+          '<button class="btn secondary small" data-adj-summary-delete="' + esc(it.id) + '" style="padding:2px 8px;">Delete</button>' +
+        '</span>' +
         '</div>';
     }).join('');
+
+    // Same delete flow as the full "This month's adjustments" table below
+    // (deleteAdjustment, then re-render everything from the refreshed
+    // payrollAdjustments) — just reachable without scrolling down to it.
+    Array.prototype.forEach.call(wrap.querySelectorAll('[data-adj-summary-delete]'), function (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        callApiWithOwnerUnlock('deleteAdjustment', { id: btn.getAttribute('data-adj-summary-delete'), month: state.selectedMonth }).then(function (res) {
+          if (res.ok) {
+            state.payrollAdjustments = res.payrollAdjustments;
+            renderAdjustments();
+          } else {
+            btn.disabled = false;
+            window.alert(res.error || 'Could not delete.');
+          }
+        }).catch(function () {
+          btn.disabled = false;
+          window.alert('Network error — could not delete.');
+        });
+      });
+    });
   }
 
   // ---- Basic salary (view + one-month-only edit) ----
@@ -2854,7 +2994,7 @@
     if (!emp) return;
     var statusEl = document.getElementById('adj-basic-salary-status');
     flashStatus(statusEl, 'Saving…', 'save-status', 0);
-    callApi('setBaseAmountOverride', { employeeId: emp.id, month: state.selectedMonth, amount: (amountOrNull === null ? '' : amountOrNull) }).then(function (res) {
+    callApiWithOwnerUnlock('setBaseAmountOverride', { employeeId: emp.id, month: state.selectedMonth, amount: (amountOrNull === null ? '' : amountOrNull) }).then(function (res) {
       if (res.ok) {
         state.payroll = res.payroll;
         renderPayroll();
@@ -2919,7 +3059,7 @@
     document.getElementById('adj-save-status-btn').disabled = true;
     document.getElementById('adj-finalize-status-btn').disabled = true;
     flashStatus(statusEl, status === 'finalized' ? 'Finalizing…' : 'Saving…', 'save-status', 0);
-    callApi('setPayrollAdjustmentStatus', { month: state.selectedMonth, id: emp.id, status: status }).then(function (res) {
+    callApiWithOwnerUnlock('setPayrollAdjustmentStatus', { month: state.selectedMonth, id: emp.id, status: status }).then(function (res) {
       if (res.ok) {
         state.payroll = res.payroll;
         state.payrollAdjustments = res.payrollAdjustments;
@@ -3065,7 +3205,7 @@
     // it entirely for that role/type combination and computes its own.
     var params = { employeeId: employeeId, month: state.selectedMonth, type: type, amount: amount, note: note, hours: (hours !== null ? hours : '') };
 
-    callApi('addAdjustment', params).then(function (res) {
+    callApiWithOwnerUnlock('addAdjustment', params).then(function (res) {
       if (res.ok) {
         state.payrollAdjustments = res.payrollAdjustments;
         renderAdjustments();
@@ -3272,7 +3412,7 @@
   document.getElementById('payrollrun-run-btn').addEventListener('click', function () {
     var status = document.getElementById('payrollrun-status');
     flashStatus(status, 'Running…', 'save-status', 0);
-    callApi('runPayroll', { month: state.selectedMonth }).then(function (res) {
+    callApiWithOwnerUnlock('runPayroll', { month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         state.payrollRun = res.payrollRun;
         renderPayrollRun();
