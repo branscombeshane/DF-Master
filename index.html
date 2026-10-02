@@ -705,18 +705,18 @@
     </div>
 
     <h3 style="margin:20px 0 4px; font-size:14px; color:var(--text-muted);">Banking details</h3>
-    <p class="panel-sub" style="margin-top:0;">Shown on the payslip — safe to leave blank until you have an employee's details on file.</p>
+    <p class="panel-sub" style="margin-top:0;" id="payroll-bank-details-hint">Shown on the payslip — required when Pay Method is "EFT / Bank Transfer"; safe to leave blank for Cash or Cheque.</p>
     <div class="form-grid">
       <div class="field">
-        <label>Bank name</label>
+        <label id="payroll-bank-name-label">Bank name</label>
         <input type="text" id="payroll-bank-name">
       </div>
       <div class="field">
-        <label>Branch code</label>
+        <label id="payroll-branch-code-label">Branch code</label>
         <input type="text" id="payroll-branch-code">
       </div>
       <div class="field">
-        <label>Account number</label>
+        <label id="payroll-account-number-label">Account number</label>
         <input type="text" id="payroll-account-number">
       </div>
       <div class="field">
@@ -743,7 +743,7 @@
       </div>
       <div class="field">
         <label>Date of birth</label>
-        <input type="text" id="payroll-dob" placeholder="YYYY-MM-DD">
+        <input type="date" id="payroll-dob">
       </div>
       <div class="field">
         <label>ID/passport country</label>
@@ -1345,7 +1345,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-02.44-other-allowance';
+  var FRONTEND_BUILD = '2026-10-02.45-bank-details-required-dob-picker';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3734,6 +3734,7 @@
     document.getElementById('payroll-branch-code').value = e.branchCode || '';
     document.getElementById('payroll-account-number').value = e.accountNumber || '';
     document.getElementById('payroll-pay-method').value = e.payMethod || '';
+    updateBankDetailsRequiredUI();
     document.getElementById('payroll-id-number').value = e.idNumber || '';
     document.getElementById('payroll-tax-number').value = e.taxNumber || '';
     document.getElementById('payroll-dob').value = e.dateOfBirth || '';
@@ -3818,6 +3819,7 @@
     document.getElementById('payroll-branch-code').value = '';
     document.getElementById('payroll-account-number').value = '';
     document.getElementById('payroll-pay-method').value = 'EFT / Bank Transfer';
+    updateBankDetailsRequiredUI();
     document.getElementById('payroll-id-number').value = '';
     document.getElementById('payroll-tax-number').value = '';
     document.getElementById('payroll-dob').value = '';
@@ -3846,6 +3848,27 @@
 
   document.getElementById('payroll-cancel-btn').addEventListener('click', resetEmployeeForm);
 
+  // Bank Name/Branch Code/Account Number are only required while Pay Method
+  // is "EFT / Bank Transfer" (the default) — Cash and Cheque employees
+  // genuinely have no bank details to capture. Toggles the asterisks/hint so
+  // it's obvious before you hit Save, and re-runs whenever Pay Method
+  // changes or the form is reset/loaded for editing.
+  function bankDetailsCurrentlyRequired() {
+    var payMethod = document.getElementById('payroll-pay-method').value.trim() || 'EFT / Bank Transfer';
+    return payMethod === 'EFT / Bank Transfer';
+  }
+  function updateBankDetailsRequiredUI() {
+    var required = bankDetailsCurrentlyRequired();
+    document.getElementById('payroll-bank-name-label').textContent = 'Bank name' + (required ? ' *' : '');
+    document.getElementById('payroll-branch-code-label').textContent = 'Branch code' + (required ? ' *' : '');
+    document.getElementById('payroll-account-number-label').textContent = 'Account number' + (required ? ' *' : '');
+    document.getElementById('payroll-bank-details-hint').textContent = required
+      ? 'Shown on the payslip — required for Pay Method "EFT / Bank Transfer".'
+      : 'Shown on the payslip — not required for Cash or Cheque.';
+  }
+  document.getElementById('payroll-pay-method').addEventListener('input', updateBankDetailsRequiredUI);
+  updateBankDetailsRequiredUI();
+
   document.getElementById('payroll-save-btn').addEventListener('click', function () {
     var id = document.getElementById('payroll-edit-id').value;
     var errEl = document.getElementById('payroll-error');
@@ -3854,6 +3877,13 @@
     var department = document.getElementById('payroll-department').value.trim();
     var contactNumber = document.getElementById('payroll-contact-number').value.trim();
     if (!name || !department || !contactNumber) { errEl.textContent = 'Name, department and contact number are required.'; return; }
+    var bankName = document.getElementById('payroll-bank-name').value.trim();
+    var branchCode = document.getElementById('payroll-branch-code').value.trim();
+    var accountNumber = document.getElementById('payroll-account-number').value.trim();
+    if (bankDetailsCurrentlyRequired() && (!bankName || !branchCode || !accountNumber)) {
+      errEl.textContent = 'Bank name, branch code and account number are required for Pay Method "EFT / Bank Transfer" — choose Cash or Cheque instead if these aren\'t available yet.';
+      return;
+    }
     errEl.textContent = '';
 
     var payload = {
@@ -3866,9 +3896,9 @@
       address: document.getElementById('payroll-address').value.trim(),
       contactNumber: contactNumber,
       notes: document.getElementById('payroll-notes').value.trim(),
-      bankName: document.getElementById('payroll-bank-name').value.trim(),
-      branchCode: document.getElementById('payroll-branch-code').value.trim(),
-      accountNumber: document.getElementById('payroll-account-number').value.trim(),
+      bankName: bankName,
+      branchCode: branchCode,
+      accountNumber: accountNumber,
       payMethod: document.getElementById('payroll-pay-method').value.trim(),
       idNumber: document.getElementById('payroll-id-number').value.trim(),
       taxNumber: document.getElementById('payroll-tax-number').value.trim(),
