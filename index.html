@@ -1345,7 +1345,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-02.45-bank-details-required-dob-picker';
+  var FRONTEND_BUILD = '2026-10-02.46-month-picker-edit-fix';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3924,6 +3924,13 @@
       action = 'addEmployee';
       extra = {};
     }
+    // Without this, the backend falls back to today's real calendar month
+    // for the roster snapshot it hands back (see apiAddEmployee_/
+    // apiUpdateEmployee_'s currentMonthStr_() fallback) — if you're viewing
+    // a past month via the month-picker and save an employee, the table
+    // would silently jump to the current month's data while the picker
+    // above it still showed the month you were on.
+    extra.month = state.selectedMonth;
 
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApi(action, Object.assign(payload, extra)).then(function (res) {
@@ -3983,7 +3990,7 @@
     var reason = document.getElementById('payroll-discharge-reason').value.trim();
     var status = document.getElementById('payroll-save-status');
     flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('dischargeEmployee', { id: id, dateDischarged: date, reason: reason }).then(function (res) {
+    callApi('dischargeEmployee', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         flashStatus(status, 'Saved', 'save-status ok', 3000);
         state.payroll = res.payroll;
@@ -4007,7 +4014,7 @@
     errEl.textContent = '';
     var status = document.getElementById('payroll-save-status');
     flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('rehireEmployee', { id: id, dateEmployed: date }).then(function (res) {
+    callApi('rehireEmployee', { id: id, dateEmployed: date, month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         flashStatus(status, 'Saved', 'save-status ok', 3000);
         state.payroll = res.payroll;
