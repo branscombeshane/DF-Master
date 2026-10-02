@@ -875,6 +875,12 @@
           <div style="overflow-x:auto;">
             <table class="data-table" id="payroll-table"></table>
           </div>
+          <div id="payroll-discharged-wrap" style="display:none;">
+            <h3 style="margin:28px 0 4px; font-size:14px; color:var(--text-muted);">Discharged employees</h3>
+            <div style="overflow-x:auto;">
+              <table class="data-table" id="payroll-table-discharged"></table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1029,7 +1035,11 @@
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <button class="btn secondary" id="irp5-download-btn">Export CSV</button>
           </div>
-          <div style="overflow-x:auto; margin-top:16px;">
+          <div class="field" style="max-width:380px; margin-top:16px;">
+            <label for="irp5-employee-select">Employee</label>
+            <select id="irp5-employee-select"></select>
+          </div>
+          <div style="overflow-x:auto; margin-top:12px;">
             <table class="data-table" id="irp5-table"></table>
           </div>
         </div>
@@ -1334,7 +1344,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-02.40-payroll-month-lock';
+  var FRONTEND_BUILD = '2026-10-02.43-irp5-csv-leading-zero';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2338,39 +2348,57 @@
     var deptFilterVal = document.getElementById('payroll-dept-filter').value;
     var showInactive = document.getElementById('payroll-show-inactive').checked;
 
-    var rows = state.payroll.employees.filter(function (e) {
-      if (!showInactive && !e.active) return false;
+    function matchesFilters(e) {
       if (deptFilterVal && e.department !== deptFilterVal) return false;
       if (search && e.name.toLowerCase().indexOf(search) === -1) return false;
       return true;
-    }).sort(function (a, b) {
+    }
+    function byDeptThenName(a, b) {
       if (a.department !== b.department) return a.department < b.department ? -1 : 1;
       return a.name < b.name ? -1 : 1;
-    });
+    }
+
+    var activeRows = state.payroll.employees.filter(function (e) { return e.active && matchesFilters(e); }).sort(byDeptThenName);
+    // Discharged employees are kept out of the active roster entirely and,
+    // when the "Show discharged" checkbox is on, listed in their own table
+    // further down the page instead of interleaved row-by-row with active
+    // staff — easier to scan either list on its own, and nothing faded is
+    // sitting in the middle of the active roster. Most recently discharged
+    // first, since that's almost always who you're looking for.
+    var dischargedRows = showInactive
+      ? state.payroll.employees.filter(function (e) { return !e.active && matchesFilters(e); }).sort(function (a, b) {
+          if (a.dateDischarged !== b.dateDischarged) return a.dateDischarged < b.dateDischarged ? 1 : -1;
+          return a.name < b.name ? -1 : 1;
+        })
+      : [];
 
     // HR accounts never see Basic Salary, in any shape — not the figure
     // itself, not the day/hour rate it implies (see hrRedactEmployee_) — and
     // never see payslips at all (apiGetPayslip_ refuses them outright), so
     // those columns/the Payslip button simply aren't part of their table.
     var isHr = state.role === 'hr';
+
+    function actionsHtml(e) {
+      // One combined Actions column instead of two separate buttons each
+      // with their own blank header — same actions, less visual noise.
+      return (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button> ') +
+        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button>';
+    }
+
     var table = document.getElementById('payroll-table');
     // Notes is free text that's blank for most employees most of the time —
     // showing an empty column across the whole roster is pure clutter, so it
     // only appears at all once something in the current (filtered) view
     // actually has a note.
-    var anyNotes = rows.some(function (e) { return e.notes && String(e.notes).trim(); });
+    var anyNotes = activeRows.some(function (e) { return e.notes && String(e.notes).trim(); });
     var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
-    var body = '<tbody>' + rows.map(function (e) {
+    var body = '<tbody>' + activeRows.map(function (e) {
       var salaryCells = isHr ? '' :
         '<td>' + money(e.amount) + '</td>' +
         '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
         '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
-      // One combined Actions column instead of two separate buttons each
-      // with their own blank header — same actions, less visual noise.
-      var actions = (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button> ') +
-        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button>';
-      return '<tr class="' + (e.active ? '' : 'inactive') + '">' +
+      return '<tr>' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
@@ -2379,20 +2407,42 @@
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         (anyNotes ? '<td class="wrap" style="text-align:left; max-width:220px;">' + esc(e.notes) + '</td>' : '') +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
-        '<td style="text-align:right; white-space:nowrap;">' + actions + '</td>' +
+        '<td style="text-align:right; white-space:nowrap;">' + actionsHtml(e) + '</td>' +
         '</tr>';
     }).join('') + '</tbody>';
     table.innerHTML = head + body;
 
-    Array.prototype.forEach.call(table.querySelectorAll('[data-edit-id]'), function (btn) {
-      btn.addEventListener('click', function () {
-        startEditEmployee(btn.getAttribute('data-edit-id'));
-      });
-    });
+    var dischargedWrap = document.getElementById('payroll-discharged-wrap');
+    var dischargedTable = document.getElementById('payroll-table-discharged');
+    dischargedWrap.style.display = dischargedRows.length ? '' : 'none';
+    if (dischargedRows.length) {
+      var dHead = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Discharged</th><th style="text-align:left;">Reason</th><th></th></tr></thead>';
+      var dBody = '<tbody>' + dischargedRows.map(function (e) {
+        return '<tr class="inactive">' +
+          '<td style="text-align:left;">' + esc(e.name) + '</td>' +
+          '<td style="text-align:left;">' + esc(e.department) + '</td>' +
+          '<td>' + esc(e.employeeNumber) + '</td>' +
+          '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
+          '<td style="text-align:left;">' + esc(e.dateDischarged) + '</td>' +
+          '<td class="wrap" style="text-align:left; max-width:220px;">' + esc(e.dischargeReason) + '</td>' +
+          '<td style="text-align:right; white-space:nowrap;">' + actionsHtml(e) + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+      dischargedTable.innerHTML = dHead + dBody;
+    } else {
+      dischargedTable.innerHTML = '';
+    }
 
-    Array.prototype.forEach.call(table.querySelectorAll('[data-payslip-id]'), function (btn) {
-      btn.addEventListener('click', function () {
-        openPayslip(btn.getAttribute('data-payslip-id'));
+    [table, dischargedTable].forEach(function (t) {
+      Array.prototype.forEach.call(t.querySelectorAll('[data-edit-id]'), function (btn) {
+        btn.addEventListener('click', function () {
+          startEditEmployee(btn.getAttribute('data-edit-id'));
+        });
+      });
+      Array.prototype.forEach.call(t.querySelectorAll('[data-payslip-id]'), function (btn) {
+        btn.addEventListener('click', function () {
+          openPayslip(btn.getAttribute('data-payslip-id'));
+        });
       });
     });
   }
@@ -3439,30 +3489,38 @@
 
   function renderIrp5() {
     if (!state.irp5) return;
-    var certs = state.irp5.certificates || [];
+    var certs = (state.irp5.certificates || []).slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     document.getElementById('irp5-sub').textContent = 'Tax year ' + state.irp5.taxYear +
       ' — built from every payroll run recorded across that tax year (March–February). Run payroll for any missing months above before relying on these figures.';
+
+    // One employee at a time instead of the full roster in one long table —
+    // the full list is still just a click away via Export CSV below.
+    var select = document.getElementById('irp5-employee-select');
+    var currentSelection = select.value;
+    select.innerHTML = certs.length
+      ? certs.map(function (c) { return '<option value="' + esc(c.employeeId) + '">' + esc(c.name) + '</option>'; }).join('')
+      : '<option value="">No payroll history yet</option>';
+    if (currentSelection && certs.some(function (c) { return c.employeeId === currentSelection; })) select.value = currentSelection;
 
     var table = document.getElementById('irp5-table');
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">ID number</th>' +
       '<th style="text-align:left;">Tax number</th><th>Type</th><th>Months paid</th><th>Gross (3601)</th>' +
       '<th>PAYE (4102)</th><th>UIF (4141)</th><th>SDL (4142)</th><th>Retirement (4001)</th><th>Medical (4005)</th><th></th></tr></thead>';
-    var body = '<tbody>' + (certs.length ? certs.map(function (c) {
-      return '<tr>' +
-        '<td style="text-align:left;">' + esc(c.name) + '</td>' +
-        '<td style="text-align:left;">' + esc(c.idNumber || '') + '</td>' +
-        '<td style="text-align:left;">' + esc(c.taxNumber || '') + '</td>' +
-        '<td>' + esc(c.certificateType) + '</td>' +
-        '<td>' + c.monthsPaid + '</td>' +
-        '<td>' + money(c.grossIncome_3601) + '</td>' +
-        '<td>' + money(c.payeDeducted_4102) + '</td>' +
-        '<td>' + money(c.uifContribution_4141) + '</td>' +
-        '<td>' + money(c.sdlContribution_4142) + '</td>' +
-        '<td>' + money(c.retirementContribution_4001) + '</td>' +
-        '<td>' + money(c.medicalContribution_4005) + '</td>' +
-        '<td><button class="btn secondary small" data-irp5-cert-id="' + esc(c.employeeId) + '">PDF</button></td>' +
-        '</tr>';
-    }).join('') : '<tr><td colspan="12" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
+    var selected = certs.filter(function (c) { return c.employeeId === select.value; })[0];
+    var body = '<tbody>' + (selected ? ('<tr>' +
+        '<td style="text-align:left;">' + esc(selected.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(selected.idNumber || '') + '</td>' +
+        '<td style="text-align:left;">' + esc(selected.taxNumber || '') + '</td>' +
+        '<td>' + esc(selected.certificateType) + '</td>' +
+        '<td>' + selected.monthsPaid + '</td>' +
+        '<td>' + money(selected.grossIncome_3601) + '</td>' +
+        '<td>' + money(selected.payeDeducted_4102) + '</td>' +
+        '<td>' + money(selected.uifContribution_4141) + '</td>' +
+        '<td>' + money(selected.sdlContribution_4142) + '</td>' +
+        '<td>' + money(selected.retirementContribution_4001) + '</td>' +
+        '<td>' + money(selected.medicalContribution_4005) + '</td>' +
+        '<td><button class="btn secondary small" data-irp5-cert-id="' + esc(selected.employeeId) + '">PDF</button></td>' +
+        '</tr>') : '<tr><td colspan="12" style="text-align:center; color:var(--text-muted);">No payroll history recorded for this tax year yet.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
 
     Array.prototype.forEach.call(table.querySelectorAll('[data-irp5-cert-id]'), function (btn) {
@@ -3472,6 +3530,8 @@
       });
     });
   }
+
+  document.getElementById('irp5-employee-select').addEventListener('change', renderIrp5);
 
   // Reuses the payslip modal to show/download one employee's IRP5/IT3(a)
   // certificate — a simple SARS-coded summary, not a full replica of the
@@ -3519,9 +3579,23 @@
       if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
       return v;
     }
+    // ID number and Tax number are plain digit strings that can legitimately
+    // start with 0 (an RSA ID number issued since 2000 almost always does).
+    // This CSV is opened directly in Excel — its whole purpose is to hand to
+    // whoever does the SARS submissions — and Excel's default CSV import
+    // auto-detects a bare digit string as a number, silently dropping that
+    // leading zero for good. Wrapping it as ="0821234567" forces Excel to
+    // keep it as exact text; everywhere else (Sheets, a text editor,
+    // re-importing this same CSV) it just reads back as the plain string.
+    function csvForceTextCell(v) {
+      v = (v === null || v === undefined) ? '' : String(v);
+      if (!v) return '';
+      return '="' + v.replace(/"/g, '""') + '"';
+    }
+    var FORCE_TEXT_COLS = { idNumber: true, taxNumber: true };
     var lines = [headerLabels.map(csvCell).join(',')];
     state.irp5.certificates.forEach(function (c) {
-      lines.push(cols.map(function (k) { return csvCell(c[k]); }).join(','));
+      lines.push(cols.map(function (k) { return FORCE_TEXT_COLS[k] ? csvForceTextCell(c[k]) : csvCell(c[k]); }).join(','));
     });
     var csv = lines.join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -3566,20 +3640,39 @@
         flashStatus(status, res.error || 'Failed', 'save-status err', 8000);
         return;
       }
-      flashStatus(status, res.employeeCount + ' certificate' + (res.employeeCount === 1 ? '' : 's') + ' — downloaded', 'save-status ok', 5000);
-      if (res.warnings && res.warnings.length) {
-        warningsBox.innerHTML = '<div class="hint" style="color:var(--text-secondary);"><strong>Check before relying on this file:</strong><br>' +
-          res.warnings.map(function (w) { return '• ' + esc(w); }).join('<br>') + '</div>';
-      }
-      var blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = res.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // One file per registered Company this group actually pays employees
+      // through — most groups have just one, but a group spanning several
+      // legal entities gets a separate recon file for each, downloaded here
+      // one after another (each is its own, independently valid EMP501 file).
+      var files = res.files || [];
+      files.forEach(function (f) {
+        var blob = new Blob([f.csv], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = f.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+      var totalEmployees = files.reduce(function (sum, f) { return sum + f.employeeCount; }, 0);
+      flashStatus(status,
+        files.length > 1
+          ? files.length + ' files — ' + totalEmployees + ' certificate' + (totalEmployees === 1 ? '' : 's') + ' total — downloaded'
+          : totalEmployees + ' certificate' + (totalEmployees === 1 ? '' : 's') + ' — downloaded',
+        'save-status ok', 5000);
+
+      var warningLines = (res.warnings || []).slice();
+      files.forEach(function (f) {
+        (f.warnings || []).forEach(function (w) {
+          warningLines.push(files.length > 1 ? f.companyName + ': ' + w : w);
+        });
+      });
+      warningsBox.innerHTML = warningLines.length
+        ? '<div class="hint" style="color:var(--text-secondary);"><strong>Check before relying on ' + (files.length > 1 ? 'these files' : 'this file') + ':</strong><br>' +
+          warningLines.map(function (w) { return '• ' + esc(w); }).join('<br>') + '</div>'
+        : '';
     }).catch(function () {
       flashStatus(status, 'Network error', 'save-status err', 5000);
     });
