@@ -986,11 +986,6 @@
             </div>
           </div>
           <p class="panel-note">Save marks this employee as in progress; Finalize marks them done and complete for the month. Payroll can only be run once every active employee has been Finalized. Give advance records a cash advance whenever it's handed over — it's not tied to this month and doesn't affect Net pay; it only raises the balance shown in Outstanding advances above.</p>
-
-          <h3 style="margin:28px 0 4px; font-size:14px; color:var(--text-muted);">This month's adjustments</h3>
-          <div style="overflow-x:auto;">
-            <table class="data-table" id="adjustments-table"></table>
-          </div>
         </div>
       </div>
 
@@ -1345,7 +1340,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-02.46-month-picker-edit-fix';
+  var FRONTEND_BUILD = '2026-10-02.47-remove-adjustments-table';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2849,53 +2844,6 @@
     } else {
       balWrap.innerHTML = '';
     }
-
-    renderAdjustmentsTable();
-  }
-
-  function renderAdjustmentsTable() {
-    var pa = state.payrollAdjustments;
-    var table = document.getElementById('adjustments-table');
-    var head = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Type</th>' +
-      '<th>Amount</th><th style="text-align:left;">Note</th><th></th></tr></thead>';
-    var items = (pa && pa.items) || [];
-    var body = '<tbody>' + (items.length ? items.map(function (it) {
-      // it.amount comes back null for Overtime/Absent on an HR account
-      // (hrFilterAdjustmentsData_) — that Rand figure is Basic-Salary-
-      // derived (rate x hours/days), so HR sees the hours/days it entered
-      // but not what they translated to.
-      var amountCell = (it.amount === null)
-        ? '<span class="hint" style="margin:0;">hidden</span>'
-        : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
-      return '<tr>' +
-        '<td style="text-align:left;">' + esc(it.name) + '</td>' +
-        '<td style="text-align:left;">' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + '</td>' +
-        '<td>' + amountCell +
-        (it.type === 'Overtime' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + 'h)</span>' : '') +
-        (it.type === 'Absent' && it.hours ? ' <span class="hint" style="margin:0;">(' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')</span>' : '') + '</td>' +
-        '<td style="text-align:left;">' + esc(it.note) + '</td>' +
-        '<td><button class="btn secondary small" data-adj-delete="' + esc(it.id) + '">Delete</button></td>' +
-        '</tr>';
-    }).join('') : '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Nothing added for ' + esc(monthLabel(state.selectedMonth)) + ' yet.</td></tr>') + '</tbody>';
-    table.innerHTML = head + body;
-
-    Array.prototype.forEach.call(table.querySelectorAll('[data-adj-delete]'), function (btn) {
-      btn.addEventListener('click', function () {
-        btn.disabled = true;
-        callApiWithOwnerUnlock('deleteAdjustment', { id: btn.getAttribute('data-adj-delete'), month: state.selectedMonth }).then(function (res) {
-          if (res.ok) {
-            state.payrollAdjustments = res.payrollAdjustments;
-            renderAdjustments();
-          } else {
-            btn.disabled = false;
-            window.alert(res.error || 'Could not delete.');
-          }
-        }).catch(function () {
-          btn.disabled = false;
-          window.alert('Network error — could not delete.');
-        });
-      });
-    });
   }
 
   document.getElementById('adj-dept-filter').addEventListener('change', renderAdjustments);
@@ -2945,13 +2893,14 @@
     renderAdjEmpAdjustmentsSummary(emp);
   }
 
-  // Compact "this month's adjustments" list inside the Selected-employee
-  // status strip, so Shane can see what's already been added for this
-  // employee without scrolling down to the full "This month's adjustments"
-  // table below (which lists every employee, not just the selected one).
-  // Matched by employeeId (not name) — item.name can collide across
-  // employees that happen to share a name, and item.employeeId is exactly
-  // what apiGetPayrollAdjustments_ already keys its items by.
+  // "This month's adjustments" list inside the Selected-employee status
+  // strip — the only place adjustments are now listed in the UI (the old
+  // full-roster table below this strip was removed as unnecessary/too much
+  // vertical space; this per-employee list plus the Payroll Run/Reports
+  // screen's per-employee "Adjustments" summary column cover the same
+  // ground). Matched by employeeId (not name) — item.name can collide
+  // across employees that happen to share a name, and item.employeeId is
+  // exactly what apiGetPayrollAdjustments_ already keys its items by.
   function renderAdjEmpAdjustmentsSummary(emp) {
     var wrap = document.getElementById('adj-emp-adjustments-summary');
     if (!emp) { wrap.innerHTML = ''; return; }
@@ -2962,8 +2911,8 @@
       return;
     }
     wrap.innerHTML = items.map(function (it) {
-      // Same hidden-amount / hours-suffix rules as the full table below
-      // (hrFilterAdjustmentsData_ nulls amount for Overtime/Absent on HR).
+      // HR never sees the Rand amount for Overtime/Absent — it's Basic-
+      // Salary-derived (hrFilterAdjustmentsData_ nulls it for that role).
       var amountText = (it.amount === null)
         ? '<span class="hint" style="margin:0;">hidden</span>'
         : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
@@ -2979,9 +2928,8 @@
         '</div>';
     }).join('');
 
-    // Same delete flow as the full "This month's adjustments" table below
-    // (deleteAdjustment, then re-render everything from the refreshed
-    // payrollAdjustments) — just reachable without scrolling down to it.
+    // deleteAdjustment, then re-render everything from the refreshed
+    // payrollAdjustments.
     Array.prototype.forEach.call(wrap.querySelectorAll('[data-adj-summary-delete]'), function (btn) {
       btn.addEventListener('click', function () {
         btn.disabled = true;
