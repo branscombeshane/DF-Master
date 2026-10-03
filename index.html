@@ -1357,7 +1357,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-03.50-travel-allowance';
+  var FRONTEND_BUILD = '2026-10-03.51-remove-travel-allowance-note';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -2663,19 +2663,6 @@
       c.adjustments.Absent ? [absentLabel, -c.adjustments.Absent] : null
     ].filter(Boolean);
 
-    // SARS taxes only a portion of a Travel Allowance each month (80% by
-    // default, 20% if Shane has certified this employee for ≥80% business
-    // vehicle use — see computeEmployeePayroll_/TravelAllowanceHighBusinessUse).
-    // The full amount is in the Earnings table/Gross/Net above like any other
-    // income, so this footnote is the only place that split is visible —
-    // without it the PAYE/UIF figures would look unexplained next to the
-    // full allowance shown above them.
-    var travelAllowanceNote = (c.travelAllowanceFull > 0)
-      ? '<div class="hint" style="margin-top:6px;">Travel Allowance: R ' + moneyExact(c.travelAllowanceFull) +
-        ' paid in full; only R ' + moneyExact(c.travelAllowanceTaxable) + ' (' + (c.travelAllowanceInclusionPct || 80) +
-        '%) was subject to PAYE/UIF/SDL this month, per SARS\'s standard travel allowance rule — the true figure is only settled at this employee\'s own tax assessment, against their logbook.</div>'
-      : '';
-
     var deductionRows = [
       c.paye ? ['PAYE', c.paye] : null,
       c.uifEmployee ? ['Unemployment Insurance Fund (UIF)', c.uifEmployee] : null,
@@ -2740,7 +2727,6 @@
             tableRows(earningsRows) +
             '<tr><td><strong>Total</strong></td><td class="amt"><strong>' + moneyExact(c.gross) + '</strong></td></tr>' +
           '</tbody></table>' +
-          travelAllowanceNote +
           '<div class="ps-section-title" style="margin-top:8px;">Fringe Benefits</div>' +
           '<table class="ps-table"><tbody>' +
             '<tr><td><strong>Total</strong></td><td class="amt"><strong>' + moneyExact(0) + '</strong></td></tr>' +
