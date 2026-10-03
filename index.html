@@ -1340,7 +1340,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-02.47-remove-adjustments-table';
+  var FRONTEND_BUILD = '2026-10-03.48-no-session-persistence';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -1626,7 +1626,9 @@
     callApi('login', { name: name, password: password }).then(function (res) {
       btn.disabled = false;
       if (res.ok) {
-        sessionStorage.setItem('dff_token', res.token);
+        // Deliberately not persisted anywhere (no sessionStorage/localStorage)
+        // — state.token lives only in memory for this page load, so closing
+        // or reopening the app always requires logging in again.
         applyBootstrap(res);
         enterApp();
       } else {
@@ -1639,7 +1641,6 @@
   }
 
   function forceLogout() {
-    sessionStorage.removeItem('dff_token');
     location.reload();
   }
 
@@ -4991,19 +4992,10 @@
     });
   }
 
-  // ================= AUTO-RESUME SESSION =================
-  var savedToken = sessionStorage.getItem('dff_token');
-  if (savedToken) {
-    state.token = savedToken;
-    callApi('bootstrap', {}).then(function (res) {
-      if (res.ok) {
-        applyBootstrap(res);
-        enterApp();
-      } else {
-        sessionStorage.removeItem('dff_token');
-      }
-    });
-  }
+  // No auto-resume-session block: the login token is never written to
+  // sessionStorage/localStorage, so every fresh page load (including
+  // reopening an installed home-screen app) always shows the login screen —
+  // nothing is remembered across a close, by design.
 })();
 </script>
 </body>
