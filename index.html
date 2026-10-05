@@ -1279,7 +1279,7 @@
     <!-- ---------- Users (Owner only) ---------- -->
     <section class="view" id="view-users">
       <div class="panel">
-        <h2 id="users-form-title">Add staff account</h2>
+        <h2 id="users-form-title">Add account</h2>
         <input type="hidden" id="user-edit-name">
         <input type="hidden" id="user-edit-role">
         <div class="form-grid">
@@ -1297,6 +1297,7 @@
           <select id="user-role">
             <option value="staff">Staff — pick sections and entities below</option>
             <option value="hr">HR — Payroll only, scoped to one or more companies and their departments, Basic Salary hidden</option>
+            <option value="owner">Owner — full access to everything, including Settings, Users and Sales admin</option>
           </select>
         </div>
         <div id="user-staff-fields">
@@ -1341,7 +1342,7 @@
         </div>
         <div class="error-text" id="user-error"></div>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button class="btn" id="user-save-btn">Add staff account</button>
+          <button class="btn" id="user-save-btn">Add account</button>
           <button class="btn secondary" id="user-cancel-btn" style="display:none;">Cancel edit</button>
           <span class="save-status" id="user-save-status"></span>
         </div>
@@ -1378,7 +1379,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-05.57-sales-section';
+  var FRONTEND_BUILD = '2026-10-05.58-add-owner-user';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5033,7 +5034,7 @@
   });
 
   function setUserRoleFieldsVisibility(role) {
-    document.getElementById('user-staff-fields').style.display = role === 'hr' ? 'none' : '';
+    document.getElementById('user-staff-fields').style.display = (role === 'hr' || role === 'owner') ? 'none' : '';
     document.getElementById('user-hr-fields').style.display = role === 'hr' ? '' : 'none';
   }
   document.getElementById('user-role').addEventListener('change', function () {
@@ -5057,9 +5058,7 @@
       } else {
         scopeHtml = chips(u.entities);
       }
-      var actions = (u.role === 'owner')
-        ? '<span style="font-size:11px; color:var(--text-muted);">Managed in Sheet</span>'
-        : '<button class="btn secondary small" data-manage="' + esc(u.name) + '">Manage</button>';
+      var actions = '<button class="btn secondary small" data-manage="' + esc(u.name) + '">Manage</button>';
       return '<tr class="' + (u.active ? '' : 'inactive') + '">' +
         '<td style="text-align:left;">' + esc(u.name) + '</td>' +
         '<td style="text-align:left; text-transform:capitalize;">' + esc(u.role) + '</td>' +
@@ -5090,7 +5089,9 @@
     document.getElementById('user-password-label').textContent = 'Reset password (leave blank to keep current)';
     document.getElementById('user-password').value = '';
     document.getElementById('user-role').value = u.role;
-    document.getElementById('user-role').disabled = false; // account type can be switched from here — apiUpdateUser_ re-validates scope for the new role
+    // Account type can be switched from here — apiUpdateUser_ re-validates scope for the new role.
+    // An existing Owner can't be switched to another type (lock-out risk), so its picker is locked.
+    document.getElementById('user-role').disabled = (u.role === 'owner');
     setUserRoleFieldsVisibility(u.role);
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) {
       cb.checked = u.sections.indexOf(cb.value) !== -1;
@@ -5115,7 +5116,7 @@
   }
 
   function resetUserForm() {
-    document.getElementById('users-form-title').textContent = 'Add staff account';
+    document.getElementById('users-form-title').textContent = 'Add account';
     document.getElementById('user-edit-name').value = '';
     document.getElementById('user-edit-role').value = '';
     document.getElementById('user-name-label').textContent = 'Name';
@@ -5134,7 +5135,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.user-company-cb'), function (cb) { cb.checked = false; });
     renderUserDepartmentsGrid([], null);
     document.getElementById('user-active-field').style.display = 'none';
-    document.getElementById('user-save-btn').textContent = 'Add staff account';
+    document.getElementById('user-save-btn').textContent = 'Add account';
     document.getElementById('user-cancel-btn').style.display = 'none';
     document.getElementById('user-error').textContent = '';
   }
@@ -5148,7 +5149,8 @@
     var status = document.getElementById('user-save-status');
     errEl.textContent = '';
 
-    var role = document.getElementById('user-role').value === 'hr' ? 'hr' : 'staff';
+    var roleVal = document.getElementById('user-role').value;
+    var role = (roleVal === 'hr' || roleVal === 'owner') ? roleVal : 'staff';
     var sections = Array.prototype.filter.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
     var entities = Array.prototype.filter.call(document.querySelectorAll('.user-entity-cb'), function (cb) { return cb.checked; })
@@ -5164,7 +5166,9 @@
       // Manage was opened — editRole — so switching Account type here (e.g.
       // Staff -> HR to allocate a company/departments) actually takes effect.
       var updateParams = { name: editName, active: active, role: role };
-      if (role === 'hr') {
+      if (role === 'owner') {
+        // Owners have full access by role — nothing else to send.
+      } else if (role === 'hr') {
         if (!companyIds.length) { errEl.textContent = 'Pick at least one company for this HR account.'; return; }
         if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
         updateParams.company = companyIds.join(',');
@@ -5192,7 +5196,9 @@
       if (!name) { errEl.textContent = 'Name is required.'; return; }
       if (newPassword.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
       var addParams = { name: name, password: newPassword, role: role };
-      if (role === 'hr') {
+      if (role === 'owner') {
+        // Owners have full access by role — nothing else to send.
+      } else if (role === 'hr') {
         if (!companyIds.length) { errEl.textContent = 'Pick at least one company for this HR account.'; return; }
         if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
         addParams.company = companyIds.join(',');
