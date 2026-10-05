@@ -1013,6 +1013,7 @@
           <p class="panel-sub" id="payrollrun-sub"></p>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
+            <button class="btn secondary" id="emp201-pdf-btn">Download PDF</button>
             <span class="save-status" id="payrollrun-status"></span>
           </div>
           <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
@@ -1357,7 +1358,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-03.54-remove-travel-allowance-fix';
+  var FRONTEND_BUILD = '2026-10-05.55-emp201-pdf-overtime-standard-rate';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3348,6 +3349,122 @@
 
     renderReportsPayslipsTable();
   }
+
+  // ================= EMP201 PDF =================
+  // One-click "Download PDF" for the EMP201 panel: builds the return as
+  // hidden HTML (same layout as the SARS-style EMP201 PAYE/SDL/UIF return —
+  // per-employee Current Period + Year To Date, totals, declaration box,
+  // counts) and reuses downloadPagesAsPdf to turn each .ps-print-page into a
+  // PDF page. Long employee lists split across pages; the totals/declaration
+  // block always lands on the last page. Figures only — nothing is submitted.
+  function emp201Money(n) {
+    n = Number(n) || 0;
+    return (n < 0 ? '-' : '') + 'R ' + Math.abs(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function buildEmp201PdfHtml(pr) {
+    var e = pr.emp201 || {};
+    var rows = pr.emp201Rows || [];
+    var ROWS_PER_PAGE = 42, LAST_PAGE_MAX_WITH_SUMMARY = 28;
+    var th = 'padding:5px 6px; font-size:9px; font-weight:700; border-bottom:1px solid #999; background:#eee;';
+    var td = 'padding:4px 6px; font-size:9px; border-bottom:1px solid #ddd; text-align:right;';
+    var tdL = 'padding:4px 6px; font-size:9px; border-bottom:1px solid #ddd; text-align:left;';
+
+    var cur = { paye: 0, sdl: 0, uif: 0 }, ytd = { paye: 0, sdl: 0, uif: 0 };
+    rows.forEach(function (r) {
+      if (r.current) { cur.paye += r.current.paye; cur.sdl += r.current.sdl; cur.uif += r.current.uif; }
+      ytd.paye += r.ytd.paye; ytd.sdl += r.ytd.sdl; ytd.uif += r.ytd.uif;
+    });
+
+    var heading =
+      '<div style="font-size:19px; font-weight:700; margin-bottom:6px;">EMP201 PAYE, SDL and UIF Return</div>' +
+      '<div style="font-size:12px; font-style:italic; margin-bottom:4px;">For payment period ' +
+        esc(new Date(Number(state.selectedMonth.split('-')[0]), Number(state.selectedMonth.split('-')[1]) - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })) + '</div>' +
+      '<div style="font-size:12px; font-weight:700; margin-bottom:12px;">' + esc(pr.companyName || '') + '</div>';
+
+    function tableHead() {
+      return '<thead>' +
+        '<tr><th style="' + th + '" colspan="2"></th><th style="' + th + ' text-align:center;" colspan="3">Current Period</th><th style="' + th + ' text-align:center;" colspan="3">Year To Date</th></tr>' +
+        '<tr><th style="' + th + ' text-align:left;">Emp No</th><th style="' + th + ' text-align:left;">Employee Name</th>' +
+        '<th style="' + th + '">PAYE</th><th style="' + th + '">SDL</th><th style="' + th + '">UIF</th>' +
+        '<th style="' + th + '">PAYE</th><th style="' + th + '">SDL</th><th style="' + th + '">UIF</th></tr></thead>';
+    }
+    function rowHtml(r) {
+      var c = r.current;
+      return '<tr><td style="' + tdL + '">' + esc(r.employeeNumber) + '</td><td style="' + tdL + '">' + esc(r.name) + '</td>' +
+        '<td style="' + td + '">' + (c ? emp201Money(c.paye) : '') + '</td>' +
+        '<td style="' + td + '">' + (c ? emp201Money(c.sdl) : '') + '</td>' +
+        '<td style="' + td + '">' + (c ? emp201Money(c.uif) : '') + '</td>' +
+        '<td style="' + td + '">' + emp201Money(r.ytd.paye) + '</td>' +
+        '<td style="' + td + '">' + emp201Money(r.ytd.sdl) + '</td>' +
+        '<td style="' + td + '">' + emp201Money(r.ytd.uif) + '</td></tr>';
+    }
+    var totalRow = '<tr style="font-weight:700;"><td style="' + tdL + ' border-top:1px solid #999;" colspan="2">Total</td>' +
+      [cur.paye, cur.sdl, cur.uif, ytd.paye, ytd.sdl, ytd.uif].map(function (v) {
+        return '<td style="' + td + ' border-top:1px solid #999;">' + emp201Money(v) + '</td>';
+      }).join('') + '</tr>';
+
+    var summary =
+      '<table style="width:100%; border-collapse:collapse; margin-top:22px; font-size:10px;">' +
+        '<thead><tr><th style="' + th + '"></th><th style="' + th + '">PAYE</th><th style="' + th + '">SDL</th><th style="' + th + '">UIF</th></tr></thead>' +
+        '<tbody>' +
+        '<tr><td style="' + tdL + '">Balance of Remuneration / Leviable Amount</td><td style="' + td + '">' + emp201Money(e.leviableAmount) + '</td><td style="' + td + '">' + emp201Money(e.leviableAmount) + '</td><td style="' + td + '">' + emp201Money(e.uifLeviableAmount) + '</td></tr>' +
+        '<tr style="font-weight:700;"><td style="' + tdL + '">Amount Payable</td><td style="' + td + '">' + emp201Money(cur.paye) + '</td><td style="' + td + '">' + emp201Money(cur.sdl) + '</td><td style="' + td + '">' + emp201Money(cur.uif) + '</td></tr>' +
+        '<tr style="font-weight:700;"><td style="' + tdL + '" colspan="3">Control Total (PAYE + SDL + UIF)</td><td style="' + td + '">' + emp201Money(e.controlTotal) + '</td></tr>' +
+        '</tbody></table>' +
+      '<div style="font-size:10px; margin-top:12px;">Number of Perm/Non-Perm employees paid this period: ' + (e.permCount || 0) + ' / ' + (e.nonPermCount || 0) + '</div>' +
+      '<div style="font-size:10px; margin-top:3px;">Number of contributing employees — SDL: ' + (e.sdlContributingCount || 0) + ' &middot; UIF: ' + (e.uifContributingCount || 0) + '</div>' +
+      '<div style="font-size:9px; color:#888; margin-top:12px;">Figures only — this app does not submit anything to SARS. Use these to complete the EMP201 declaration yourself.</div>';
+
+    var chunks = [];
+    for (var i = 0; i < rows.length; i += ROWS_PER_PAGE) chunks.push(rows.slice(i, i + ROWS_PER_PAGE));
+    if (!chunks.length) chunks.push([]);
+    var summaryOwnPage = chunks[chunks.length - 1].length > LAST_PAGE_MAX_WITH_SUMMARY;
+
+    var pagesHtml = chunks.map(function (chunk, idx) {
+      var isLast = idx === chunks.length - 1;
+      return '<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' +
+        (idx === 0 ? heading : '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(pr.companyName || '') + ' (continued)</div>') +
+        '<table style="width:100%; border-collapse:collapse;">' + tableHead() + '<tbody>' + chunk.map(rowHtml).join('') +
+        (isLast ? totalRow : '') + '</tbody></table>' +
+        (isLast && !summaryOwnPage ? summary : '') +
+        '</div>';
+    });
+    if (summaryOwnPage) {
+      pagesHtml.push('<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' +
+        '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(pr.companyName || '') + ' (summary)</div>' + summary + '</div>');
+    }
+    return pagesHtml.join('');
+  }
+
+  document.getElementById('emp201-pdf-btn').addEventListener('click', function () {
+    var btn = this;
+    var pr = state.payrollRun;
+    if (!pr || !pr.hasRun) {
+      window.alert('Payroll has not been run for this month yet — run it first, then download the EMP201.');
+      return;
+    }
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    var holder = document.getElementById('emp201-pdf-content');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.id = 'emp201-pdf-content';
+      holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:' + PDF_CAPTURE_WIDTH_PX + 'px; background:#fff;';
+      document.body.appendChild(holder);
+    }
+    holder.innerHTML = buildEmp201PdfHtml(pr);
+    downloadPagesAsPdf(holder, 'EMP201_' + sanitizeFilenamePart_(state.selectedMonth) + '.pdf')
+      .catch(function (err) {
+        window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error'));
+      })
+      .then(function () {
+        holder.innerHTML = '';
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  });
 
   // ================= REPORTS > PAYSLIPS =================
   // Checkbox table of every active employee for the selected month, moved
