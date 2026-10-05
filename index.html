@@ -1013,6 +1013,7 @@
           <p class="panel-sub" id="payrollrun-sub"></p>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <button class="btn" id="payrollrun-run-btn">Run payroll for this month</button>
+            <select id="emp201-company" style="display:none; max-width:280px;" title="EMP201 is filed per registered company"></select>
             <button class="btn secondary" id="emp201-pdf-btn">Download PDF</button>
             <span class="save-status" id="payrollrun-status"></span>
           </div>
@@ -1358,7 +1359,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-05.55-emp201-pdf-overtime-standard-rate';
+  var FRONTEND_BUILD = '2026-10-05.56-emp201-per-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles' };
@@ -3283,7 +3284,26 @@
       (pr.hasRun ? ' — figures below are as of the last time payroll was run for this month.' : ' — payroll has not been run for this month yet.');
     document.getElementById('emp201-taxyear-label').textContent = pr.taxYear || '';
 
-    var e = pr.emp201 || {
+    // EMP201 is filed per registered company (Daily Fruit JHB, Pyroca, Daily
+    // Fruit Veg...), so the figures below follow the company picked in the
+    // dropdown; "All companies" shows the combined group total (view only —
+    // nothing is ever filed as a combined return).
+    var companies = pr.emp201ByCompany || [];
+    var companySel = document.getElementById('emp201-company');
+    if (companies.length > 1) {
+      if (state.emp201Company !== 'all' && !companies.some(function (c) { return (c.companyId || '__none') === state.emp201Company; })) state.emp201Company = 'all';
+      companySel.innerHTML = '<option value="all">All companies (combined)</option>' + companies.map(function (c) {
+        return '<option value="' + esc(c.companyId || '__none') + '">' + esc(c.companyName) + '</option>';
+      }).join('');
+      companySel.value = state.emp201Company;
+      companySel.style.display = '';
+    } else {
+      companySel.style.display = 'none';
+      state.emp201Company = 'all';
+    }
+    var selectedCo = (state.emp201Company !== 'all' && companies.length > 1)
+      ? companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; })[0] : null;
+    var e = (selectedCo ? selectedCo.emp201 : pr.emp201) || {
       paye: 0, uifTotal: 0, sdl: 0, eti: 0, netToSars: 0, grossPayroll: 0,
       leviableAmount: 0, amountPayable: 0, controlTotal: 0,
       permCount: 0, nonPermCount: 0, sdlContributingCount: 0, uifContributingCount: 0
@@ -3325,7 +3345,7 @@
       '<th>Base</th><th style="text-align:left;">Adjustments</th><th>Gross</th>' +
       '<th>PAYE</th><th>PAYE YTD</th><th>UIF (ee)</th><th>UIF YTD</th><th>SDL</th><th>SDL YTD</th>' +
       '<th>Retirement</th><th>Medical credit</th><th>ETI</th><th>Net pay</th></tr></thead>';
-    var rows = pr.payslips || [];
+    var rows = (pr.payslips || []).filter(function (ps) { return !selectedCo || ps.companyId === selectedCo.companyId; });
     var body = '<tbody>' + (rows.length ? rows.map(function (ps) {
       return '<tr>' +
         '<td style="text-align:left;">' + esc(ps.name) + '</td>' +
@@ -3362,9 +3382,13 @@
     return (n < 0 ? '-' : '') + 'R ' + Math.abs(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function buildEmp201PdfHtml(pr) {
-    var e = pr.emp201 || {};
-    var rows = pr.emp201Rows || [];
+  // Builds the pages for ONE company's EMP201 (entry = one item of
+  // payrollRun.emp201ByCompany).
+  function buildEmp201PdfHtml(pr, entry) {
+    var e = entry.emp201 || {};
+    var rows = entry.emp201Rows || [];
+    var companyName = entry.companyName || '';
+    var refLine = [entry.payeNumber ? 'PAYE: ' + entry.payeNumber : '', entry.uifNumber ? 'UIF: ' + entry.uifNumber : '', entry.sdlNumber ? 'SDL: ' + entry.sdlNumber : ''].filter(Boolean).join('  \u00b7  ');
     var ROWS_PER_PAGE = 42, LAST_PAGE_MAX_WITH_SUMMARY = 28;
     var th = 'padding:5px 6px; font-size:9px; font-weight:700; border-bottom:1px solid #999; background:#eee;';
     var td = 'padding:4px 6px; font-size:9px; border-bottom:1px solid #ddd; text-align:right;';
@@ -3380,7 +3404,8 @@
       '<div style="font-size:19px; font-weight:700; margin-bottom:6px;">EMP201 PAYE, SDL and UIF Return</div>' +
       '<div style="font-size:12px; font-style:italic; margin-bottom:4px;">For payment period ' +
         esc(new Date(Number(state.selectedMonth.split('-')[0]), Number(state.selectedMonth.split('-')[1]) - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })) + '</div>' +
-      '<div style="font-size:12px; font-weight:700; margin-bottom:12px;">' + esc(pr.companyName || '') + '</div>';
+      '<div style="font-size:12px; font-weight:700; margin-bottom:' + (refLine ? '2px' : '12px') + ';">' + esc(companyName) + '</div>' +
+      (refLine ? '<div style="font-size:10px; color:#555; margin-bottom:12px;">' + esc(refLine) + '</div>' : '');
 
     function tableHead() {
       return '<thead>' +
@@ -3424,7 +3449,7 @@
     var pagesHtml = chunks.map(function (chunk, idx) {
       var isLast = idx === chunks.length - 1;
       return '<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' +
-        (idx === 0 ? heading : '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(pr.companyName || '') + ' (continued)</div>') +
+        (idx === 0 ? heading : '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(companyName) + ' (continued)</div>') +
         '<table style="width:100%; border-collapse:collapse;">' + tableHead() + '<tbody>' + chunk.map(rowHtml).join('') +
         (isLast ? totalRow : '') + '</tbody></table>' +
         (isLast && !summaryOwnPage ? summary : '') +
@@ -3432,10 +3457,15 @@
     });
     if (summaryOwnPage) {
       pagesHtml.push('<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' +
-        '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(pr.companyName || '') + ' (summary)</div>' + summary + '</div>');
+        '<div style="font-size:11px; color:#666; margin-bottom:8px;">EMP201 — ' + esc(companyName) + ' (summary)</div>' + summary + '</div>');
     }
     return pagesHtml.join('');
   }
+
+  document.getElementById('emp201-company').addEventListener('change', function () {
+    state.emp201Company = this.value;
+    renderPayrollRun();
+  });
 
   document.getElementById('emp201-pdf-btn').addEventListener('click', function () {
     var btn = this;
@@ -3454,8 +3484,16 @@
       holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:' + PDF_CAPTURE_WIDTH_PX + 'px; background:#fff;';
       document.body.appendChild(holder);
     }
-    holder.innerHTML = buildEmp201PdfHtml(pr);
-    downloadPagesAsPdf(holder, 'EMP201_' + sanitizeFilenamePart_(state.selectedMonth) + '.pdf')
+    // One company selected -> that company's return. "All companies" (or a
+    // single-company group) -> every company's return, back to back in one
+    // PDF, each starting on its own page — they're filed separately.
+    var companies = pr.emp201ByCompany || [];
+    var picked = (state.emp201Company !== 'all' && companies.length > 1)
+      ? companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; }) : companies;
+    if (!picked.length) picked = [{ companyName: pr.companyName || '', emp201: pr.emp201, emp201Rows: pr.emp201Rows }];
+    holder.innerHTML = picked.map(function (c) { return buildEmp201PdfHtml(pr, c); }).join('');
+    var fileCo = (picked.length === 1 && companies.length > 1) ? '_' + sanitizeFilenamePart_(picked[0].companyName) : '';
+    downloadPagesAsPdf(holder, 'EMP201' + fileCo + '_' + sanitizeFilenamePart_(state.selectedMonth) + '.pdf')
       .catch(function (err) {
         window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error'));
       })
