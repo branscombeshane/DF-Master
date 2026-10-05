@@ -1297,16 +1297,17 @@
           <select id="user-role">
             <option value="staff">Staff — pick sections and entities below</option>
             <option value="hr">HR — Payroll only, scoped to one or more companies and their departments, Basic Salary hidden</option>
+            <option value="sales">Sales — Sales tab only, scoped to the companies you tick</option>
             <option value="owner">Owner — full access to everything, including Settings, Users and Sales admin</option>
           </select>
         </div>
         <div id="user-staff-fields">
-          <div class="field">
+          <div class="field" id="user-sections-field">
             <label>Sections this account can access</label>
             <div class="checkbox-grid" id="user-sections-grid"></div>
           </div>
           <div class="field">
-            <label>Entities this account can access</label>
+            <label id="user-entities-label">Entities this account can access</label>
             <div class="checkbox-grid" id="user-entities-grid"></div>
           </div>
           <div class="field" id="user-sales-fields" style="display:none;">
@@ -1379,7 +1380,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-05.59-sales-team-tab-removed';
+  var FRONTEND_BUILD = '2026-10-05.60-sales-role';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5026,7 +5027,8 @@
 
   // The Sales role/division pickers only matter while the Sales section is ticked.
   function syncUserSalesFieldsVisibility() {
-    var on = Array.prototype.some.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.value === 'sales' && cb.checked; });
+    // A Sales-type account always has Sales access; for Staff it depends on the tick.
+    var on = document.getElementById('user-role').value === 'sales' || Array.prototype.some.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.value === 'sales' && cb.checked; });
     document.getElementById('user-sales-fields').style.display = on ? '' : 'none';
   }
   document.getElementById('user-sections-grid').addEventListener('change', function (e) {
@@ -5035,6 +5037,12 @@
 
   function setUserRoleFieldsVisibility(role) {
     document.getElementById('user-staff-fields').style.display = (role === 'hr' || role === 'owner') ? 'none' : '';
+    // Sales-type accounts are fixed to the Sales section, so only the companies + Sales access boxes apply.
+    document.getElementById('user-sections-field').style.display = role === 'sales' ? 'none' : '';
+    document.getElementById('user-entities-label').textContent = role === 'sales'
+      ? 'Companies this account can access (pick at least one)'
+      : 'Entities this account can access';
+    syncUserSalesFieldsVisibility();
     document.getElementById('user-hr-fields').style.display = role === 'hr' ? '' : 'none';
   }
   document.getElementById('user-role').addEventListener('change', function () {
@@ -5150,11 +5158,12 @@
     errEl.textContent = '';
 
     var roleVal = document.getElementById('user-role').value;
-    var role = (roleVal === 'hr' || roleVal === 'owner') ? roleVal : 'staff';
+    var role = (roleVal === 'hr' || roleVal === 'owner' || roleVal === 'sales') ? roleVal : 'staff';
     var sections = Array.prototype.filter.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
     var entities = Array.prototype.filter.call(document.querySelectorAll('.user-entity-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
+    if (role === 'sales' && !entities.length) { errEl.textContent = 'Pick at least one company for this Sales account.'; return; }
     var companyIds = checkedCompanyIds_();
     var departments = Array.prototype.filter.call(document.querySelectorAll('.user-department-cb'), function (cb) { return cb.checked; })
       .map(function (cb) { return cb.value; });
