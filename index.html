@@ -26,6 +26,21 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="DF Financials">
+<script>
+  /* A payslip link from WhatsApp (...?payslip=TOKEN, ?t=TOKEN, #/payslip/TOKEN or /payslip/TOKEN) opens
+     just that payslip - decided this early so the login screen never flashes. */
+  (function () {
+    var tok = null, re = /^[A-Za-z0-9_-]{16,128}$/;
+    try {
+      var q = new URLSearchParams(location.search);
+      ['payslip', 'p', 't', 'token', 'slip', 'ps'].forEach(function (k) { if (!tok && re.test(q.get(k) || '')) tok = q.get(k); });
+      var m = location.hash.match(/payslips?[\/=]([A-Za-z0-9_-]{16,128})/i) || location.pathname.match(/\/payslips?\/([A-Za-z0-9_-]{16,128})/i);
+      if (!tok && m) tok = m[1];
+    } catch (e) { tok = null; }
+    window.__payslipToken = tok;
+    if (tok) document.documentElement.classList.add('public-payslip');
+  })();
+</script>
 <style>
   :root {
     color-scheme: light;
@@ -527,6 +542,24 @@
     header.topbar { flex-wrap: wrap; padding: 12px 16px; }
     main { padding: 16px; }
   }
+
+  /* Public payslip link (opened from the WhatsApp message): no login, no app
+     shell — just that one payslip. See the PUBLIC PAYSLIP block near the end. */
+  html.public-payslip #login-screen, html.public-payslip #group-picker-screen, html.public-payslip #app { display: none !important; }
+  html.public-payslip #payslip-modal { background: var(--page); }
+  html.public-payslip #payslip-close-btn { display: none; }
+  #payslip-content .public-payslip-note { margin-top: 16px; font-size: 11px; color: var(--text-muted); text-align: center; }
+  .wa-box { border: 1px solid var(--gridline); border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 13px; background: var(--surface-1); }
+  .wa-box.warn { border-color: var(--warning); }
+  .wa-box.bad { border-color: var(--critical); }
+  .wa-preview { white-space: pre-wrap; font-size: 13px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--good) 10%, var(--surface-1)); border: 1px solid var(--gridline); }
+  .wa-chip { font-size: 12px; white-space: nowrap; }
+  .wa-chip.ok { color: var(--good); font-weight: 600; }
+  .wa-chip.bad { color: var(--critical); font-weight: 600; }
+  .wa-chip.muted { color: var(--text-muted); }
+  .wa-list { margin: 6px 0 0 18px; padding: 0; font-size: 12px; }
+  #wa-modal-body { font-size: 13px; }
+  #wa-modal-body .hint { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -606,6 +639,17 @@
       </div>
     </div>
     <div id="payslip-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="wa-modal">
+  <div class="modal-card wide">
+    <h2 id="wa-modal-title">Send payslips via WhatsApp</h2>
+    <div id="wa-modal-body"></div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button class="btn secondary small" id="wa-cancel-btn">Cancel</button>
+      <button class="btn small" id="wa-send-btn" style="display:none;">Send</button>
+    </div>
   </div>
 </div>
 
@@ -1032,6 +1076,7 @@
           <div class="toolbar">
             <select id="reports-payslips-dept-filter"><option value="">All departments</option></select>
             <button class="btn secondary small" id="reports-print-selected-btn">Download selected payslips (PDF)</button>
+            <button class="btn small" id="reports-whatsapp-btn" title="Send each ticked employee a WhatsApp message with a private link to their payslip">Send via WhatsApp</button>
           </div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="reports-payslips-table"></table>
@@ -1380,7 +1425,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-06.62-sales-speed';
+  var FRONTEND_BUILD = '2026-10-06.64-whatsapp-auth-fix';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2421,6 +2466,8 @@
     if (!btn) return;
     var n = selectedPayslipIds.size;
     btn.textContent = n > 0 ? 'Download selected payslips (PDF) (' + n + ')' : 'Download selected payslips (PDF)';
+    var wa = document.getElementById('reports-whatsapp-btn');
+    if (wa) wa.textContent = n > 0 ? 'Send via WhatsApp (' + n + ')' : 'Send via WhatsApp';
   }
 
   // Read-only badge for an employee's payroll-prep status this month — set
@@ -3606,21 +3653,23 @@
       return true;
     }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) +
-      ' — tick employees below, then Download selected payslips (bundles them into one PDF).';
+      ' — tick employees below, then Download selected payslips (bundles them into one PDF) or Send via WhatsApp (each person gets a private link to their own payslip).';
 
     var table = document.getElementById('reports-payslips-table');
     var head = '<thead><tr><th><input type="checkbox" id="reports-select-all" title="Select all shown"></th>' +
-      '<th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th style="text-align:left;">Status</th><th></th></tr></thead>';
+      '<th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th style="text-align:left;">Status</th><th style="text-align:left;">WhatsApp</th><th></th></tr></thead>';
     var body = '<tbody>' + (rows.length ? rows.map(function (e) {
       return '<tr>' +
         '<td><input type="checkbox" class="reports-select-cb" data-select-id="' + esc(e.id) + '" ' + (selectedPayslipIds.has(String(e.id)) ? 'checked' : '') + ' style="width:auto;"></td>' +
         '<td style="text-align:left;">' + esc(e.name) + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
+        '<td style="text-align:left;">' + waChipHtml(e) + '</td>' +
         '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
         '</tr>';
-    }).join('') : '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No active employees.</td></tr>') + '</tbody>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No active employees.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
+    ensurePayslipDeliveryLoaded();
 
     Array.prototype.forEach.call(table.querySelectorAll('[data-payslip-id]'), function (btn) {
       btn.addEventListener('click', function () { openPayslip(btn.getAttribute('data-payslip-id')); });
@@ -3662,6 +3711,138 @@
     }
     printSelectedPayslips(Array.from(selectedPayslipIds));
   });
+
+
+  // ================= WHATSAPP PAYSLIPS =================
+  // Each ticked employee gets one WhatsApp message (the approved template) with
+  // a button linking to a private page that shows only their payslip. What was
+  // sent / failed / opened is kept on the server (PayslipLinks sheet) and shown
+  // in the WhatsApp column.
+  var payslipDelivery = { month: null, map: {}, loading: false, tokenSet: true };
+
+  // Same rules as the server's waNormalisePhone_: is this usable as a WhatsApp number?
+  function waPhoneOk_(raw) {
+    var t = String(raw || '').trim(), intl = /^(\+|00)/.test(t), d = t.replace(/[^0-9]/g, '');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    if (d.indexOf('27') === 0 && d.length === 11) return true;
+    if (d.charAt(0) === '0' && d.length === 10) return true;
+    if (!intl && d.length === 9 && /^[1-9]/.test(d)) return true;
+    return intl && d.length >= 10 && d.length <= 15;
+  }
+
+  function waWhen_(stamp) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(stamp || ''));
+    if (!m) return '';
+    return m[3] + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[4] + ':' + m[5];
+  }
+
+  function waChipHtml(e) {
+    var d = payslipDelivery.month === state.selectedMonth ? payslipDelivery.map[String(e.id)] : null;
+    if (d && d.status === 'Sent') {
+      return '<span class="wa-chip ok" title="Sent by ' + esc(d.sentBy) + '">Sent ' + esc(waWhen_(d.sentAt)) + '</span>' +
+        '<div class="wa-chip muted">' + (d.views > 0 ? 'Opened ' + d.views + '×, last ' + esc(waWhen_(d.lastViewedAt)) : 'Not opened yet') + '</div>';
+    }
+    if (d && d.status === 'Failed') return '<span class="wa-chip bad" title="' + esc(d.error) + '">Failed</span><div class="wa-chip muted" style="white-space:normal; max-width:240px;">' + esc(d.error) + '</div>';
+    if (!waPhoneOk_(e.contactNumber)) return '<span class="wa-chip muted">No valid cell number</span>';
+    return '<span class="wa-chip muted">—</span>';
+  }
+
+  function ensurePayslipDeliveryLoaded(force) {
+    var month = state.selectedMonth;
+    if (!month || payslipDelivery.loading) return;
+    if (!force && payslipDelivery.month === month) return;
+    payslipDelivery.loading = true;
+    callApi('getPayslipDelivery', { month: month }).then(function (res) {
+      payslipDelivery.loading = false;
+      // A month change while this was in flight: just ask again for the right month.
+      if (state.selectedMonth !== month) { ensurePayslipDeliveryLoaded(); return; }
+      payslipDelivery.month = month;
+      payslipDelivery.map = res && res.ok ? res.delivery : {};
+      payslipDelivery.tokenSet = !(res && res.ok) || res.tokenSet;
+      renderReportsPayslipsTable();
+    }).catch(function () { payslipDelivery.loading = false; payslipDelivery.month = month; payslipDelivery.map = {}; });
+  }
+
+  var waSending = false;
+  function waCloseModal() { if (!waSending) document.getElementById('wa-modal').classList.remove('active'); }
+  document.getElementById('wa-cancel-btn').addEventListener('click', waCloseModal);
+
+  document.getElementById('reports-whatsapp-btn').addEventListener('click', function () {
+    if (selectedPayslipIds.size === 0) { window.alert('Tick the checkbox next to one or more employees above first.'); return; }
+    openWhatsappDialog(Array.from(selectedPayslipIds));
+  });
+
+  function openWhatsappDialog(ids) {
+    var modal = document.getElementById('wa-modal'), bodyEl = document.getElementById('wa-modal-body');
+    var sendBtn = document.getElementById('wa-send-btn'), cancelBtn = document.getElementById('wa-cancel-btn');
+    var month = state.selectedMonth;
+    var emps = ids.map(function (id) { return state.payroll.employees.filter(function (e) { return String(e.id) === String(id); })[0]; }).filter(Boolean);
+    document.getElementById('wa-modal-title').textContent = 'Send ' + emps.length + ' payslip' + (emps.length === 1 ? '' : 's') + ' via WhatsApp — ' + monthLabel(month);
+    bodyEl.innerHTML = '<p class="hint">Checking the WhatsApp connection…</p>';
+    sendBtn.style.display = 'none'; sendBtn.disabled = false; sendBtn.textContent = 'Send';
+    cancelBtn.textContent = 'Cancel';
+    modal.classList.add('active');
+
+    ensurePayslipDeliveryLoaded();
+    callApi('whatsappStatus', { month: month, employeeId: emps.length ? emps[0].id : '' }).then(function (st) {
+      if (!st.ok) { bodyEl.innerHTML = '<div class="wa-box bad">' + esc(st.error || 'Could not check WhatsApp.') + '</div>'; return; }
+      if (!st.tokenSet) {
+        bodyEl.innerHTML = '<div class="wa-box warn"><strong>WhatsApp is not connected yet.</strong><br>' +
+          'Add your access token once: Apps Script editor &rarr; Project Settings &rarr; Script properties &rarr; add <code>WHATSAPP_ACCESS_TOKEN</code>. ' +
+          'Then run <code>authorizeWhatsApp</code> once and redeploy. Full steps are in SETUP.md (WhatsApp payslips).</div>';
+        return;
+      }
+      var t = st.template || {};
+      if (!t.found) { bodyEl.innerHTML = '<div class="wa-box bad">Could not read the WhatsApp template: ' + esc(t.error || 'unknown error') + '</div>'; return; }
+      if (t.status !== 'APPROVED') { bodyEl.innerHTML = '<div class="wa-box bad">The template <strong>' + esc(st.templateName) + '</strong> is <strong>' + esc(t.status) + '</strong>, so WhatsApp will not deliver it yet.</div>'; return; }
+      var map = payslipDelivery.month === month ? payslipDelivery.map : {};
+      var noNumber = emps.filter(function (e) { return !waPhoneOk_(e.contactNumber); });
+      var already = emps.filter(function (e) { return map[String(e.id)] && map[String(e.id)].status === 'Sent'; });
+      var html = '<p class="hint" style="margin-top:0;">From <strong>' + esc(st.phoneNumberId) + '</strong> using template <strong>' + esc(st.templateName) + '</strong> (' + esc(t.language) + ', approved). Each person gets this message with a button to their own private payslip page:</p>';
+      html += st.preview ? '<div class="wa-preview">' + esc(st.preview) + '</div><div class="hint">Preview for ' + esc(emps[0].name) + ' — the button opens ' + esc(st.baseUrl) + '/…</div>'
+                         : '<div class="wa-box warn">' + esc(st.previewError || 'No preview available.') + '</div>';
+      if (already.length) html += '<div class="wa-box warn"><strong>' + already.length + '</strong> of these already received this month\'s message — they will get it again: ' + esc(already.slice(0, 6).map(function (e) { return e.name; }).join(', ')) + (already.length > 6 ? '…' : '') + '</div>';
+      if (noNumber.length) html += '<div class="wa-box warn"><strong>' + noNumber.length + '</strong> have no valid cell number on file and will be skipped: ' + esc(noNumber.slice(0, 6).map(function (e) { return e.name; }).join(', ')) + (noNumber.length > 6 ? '…' : '') + '</div>';
+      html += '<p class="hint">Payslips can only be sent for employees whose payroll has been run for the month (Run payroll above). Anyone with the link can open that one payslip until it expires in 90 days.</p><div id="wa-progress"></div>';
+      bodyEl.innerHTML = html;
+      sendBtn.style.display = ''; sendBtn.textContent = 'Send to ' + emps.length;
+      sendBtn.onclick = function () { runWhatsappSend(emps, month); };
+    }).catch(function () { bodyEl.innerHTML = '<div class="wa-box bad">Network error — could not check WhatsApp.</div>'; });
+  }
+
+  function runWhatsappSend(emps, month) {
+    var sendBtn = document.getElementById('wa-send-btn'), cancelBtn = document.getElementById('wa-cancel-btn');
+    var progress = document.getElementById('wa-progress');
+    var CHUNK = 25, all = [], fatal = null, i = 0;
+    waSending = true; sendBtn.disabled = true; cancelBtn.disabled = true;
+    function step() {
+      if (i >= emps.length || fatal) return finish();
+      var chunk = emps.slice(i, i + CHUNK);
+      progress.innerHTML = '<div class="wa-box">Sending… ' + Math.min(i, emps.length) + ' of ' + emps.length + ' done</div>';
+      callApi('sendPayslipWhatsapp', { month: month, employeeIds: chunk.map(function (e) { return e.id; }).join(',') }).then(function (res) {
+        if (!res.ok) { fatal = res.error || 'Sending failed.'; } else { all = all.concat(res.results); }
+        i += CHUNK; step();
+      }).catch(function () { fatal = 'Network error — some may not have been sent. Check the WhatsApp column before trying again.'; finish(); });
+    }
+    function finish() {
+      waSending = false; cancelBtn.disabled = false; cancelBtn.textContent = 'Close'; sendBtn.style.display = 'none';
+      var by = function (s) { return all.filter(function (r) { return r.status === s; }); };
+      var sent = by('sent'), failed = by('failed'), skipped = by('skipped');
+      var html = '<div class="wa-box ' + (failed.length || fatal ? 'warn' : '') + '"><strong>' + sent.length + ' sent</strong>' +
+        (failed.length ? ', <strong style="color:var(--critical)">' + failed.length + ' failed</strong>' : '') +
+        (skipped.length ? ', ' + skipped.length + ' skipped' : '') + '.</div>';
+      if (fatal) html += '<div class="wa-box bad">' + esc(fatal) + '</div>';
+      function list(title, rows) {
+        if (!rows.length) return '';
+        var shown = rows.slice(0, 12).map(function (r) { return '<li>' + esc(r.name || r.employeeId) + ' — ' + esc(r.error || '') + '</li>'; }).join('');
+        return '<div class="wa-box"><strong>' + title + '</strong><ul class="wa-list">' + shown + (rows.length > 12 ? '<li>…and ' + (rows.length - 12) + ' more</li>' : '') + '</ul></div>';
+      }
+      html += list('Failed', failed) + list('Skipped', skipped);
+      progress.innerHTML = html;
+      ensurePayslipDeliveryLoaded(true);
+    }
+    step();
+  }
 
   // One-line "+Commission R200, −Deduction R50" style summary of a payslip's
   // adjustment breakdown, for the compact Adjustments column above. Blank
@@ -7013,6 +7194,38 @@
 
     return { show: show, reset: reset };
   })();
+
+
+  // ================= PUBLIC PAYSLIP (opened from the WhatsApp link) =================
+  // No login: the long random token in the link is the key, and the server only
+  // returns that one employee's payslip for that one month (ID / tax / bank
+  // numbers masked). The normal payslip modal is reused as a full page.
+  if (window.__payslipToken) {
+    (function () {
+      var modal = document.getElementById('payslip-modal');
+      var content = document.getElementById('payslip-content');
+      var title = document.getElementById('payslip-modal-title');
+      var dl = document.getElementById('payslip-print-btn');
+      modal.classList.add('active');
+      title.textContent = 'Your payslip';
+      content.innerHTML = '<p class="hint">Loading your payslip…</p>';
+      callApi('getPublicPayslip', { pt: window.__payslipToken }).then(function (res) {
+        if (!res || !res.ok) {
+          dl.style.display = 'none';
+          content.innerHTML = '<p class="error-text" style="text-align:center; padding:24px 8px;">' + esc((res && res.error) || 'Could not load this payslip.') + '</p>';
+          return;
+        }
+        lastPdfFilenameHint = 'Payslip_' + sanitizeFilenamePart_(res.employee.name) + '_' + sanitizeFilenamePart_(res.month);
+        title.textContent = 'Payslip — ' + monthLabel(res.month);
+        content.innerHTML = '<div class="ps-print-page">' + renderPayslipHtml(res) + '</div>' +
+          '<p class="public-payslip-note">This is your private payslip link — please don\'t share it. ' +
+          (res.linkExpiresAt ? 'It stays open until ' + esc(String(res.linkExpiresAt).slice(0, 10)) + '.' : '') + '</p>';
+      }).catch(function () {
+        dl.style.display = 'none';
+        content.innerHTML = '<p class="error-text" style="text-align:center; padding:24px 8px;">Network error — please check your connection and try again.</p>';
+      });
+    })();
+  }
 
   // ================= INSTALL TO HOME SCREEN =================
   // Registers the (deliberately no-op) service worker so Chrome/Android and
