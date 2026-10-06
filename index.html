@@ -1053,7 +1053,7 @@
 
       <div class="payroll-subview" id="payroll-sub-reports">
         <!-- 1. EMP201 -->
-        <div class="panel">
+        <div class="panel" id="reports-panel-emp201">
           <h2>EMP201</h2>
           <p class="panel-sub" id="payrollrun-sub"></p>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -1085,7 +1085,7 @@
         </div>
 
         <!-- 3. IRP5 / IT3(a) -->
-        <div class="panel">
+        <div class="panel" id="reports-panel-irp5">
           <h2>IRP5 / IT3(a)</h2>
           <p class="panel-sub" id="irp5-sub"></p>
           <div class="hint" style="margin-bottom:12px;">
@@ -1106,7 +1106,7 @@
         </div>
 
         <!-- 4. Employer Reconciliation -->
-        <div class="panel">
+        <div class="panel" id="reports-panel-recon">
           <h2>Employer Reconciliation (e@syFile)</h2>
           <p class="panel-sub" style="margin-top:0;">Generates the SARS bulk-import CSV for an Interim or Final/Annual EMP501 recon, for submission through SARS e@syFile Employer.</p>
           <div class="hint" style="margin-bottom:12px;">
@@ -1426,7 +1426,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-06.70-wa-status-live';
+  var FRONTEND_BUILD = '2026-10-06.71-hr-reports-bank-lock';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2028,16 +2028,26 @@
     { key: 'casuals', label: 'Casuals' }
   ];
   // HR accounts never get a Dashboard (Total Monthly Cost + per-department
-  // cost totals — pure Basic Salary aggregates) or Reports (EMP201/Payslips/
-  // IRP5/Employer Recon — every one of those shows Gross/Net figures HR
-  // can't see) sub-tab — the backend refuses those calls outright too (see
-  // apiGetPayrollRun_/apiGetIrp5_/apiGetEmployerRecon_/apiGetPayslip_), this
-  // just keeps HR from ever seeing a tab that leads nowhere.
+  // cost totals — pure Basic Salary aggregates). They DO get Reports, but a
+  // cut-down one: only the Payslips panel, and only to send payslips on
+  // WhatsApp and see the send status (no payslip view, no PDF download, no
+  // EMP201 / IRP5 / Employer Recon — those show Gross/Net figures HR can't
+  // see, and the backend refuses those calls for HR anyway: see
+  // apiGetPayrollRun_/apiGetIrp5_/apiGetEmployerRecon_/apiGetPayslip_).
   function visiblePayrollSubtabs_() {
     if (state.role !== 'hr') return PAYROLL_SUBTABS;
-    return PAYROLL_SUBTABS.filter(function (t) { return t.key !== 'dashboard' && t.key !== 'reports'; });
+    return PAYROLL_SUBTABS.filter(function (t) { return t.key !== 'dashboard'; });
+  }
+  // Hides everything in Reports that isn't "send payslips on WhatsApp + status" for HR.
+  function applyHrReportsLimits_() {
+    if (state.role !== 'hr') return;
+    ['reports-panel-emp201', 'reports-panel-irp5', 'reports-panel-recon'].forEach(function (id) {
+      var el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+    var dl = document.getElementById('reports-print-selected-btn'); if (dl) dl.style.display = 'none';
   }
   function renderPayrollSubNav() {
+    applyHrReportsLimits_();
     var nav = document.getElementById('payroll-subtabs');
     var defaultSubTab = state.role === 'hr' ? 'roster' : 'dashboard';
     if (!nav || nav.childElementCount) { showPayrollSubTab(state.payrollSubTab || defaultSubTab); return; }
@@ -2082,7 +2092,7 @@
     });
     sel.onchange = function () {
       state.selectedMonth = sel.value;
-      if (hasSection('payroll')) { loadPayroll(); loadPayrollRun(); loadIrp5(); loadAdjustments(); }
+      if (hasSection('payroll')) { loadPayroll(); if (state.role !== 'hr') { loadPayrollRun(); loadIrp5(); } loadAdjustments(); }
     };
   }
 
@@ -3663,8 +3673,11 @@
       if (deptFilterVal && e.department !== deptFilterVal) return false;
       return true;
     }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
-    document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) +
-      ' — tick employees below, then Download selected payslips (bundles them into one PDF) or Send via WhatsApp (each person gets a private link to their own payslip).';
+    var isHrReports = state.role === 'hr';
+    applyHrReportsLimits_();
+    document.getElementById('reports-payslips-sub').textContent = monthLabel(state.selectedMonth) + (isHrReports
+      ? ' — tick employees below, then Send via WhatsApp (each person gets a private link to their own payslip). The WhatsApp column shows whether it was sent and opened.'
+      : ' — tick employees below, then Download selected payslips (bundles them into one PDF) or Send via WhatsApp (each person gets a private link to their own payslip).');
 
     var table = document.getElementById('reports-payslips-table');
     var head = '<thead><tr><th><input type="checkbox" id="reports-select-all" title="Select all shown"></th>' +
@@ -3676,7 +3689,7 @@
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
         '<td style="text-align:left;">' + waChipHtml(e) + '</td>' +
-        '<td><button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button></td>' +
+        '<td>' + (isHrReports ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button>') + '</td>' +
         '</tr>';
     }).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No active employees.</td></tr>') + '</tbody>';
     table.innerHTML = head + body;
@@ -4161,6 +4174,7 @@
     document.getElementById('payroll-account-number').value = e.accountNumber || '';
     document.getElementById('payroll-pay-method').value = e.payMethod || '';
     updateBankDetailsRequiredUI();
+    setBankFieldsLocked_(state.role === 'hr');
     document.getElementById('payroll-id-number').value = e.idNumber || '';
     document.getElementById('payroll-tax-number').value = e.taxNumber || '';
     document.getElementById('payroll-dob').value = e.dateOfBirth || '';
@@ -4247,6 +4261,7 @@
     document.getElementById('payroll-account-number').value = '';
     document.getElementById('payroll-pay-method').value = 'EFT / Bank Transfer';
     updateBankDetailsRequiredUI();
+    setBankFieldsLocked_(false);
     document.getElementById('payroll-id-number').value = '';
     document.getElementById('payroll-tax-number').value = '';
     document.getElementById('payroll-dob').value = '';
@@ -4297,6 +4312,19 @@
   document.getElementById('payroll-pay-method').addEventListener('input', updateBankDetailsRequiredUI);
   updateBankDetailsRequiredUI();
 
+  // HR can enter banking details when ADDING an employee but not change them
+  // afterwards (the backend ignores them for HR on edit as well).
+  var BANK_FIELD_IDS = ['payroll-bank-name', 'payroll-branch-code', 'payroll-account-number', 'payroll-pay-method'];
+  function setBankFieldsLocked_(locked) {
+    BANK_FIELD_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = !!locked; });
+    if (locked) {
+      document.getElementById('payroll-bank-details-hint').textContent =
+        'Banking details can only be entered when an employee is added. They can\'t be changed here afterwards — ask the owner if something needs correcting.';
+    } else {
+      updateBankDetailsRequiredUI();
+    }
+  }
+
   document.getElementById('payroll-save-btn').addEventListener('click', function () {
     var id = document.getElementById('payroll-edit-id').value;
     var errEl = document.getElementById('payroll-error');
@@ -4308,7 +4336,8 @@
     var bankName = document.getElementById('payroll-bank-name').value.trim();
     var branchCode = document.getElementById('payroll-branch-code').value.trim();
     var accountNumber = document.getElementById('payroll-account-number').value.trim();
-    if (bankDetailsCurrentlyRequired() && (!bankName || !branchCode || !accountNumber)) {
+    var hrEditingBank = state.role === 'hr' && !!id; // locked for HR once the employee exists
+    if (!hrEditingBank && bankDetailsCurrentlyRequired() && (!bankName || !branchCode || !accountNumber)) {
       errEl.textContent = 'Bank name, branch code and account number are required for Pay Method "EFT / Bank Transfer" — choose Cash or Cheque instead if these aren\'t available yet.';
       return;
     }
