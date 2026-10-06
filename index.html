@@ -484,6 +484,7 @@
      between sections. Internal vertical spacing is kept tight throughout
      (small row padding, no per-row dotted rules) so each card itself still
      feels dense and tidy rather than stretched out. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   #payslip-content { font-size: 13px; }
   #payslip-content .ps-header { text-align: center; border-bottom: 2px solid var(--text-primary); padding-bottom: 10px; margin-bottom: 14px; }
   #payslip-content .ps-company { font-weight: 700; font-size: 17px; }
@@ -1425,7 +1426,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-06.68-whatsapp-register';
+  var FRONTEND_BUILD = '2026-10-06.70-wa-status-live';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2639,7 +2640,17 @@
       }
       return window.html2canvas(pages[i], {
         scale: 2, backgroundColor: '#ffffff', useCORS: true,
+        // Always lay the payslip out as it looks on a desktop, whatever device is
+        // downloading it: without this, a phone's narrow screen switches on the
+        // mobile CSS (stacked boxes, inflated text) and the PDF comes out different.
+        windowWidth: 1280, windowHeight: 1800, scrollX: 0, scrollY: 0,
         onclone: function (clonedDoc) {
+          try {
+            var fix = clonedDoc.createElement('style');
+            fix.textContent = 'html, body { -webkit-text-size-adjust: 100% !important; text-size-adjust: 100% !important; } ' +
+              '#payslip-content .ps-group { flex-direction: row !important; gap: 16px !important; }';
+            clonedDoc.head.appendChild(fix);
+          } catch (e) {}
           // containerEl is #payslip-content — its id survives the clone, so
           // this only ever widens the invisible clone, never the live modal.
           var clonedContent = clonedDoc.getElementById(containerEl.id);
@@ -3718,7 +3729,7 @@
   // a button linking to a private page that shows only their payslip. What was
   // sent / failed / opened is kept on the server (PayslipLinks sheet) and shown
   // in the WhatsApp column.
-  var payslipDelivery = { month: null, map: {}, loading: false, tokenSet: true };
+  var payslipDelivery = { month: null, map: {}, loading: false, tokenSet: true, fetchedAt: 0 };
 
   // Same rules as the server's waNormalisePhone_: is this usable as a WhatsApp number?
   function waPhoneOk_(raw) {
@@ -3747,21 +3758,41 @@
     return '<span class="wa-chip muted">—</span>';
   }
 
+  // Keeps the WhatsApp column live: re-reads the delivery status whenever it is
+  // older than 20 seconds (so opening the tab / re-rendering picks up changes),
+  // and the poller below refreshes it while the Payslips table is on screen.
+  // A refresh only redraws the table if something actually changed.
   function ensurePayslipDeliveryLoaded(force) {
     var month = state.selectedMonth;
     if (!month || payslipDelivery.loading) return;
-    if (!force && payslipDelivery.month === month) return;
+    var fresh = payslipDelivery.month === month && (Date.now() - payslipDelivery.fetchedAt) < 20000;
+    if (!force && fresh) return;
     payslipDelivery.loading = true;
     callApi('getPayslipDelivery', { month: month }).then(function (res) {
       payslipDelivery.loading = false;
       // A month change while this was in flight: just ask again for the right month.
-      if (state.selectedMonth !== month) { ensurePayslipDeliveryLoaded(); return; }
+      if (state.selectedMonth !== month) { ensurePayslipDeliveryLoaded(true); return; }
+      var firstLoad = payslipDelivery.month !== month;
+      var newMap = res && res.ok ? res.delivery : {};
+      var changed = firstLoad || JSON.stringify(newMap) !== JSON.stringify(payslipDelivery.map);
       payslipDelivery.month = month;
-      payslipDelivery.map = res && res.ok ? res.delivery : {};
+      payslipDelivery.fetchedAt = Date.now();
+      payslipDelivery.map = newMap;
       payslipDelivery.tokenSet = !(res && res.ok) || res.tokenSet;
-      renderReportsPayslipsTable();
-    }).catch(function () { payslipDelivery.loading = false; payslipDelivery.month = month; payslipDelivery.map = {}; });
+      if (changed) renderReportsPayslipsTable();
+    }).catch(function () {
+      payslipDelivery.loading = false;
+      if (payslipDelivery.month !== month) { payslipDelivery.month = month; payslipDelivery.map = {}; }
+      payslipDelivery.fetchedAt = Date.now();
+    });
   }
+  function payslipTableOnScreen_() {
+    var t = document.getElementById('reports-payslips-table');
+    return !!(t && t.offsetParent !== null && document.visibilityState !== 'hidden');
+  }
+  setInterval(function () { if (payslipTableOnScreen_()) ensurePayslipDeliveryLoaded(true); }, 15000);
+  document.addEventListener('visibilitychange', function () { if (payslipTableOnScreen_()) ensurePayslipDeliveryLoaded(true); });
+  window.addEventListener('focus', function () { if (payslipTableOnScreen_()) ensurePayslipDeliveryLoaded(true); });
 
   var waSending = false;
   function waCloseModal() { if (!waSending) document.getElementById('wa-modal').classList.remove('active'); }
