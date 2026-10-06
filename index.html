@@ -1380,7 +1380,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-06.61-expense-vs-average';
+  var FRONTEND_BUILD = '2026-10-06.62-sales-speed';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5350,12 +5350,79 @@
           reader.readAsText(file);
         });
       }
+      // ---- speed layer ------------------------------------------------------
+      // Every Sales call is a round trip to Google Apps Script (the slow part),
+      // so GETs are:
+      //  * answered from a short-lived cache when the same URL was loaded in the
+      //    last CACHE_MS (switching tabs back and forth is instant);
+      //  * de-duplicated while in flight (two parts of a screen asking for the
+      //    same thing share one request);
+      //  * coalesced: everything requested in the same instant goes to the server
+      //    as ONE call (/api/batch) - one login check, one set of sheet reads.
+      // Any write (POST/PATCH/DELETE/upload) empties the cache, so what you see
+      // after changing something is always fresh. Opening a screen you are
+      // already on, or pressing Refresh, bypasses it.
+      var CACHE_MS = 90 * 1000, MAX_BATCH = 10, BATCH_WINDOW_MS = 12;
+      var cache = new Map(), inflight = new Map(), queue = [], timer = null, generation = 0;
+      function copy(v) { return typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v)); }
+      function fail(res) {
+        var err = new Error((res && res.error) || 'Request failed');
+        err.status = res && res.status;
+        return err;
+      }
+      function flush() {
+        timer = null;
+        var jobs = queue; queue = [];
+        for (var i = 0; i < jobs.length; i += MAX_BATCH) sendJobs(jobs.slice(i, i + MAX_BATCH));
+      }
+      function sendJobs(jobs) {
+        if (jobs.length === 1) {
+          var j = jobs[0];
+          call('GET', j.url).then(j.resolve, j.reject);
+          return;
+        }
+        call('GET', '/api/batch', { urls: jobs.map(function (x) { return x.url; }) }).then(function (data) {
+          jobs.forEach(function (job, idx) {
+            var r = data && data.results && data.results[idx];
+            if (r && r.ok) job.resolve(r.data); else job.reject(fail(r));
+          });
+        }, function (err) { jobs.forEach(function (job) { job.reject(err); }); });
+      }
+      function get(url, opts) {
+        var fresh = !!(opts && opts.fresh);
+        var hit = cache.get(url);
+        if (!fresh && hit && Date.now() - hit.t < CACHE_MS) return Promise.resolve(copy(hit.data));
+        var pending = !fresh && inflight.get(url);
+        if (pending) return pending.then(copy);
+        var startedAt = generation;
+        var p = new Promise(function (resolve, reject) {
+          queue.push({ url: url, resolve: resolve, reject: reject });
+          if (!timer) timer = setTimeout(flush, BATCH_WINDOW_MS);
+        });
+        inflight.set(url, p);
+        var done = function () { if (inflight.get(url) === p) inflight.delete(url); };
+        p.then(function (data) {
+          done();
+          if (startedAt === generation) cache.set(url, { t: Date.now(), data: data }); // a write in the meantime makes this stale
+        }, done);
+        return p.then(copy);
+      }
+      function clearCache() { generation++; cache.clear(); inflight.clear(); }
+      function currentGeneration() { return generation; }
+      // Warm the cache for screens the user is likely to open next (errors ignored).
+      function prefetch(urls) {
+        urls.forEach(function (u) { get(u).catch(function () { /* the screen will report it if it is opened */ }); });
+      }
+      function write(method, url, body) { clearCache(); return call(method, url, body).finally(clearCache); }
       return {
-        get: function (url) { return call('GET', url); },
-        post: function (url, body) { return call('POST', url, body); },
-        patch: function (url, body) { return call('PATCH', url, body); },
-        delete: function (url) { return call('DELETE', url); },
-        upload: upload
+        get: get,
+        prefetch: prefetch,
+        clearCache: clearCache,
+        generation: currentGeneration,
+        post: function (url, body) { return write('POST', url, body); },
+        patch: function (url, body) { return write('PATCH', url, body); },
+        delete: function (url) { return write('DELETE', url); },
+        upload: function (url, fd) { clearCache(); return upload(url, fd).finally(clearCache); }
       };
     })();
 
@@ -5411,7 +5478,11 @@
       stages: { trays: [], wholesale: [] },
       reps: [],
       visitOptions: { purposes: [], outcomes: [] },
-      currentView: 'dashboard'
+      currentView: 'dashboard',
+      // Rows already downloaded for the screen, so opening one for editing doesn't
+      // re-download the whole list. Only trusted while no write has happened since
+      // (see api.generation()).
+      dealsById: {}, dealsGen: -1, visitsById: {}, visitsGen: -1
     };
 
     // Stages tracked as a "new clients added" counter on the pipeline view (this week /
@@ -5620,26 +5691,74 @@
       $('#modal-close').addEventListener('click', closeModal);
       $('#modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop') closeModal(); });
       $$('#main-nav .nav-btn').forEach(btn => {
-        btn.addEventListener('click', () => navigateTo(btn.dataset.view));
+        btn.addEventListener('click', () => {
+          // Clicking the tab you're already on = "refresh": bypass the short-lived cache.
+          if (btn.dataset.view === state.currentView) api.clearCache();
+          navigateTo(btn.dataset.view);
+        });
       });
     }
 
     async function startUp() {
-      const { user } = await api.get('/api/auth/me');
+      // One round trip for everything the shell needs (plus the dashboard's own
+      // data, so the first screen is usually ready the moment this returns).
+      const [{ user }, { stages }, { users }, visitOpts] = await Promise.all([
+        api.get('/api/auth/me'),
+        api.get('/api/deals/stages'),
+        api.get('/api/users/lite'),
+        api.get('/api/visits/options'),
+        // Speculative extras: whichever screen this person lands on (Dashboard,
+        // Trays or Wholesale pipeline) its data rides in this same round trip. A
+        // screen they aren't allowed to see just comes back as a harmless 403.
+        api.get('/api/dashboard/summary').catch(() => null),
+        api.get('/api/dashboard/activity-targets').catch(() => null),
+        api.get(kanbanUrl('trays', '', '', 'open')).catch(() => null),
+        api.get('/api/deals/stage-entry-stats?division=trays').catch(() => null),
+        api.get(kanbanUrl('wholesale', '', '', 'open')).catch(() => null)
+      ]);
       state.user = user;
       const isAdmin = user.role === 'admin';
       // Reps limited to one division don't get the other division's pipeline tab.
       $('#main-nav .nav-btn[data-view="trays"]').hidden = !(isAdmin || user.division_access !== 'wholesale');
       $('#main-nav .nav-btn[data-view="wholesale"]').hidden = !(isAdmin || user.division_access !== 'trays');
-
-      const [{ stages }, { users }, visitOpts] = await Promise.all([
-        api.get('/api/deals/stages'),
-        api.get('/api/users/lite'),
-        api.get('/api/visits/options')
-      ]);
       state.stages = stages;
       state.reps = users;
       state.visitOptions = visitOpts;
+    }
+
+    // The URLs each screen loads first (same strings the screens use, so what is
+    // fetched ahead of time is exactly what they will ask for).
+    function viewUrls(view) {
+      const u = state.user;
+      const isAdmin = u.role === 'admin';
+      const canTrays = isAdmin || u.division_access !== 'wholesale';
+      const canWholesale = isAdmin || u.division_access !== 'trays';
+      if (view === 'trays') return canTrays ? [kanbanUrl('trays', '', '', 'open'), '/api/deals/stage-entry-stats?division=trays'] : [];
+      if (view === 'wholesale') {
+        if (!canWholesale) return [];
+        return [
+          kanbanUrl('wholesale', '', '', 'open'),
+          '/api/customers?' + new URLSearchParams({ division: 'wholesale' }).toString(),
+          '/api/wholesale/spend/comparison?',
+          '/api/dashboard/wholesale-rep-activity?week_start=' + mondayOfToday()
+        ];
+      }
+      if (view === 'visits') {
+        // the Visits screen's division filter defaults to the rep's own division when they have only one
+        const div = (u.division_access === 'both' || isAdmin) ? '' : u.division_access;
+        return ['/api/visits?' + (div ? 'division=' + div : '')];
+      }
+      return [];
+    }
+    // After the first screen is up, quietly load the other screens' data in ONE
+    // batched call so clicking over to them is instant.
+    function prefetchOtherViews(current) {
+      if (!state.user) return;
+      setTimeout(() => {
+        if (!state.user) return; // logged out meanwhile
+        const urls = ['trays', 'wholesale', 'visits'].filter(v => v !== current).reduce((a, v) => a.concat(viewUrls(v)), []);
+        if (urls.length) api.prefetch(urls);
+      }, 250);
     }
 
     function defaultView() {
@@ -5658,6 +5777,7 @@
           initPromise = startUp().then(function () {
             initialised = true;
             navigateTo(defaultView());
+            prefetchOtherViews(defaultView());
           }).catch(function (err) {
             initPromise = null;
             $('#view-root').innerHTML = '<div class="empty-state">Couldn\'t open Sales: ' + escapeHtml(err.message) + '</div>';
@@ -5673,6 +5793,8 @@
     function reset() {
       initialised = false;
       initPromise = null;
+      api.clearCache();
+      state.dealsById = {}; state.visitsById = {};
       state.user = null;
       state.currentView = 'dashboard';
       state.wholesaleSubview = null;
@@ -5712,8 +5834,22 @@
     // ---------------------------------------------------------------------------
     // Dashboard
     // ---------------------------------------------------------------------------
+    function activityTrendUrl(repId) { return '/api/dashboard/rep-weekly-trend' + (repId ? '?rep_id=' + repId : ''); }
+    function checkinsTrendUrl(repId) { return '/api/dashboard/client-checkins-trend' + (repId ? '?rep_id=' + repId : ''); }
+
     async function renderDashboard() {
       const root = $('#view-root');
+      // Ask for the charts' data in the same breath as the summary so everything
+      // goes to the server as one batched call (the charts used to wait until the
+      // summary had come back and then make two more calls of their own).
+      const isAdminUser = state.user.role === 'admin';
+      const defaultTrendRep = isAdminUser ? (state.reps.filter(r => r.role !== 'admin')[0] || {}).id : undefined; // = the rep picker's first option
+      const canTrays = isAdminUser || state.user.division_access !== 'wholesale';
+      const canWholesale = isAdminUser || state.user.division_access !== 'trays';
+      const repArg = defaultTrendRep ? String(defaultTrendRep) : '';
+      api.prefetch(['/api/dashboard/activity-targets']
+        .concat(canTrays ? [activityTrendUrl(repArg)] : [])
+        .concat(canWholesale ? [checkinsTrendUrl(repArg)] : []));
       const summary = await api.get('/api/dashboard/summary');
       if (!isViewActive('dashboard')) return;
 
@@ -5814,7 +5950,7 @@
 
       try {
         const [trend, { targets }] = await Promise.all([
-          api.get('/api/dashboard/rep-weekly-trend' + (repId ? '?rep_id=' + repId : '')),
+          api.get(activityTrendUrl(repId)),
           api.get('/api/dashboard/activity-targets')
         ]);
         if (!isViewActive('dashboard')) return;
@@ -5844,7 +5980,7 @@
 
       try {
         const [trend, { targets }] = await Promise.all([
-          api.get('/api/dashboard/client-checkins-trend' + (repId ? '?rep_id=' + repId : '')),
+          api.get(checkinsTrendUrl(repId)),
           api.get('/api/dashboard/activity-targets')
         ]);
         if (!isViewActive('dashboard')) return;
@@ -5985,6 +6121,9 @@
         $('#' + id)?.addEventListener('change', () => loadKanban(division));
       });
 
+      // Ask for the stage stats in the same breath as the deals so both travel in
+      // one batched call (loadKanban requests the deals right below).
+      if (tracked) api.prefetch(['/api/deals/stage-entry-stats?division=' + division]);
       await loadKanban(division);
     }
 
@@ -6011,18 +6150,25 @@
       }
     }
 
+    // The one place the pipeline's deal-list URL is built (the screens and the
+    // background prefetch must produce the exact same string).
+    function kanbanUrl(division, rep, type, status) {
+      const params = new URLSearchParams({ division });
+      if (rep) params.set('rep_id', rep);
+      if (type) params.set('deal_type', type);
+      if (status) params.set('status', status);
+      return '/api/deals?' + params.toString();
+    }
+
     async function loadKanban(division) {
       const rep = $('#filter-rep')?.value || '';
       const type = $('#filter-type').value;
       const status = $('#filter-status').value;
 
-      const params = new URLSearchParams({ division });
-      if (rep) params.set('rep_id', rep);
-      if (type) params.set('deal_type', type);
-      if (status) params.set('status', status);
-
-      const { deals } = await api.get('/api/deals?' + params.toString());
+      const { deals } = await api.get(kanbanUrl(division, rep, type, status));
       if (division === 'trays' ? !isViewActive('trays') : !isViewActive('wholesale', 'pipeline')) return;
+      if (state.dealsGen !== api.generation()) { state.dealsById = {}; state.dealsGen = api.generation(); }
+      deals.forEach(d => { state.dealsById[d.id] = d; }); // lets the deal modal open without re-downloading the list
       const stages = state.stages[division];
       const kanban = $('#kanban');
       if (TRACKED_ENTRY_STAGES[division]) loadStageStats(division);
@@ -6098,14 +6244,21 @@
       let deal = null;
       let activity = [];
       if (dealId) {
-        const { deals } = await api.get(`/api/deals?division=${division}`);
-        deal = deals.find(d => d.id === dealId);
-        const act = await api.get(`/api/deals/${dealId}/activity`);
+        // The deal is already on screen (loadKanban remembers it); only fall back to
+        // downloading the whole list if it somehow isn't (e.g. opened from the Dashboard).
+        deal = state.dealsGen === api.generation() ? state.dealsById[dealId] : null;
+        const [listed, act] = await Promise.all([
+          deal ? Promise.resolve(null) : api.get(`/api/deals?division=${division}`),
+          api.get(`/api/deals/${dealId}/activity`)
+        ]);
+        if (!deal && listed) deal = listed.deals.find(d => d.id === dealId);
         activity = act.activity;
       }
 
       const stages = state.stages[division];
-      const repOptions = state.reps.map(r => `<option value="${r.id}" ${deal && deal.rep_id === r.id ? 'selected' : ''}>${escapeHtml(r.full_name)}</option>`).join('');
+      // New deal: default the rep to whoever is signed in (an existing deal keeps its own rep).
+      const defaultRepId = deal ? deal.rep_id : state.user.id;
+      const repOptions = state.reps.map(r => `<option value="${r.id}" ${defaultRepId === r.id ? 'selected' : ''}>${escapeHtml(r.full_name)}</option>`).join('');
       const stageOptions = stages.map(s => `<option value="${s}" ${deal && deal.stage === s ? 'selected' : (!deal && s === stages[0] ? 'selected' : '')}>${escapeHtml(s)}</option>`).join('');
       const isAdmin = state.user.role === 'admin';
       const canEdit = !deal || isAdmin || deal.rep_id === state.user.id;
@@ -6406,7 +6559,9 @@
 
     function openClientModal(division, client, onSaved) {
       const isAdmin = state.user.role === 'admin';
-      const repOptions = state.reps.map(r => `<option value="${r.id}" ${client?.assigned_rep_id === r.id ? 'selected' : ''}>${escapeHtml(r.full_name)}</option>`).join('');
+      // New client: default to whoever is signed in (the server assigns a rep's own new clients to them anyway).
+      const defaultClientRepId = client ? client.assigned_rep_id : state.user.id;
+      const repOptions = state.reps.map(r => `<option value="${r.id}" ${defaultClientRepId === r.id ? 'selected' : ''}>${escapeHtml(r.full_name)}</option>`).join('');
 
       openModal(`
         <h3>${client ? 'Edit ' + escapeHtml(client.company_name) : 'Add Client'}</h3>
@@ -6732,6 +6887,8 @@
 
       const { visits } = await api.get('/api/visits?' + params.toString());
       if (!isViewActive('visits')) return;
+      if (state.visitsGen !== api.generation()) { state.visitsById = {}; state.visitsGen = api.generation(); }
+      visits.forEach(v => { state.visitsById[v.id] = v; });
       const wrap = $('#visits-table');
 
       if (!visits.length) {
@@ -6759,8 +6916,8 @@
 
       $$('#visits-table tr.clickable').forEach(row => {
         row.addEventListener('click', async () => {
-          const { visits } = await api.get('/api/visits');
-          const v = visits.find(x => x.id === Number(row.dataset.id));
+          let v = state.visitsGen === api.generation() ? state.visitsById[Number(row.dataset.id)] : null;
+          if (!v) { const { visits } = await api.get('/api/visits'); v = visits.find(x => x.id === Number(row.dataset.id)); }
           openVisitModal(v);
         });
       });
