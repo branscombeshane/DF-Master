@@ -1380,7 +1380,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-05.60-sales-role';
+  var FRONTEND_BUILD = '2026-10-06.61-expense-vs-average';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2139,45 +2139,97 @@
     }
     sub.textContent = monthLabel(latest.month) + ' — latest reported month' + (isPartialEntitySet() ? ' (across your entities)' : '');
 
-    var totals = {};
-    var displayLabel = {};
     var entityKeys = entityKey === 'total' ? state.entities.map(function (e) { return e.key; }) : [entityKey];
     // Only normalize Zoho-vs-Sage naming when actually combining more than
     // one entity's expenses — a single entity's own breakdown always shows
     // its exact source-report category text, untouched.
     var aliasMap = entityKeys.length > 1 ? categoryAliasLookup() : null;
-    entityKeys.forEach(function (key) {
-      var e = latest.entities[key];
-      if (!e) return;
-      Object.keys(e.expenses || {}).forEach(function (cat) {
-        var groupKey = cat.trim().toLowerCase();
-        var label = cat;
-        if (aliasMap) {
-          var canon = aliasMap[groupKey];
-          if (canon) { groupKey = canon.trim().toLowerCase(); label = canon; }
-        }
-        if (!displayLabel[groupKey]) displayLabel[groupKey] = label;
-        totals[groupKey] = (totals[groupKey] || 0) + e.expenses[cat];
+    var displayLabel = {};
+
+    // One month's expenses by (alias-normalized) category -> amount.
+    function categoryTotalsFor(monthObj) {
+      var out = {};
+      entityKeys.forEach(function (key) {
+        var e = monthObj.entities[key];
+        if (!e) return;
+        Object.keys(e.expenses || {}).forEach(function (cat) {
+          var groupKey = cat.trim().toLowerCase();
+          var label = cat;
+          if (aliasMap) {
+            var canon = aliasMap[groupKey];
+            if (canon) { groupKey = canon.trim().toLowerCase(); label = canon; }
+          }
+          if (!displayLabel[groupKey]) displayLabel[groupKey] = label;
+          out[groupKey] = (out[groupKey] || 0) + e.expenses[cat];
+        });
       });
-    });
-    var entries = Object.keys(totals).map(function (k) { return { cat: displayLabel[k], amt: totals[k] }; })
-      .filter(function (e) { return e.amt > 0; })
-      .sort(function (a, b) { return b.amt - a.amt; });
+      return out;
+    }
+
+    var totals = categoryTotalsFor(latest);
+
+    // Monthly average per category: the same definition as the "Monthly
+    // average" row of the table above — this financial year's reported
+    // months (the latest one included), a category with no spend in a month
+    // counting as 0 for that month.
+    // Only months that actually carry itemized categories count (a month
+    // imported with just totals would otherwise drag every average down).
+    var itemizedMonths = reportedMonths.filter(function (m) { return Object.keys(categoryTotalsFor(m)).length > 0; });
+    var nMonths = itemizedMonths.length;
+    var showAvg = nMonths >= 2;
+    var avgTotals = {};
+    if (showAvg) {
+      itemizedMonths.forEach(function (m) {
+        var t = categoryTotalsFor(m);
+        Object.keys(t).forEach(function (k) { avgTotals[k] = (avgTotals[k] || 0) + t[k]; });
+      });
+      Object.keys(avgTotals).forEach(function (k) { avgTotals[k] = avgTotals[k] / nMonths; });
+    }
+
+    var catKeys = Object.keys(totals);
+    if (showAvg) Object.keys(avgTotals).forEach(function (k) { if (catKeys.indexOf(k) === -1) catKeys.push(k); });
+    var entries = catKeys.map(function (k) { return { cat: displayLabel[k], amt: totals[k] || 0, avg: showAvg ? (avgTotals[k] || 0) : 0 }; })
+      .filter(function (e) { return e.amt > 0 || e.avg > 0.5; })
+      .sort(function (a, b) { return (b.amt - a.amt) || (b.avg - a.avg); });
 
     if (!entries.length) {
       chart.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">No itemized expenses recorded for this month.</p>';
       return;
     }
-    var max = entries[0].amt;
+    if (showAvg) {
+      sub.textContent += ' · compared with the monthly average (' + nMonths + ' months with itemized expenses this financial year)';
+      chart.innerHTML =
+        '<div class="legend" style="margin-bottom:14px;">' +
+        '<div class="item"><span class="dot" style="background:var(--series-total);"></span>' + esc(monthLabel(latest.month)) + '</div>' +
+        '<div class="item"><span style="display:inline-block; width:2px; height:12px; background:var(--text-primary);"></span>Monthly average</div>' +
+        '<div class="item"><span style="color:var(--critical); font-weight:600;">Red</span> = above average · <span style="color:var(--good); font-weight:600;">green</span> = below</div>' +
+        '</div>';
+    }
+    var max = Math.max.apply(null, entries.map(function (e) { return Math.max(e.amt, e.avg); }));
     entries.forEach(function (e) {
       var row = document.createElement('div');
-      row.style.marginBottom = '10px';
-      var pctW = Math.max((e.amt / max) * 100, 2);
+      row.style.marginBottom = '12px';
+      var pctW = e.amt > 0 ? Math.max((e.amt / max) * 100, 2) : 0;
+      var detail = '';
+      var marker = '';
+      if (showAvg) {
+        var diff = e.amt - e.avg;
+        var rel = e.avg > 0 ? diff / e.avg : null;
+        var color = 'var(--text-muted)';
+        if (e.avg <= 0) color = 'var(--critical)';
+        else if (Math.abs(rel) >= 0.05) color = diff > 0 ? 'var(--critical)' : 'var(--good)';
+        var deltaTxt = e.avg <= 0
+          ? 'new this month'
+          : (diff >= 0 ? '+' : '−') + money(Math.abs(diff)) + ' (' + (diff >= 0 ? '+' : '−') + Math.round(Math.abs(rel) * 100) + '%)';
+        detail = '<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:4px;">' +
+          '<span>Avg ' + money(e.avg) + '/month</span><span style="color:' + color + '; font-weight:600;">' + deltaTxt + '</span></div>';
+        if (e.avg > 0) marker = '<div title="Monthly average" style="position:absolute; top:-3px; bottom:-3px; width:2px; border-radius:1px; background:var(--text-primary); left:calc(' + ((e.avg / max) * 100) + '% - 1px);"></div>';
+      }
       row.innerHTML =
-        '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">' +
-        '<span>' + esc(e.cat) + '</span><span style="font-weight:600;">' + money(e.amt) + '</span></div>' +
-        '<div style="background:var(--gridline); border-radius:6px; height:8px;">' +
-        '<div style="background:var(--series-total); width:' + pctW + '%; height:100%; border-radius:6px;"></div></div>';
+        '<div style="display:flex; justify-content:space-between; gap:12px; font-size:12px; margin-bottom:4px;">' +
+        '<span>' + esc(e.cat) + '</span><span style="font-weight:600; white-space:nowrap;">' + money(e.amt) + '</span></div>' +
+        '<div style="background:var(--gridline); border-radius:6px; height:8px; position:relative;">' +
+        '<div style="background:var(--series-total); width:' + pctW + '%; height:100%; border-radius:6px;"></div>' + marker + '</div>' + detail;
       chart.appendChild(row);
     });
   }
