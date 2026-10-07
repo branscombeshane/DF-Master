@@ -476,9 +476,13 @@
   .chip { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--gridline); color: var(--text-secondary); white-space: nowrap; }
 
   .dept-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  #payroll-dept-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); align-items: start; }
   .dept-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   .dept-card .dept-name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
   .dept-card .dept-row { font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; }
+  .dept-card .dept-adj { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--gridline); }
+  .dept-card .dept-adj-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 4px; }
+  .dept-card .dept-neg { color: var(--critical); }
 
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
   .toolbar input[type=text], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
@@ -1471,7 +1475,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-07.75-payroll-month-loading';
+  var FRONTEND_BUILD = '2026-10-07.76-dept-adjustment-totals';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2480,6 +2484,25 @@
     });
   }
 
+  // The month's Pay Adjustment totals shown inside each Payroll Dashboard
+  // department tile — only the types that actually have an amount. Absent,
+  // Deductions and Advance repaid come off pay, so they carry a minus sign.
+  function deptAdjustmentRows_(adj) {
+    adj = adj || {};
+    var defs = [
+      ['overtime', 'Overtime', 1], ['commission', 'Commission', 1], ['bonus', 'Bonus', 1],
+      ['travelAllowance', 'Travel allowance', 1], ['otherAllowance', 'Other allowance', 1], ['other', 'Other', 1],
+      ['absent', 'Absent', -1], ['deductions', 'Deductions', -1], ['advanceRepayment', 'Advance repaid', -1]
+    ];
+    var rows = defs.filter(function (x) { return adj[x[0]]; }).map(function (x) {
+      return '<div class="dept-row"><span>' + x[1] + '</span><span' + (x[2] < 0 ? ' class="dept-neg"' : '') + '>' +
+        (x[2] < 0 ? '−' : '') + money(adj[x[0]]) + '</span></div>';
+    });
+    return rows.length
+      ? '<div class="dept-adj"><div class="dept-adj-title">This month</div>' + rows.join('') + '</div>'
+      : '<div class="dept-adj"><div class="dept-adj-title">No adjustments</div></div>';
+  }
+
   function renderPayroll() {
     if (!state.payroll) return;
     document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
@@ -2506,7 +2529,8 @@
         card.className = 'dept-card';
         card.innerHTML = '<div class="dept-name">' + esc(d.department) + '</div>' +
           '<div class="dept-row"><span>Headcount</span><span>' + d.count + '</span></div>' +
-          '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>';
+          '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>' +
+          deptAdjustmentRows_(d.adjustments);
         deptGrid.appendChild(card);
       });
     }
