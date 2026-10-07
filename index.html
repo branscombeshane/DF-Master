@@ -1480,7 +1480,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-07.78-sole-company-fallback';
+  var FRONTEND_BUILD = '2026-10-07.79-emp201-pdf-filename';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3740,7 +3740,14 @@
       ? companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; }) : companies;
     if (!picked.length) picked = [{ companyName: pr.companyName || '', emp201: pr.emp201, emp201Rows: pr.emp201Rows }];
     holder.innerHTML = picked.map(function (c) { return buildEmp201PdfHtml(pr, c); }).join('');
-    var fileCo = (picked.length === 1 && companies.length > 1) ? '_' + sanitizeFilenamePart_(picked[0].companyName) : '';
+    // File name always carries the company: its own name for a single return
+    // (including groups with just one company, e.g. Daily Fruit Cpt / Blendid).
+    // Several companies' returns sharing one PDF keep the plain name.
+    var fileCo = '';
+    if (picked.length === 1) {
+      var coName = picked[0].companyId === '' ? '' : (picked[0].companyName || '');
+      fileCo = coName ? '_' + sanitizeFilenamePart_(coName) : '';
+    }
     downloadPagesAsPdf(holder, 'EMP201' + fileCo + '_' + sanitizeFilenamePart_(state.selectedMonth) + '.pdf')
       .catch(function (err) {
         window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error'));
