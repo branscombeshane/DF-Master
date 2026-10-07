@@ -436,6 +436,22 @@
   table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
   table.data-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
   table.data-table tr.inactive td { opacity: 0.45; }
+  /* Casuals hours grid */
+  table.casual-grid td, table.casual-grid th { padding: 6px 6px; }
+  table.casual-grid td.name-cell { white-space: normal; min-width: 170px; }
+  table.casual-grid .sub { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; }
+  table.casual-grid input.hrs {
+    width: 56px; text-align: right; padding: 7px 6px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  table.casual-grid input.hrs:disabled { opacity: 0.55; cursor: not-allowed; }
+  table.casual-grid input.hrs.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
+  table.casual-grid input.hrs.dirty { border-color: var(--brand); }
+  table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
+  table.casual-grid tfoot td { font-weight: 700; border-top: 2px solid var(--border); }
+  table.casual-grid td.weekend, table.casual-grid th.weekend { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .casual-note { font-size: 12px; color: var(--text-secondary); margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warning) 14%, transparent); }
+  .casual-note.err { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical); }
 
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
   .entity-picker { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -931,7 +947,7 @@
 
     <!-- ---------- Payroll ---------- -->
     <section class="view" id="view-payroll">
-      <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px;">
+      <div id="payroll-month-row" style="display:flex; gap:10px; align-items:center; margin-bottom:14px;">
         <label for="month-picker" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Payroll month</label>
         <select id="month-picker"></select>
       </div>
@@ -1198,8 +1214,69 @@
 
       <div class="payroll-subview" id="payroll-sub-casuals">
         <div class="panel">
+          <h2>Casuals — weekly hours</h2>
+          <p class="panel-sub" id="casuals-sub">Casuals are paid weekly (Monday to Sunday) by eWallet to their cell number. Capture the hours worked each day, then submit the week.</p>
+          <div class="toolbar">
+            <button class="btn secondary small" id="casuals-prev" title="Previous week">&lsaquo; Prev</button>
+            <select id="casuals-week" aria-label="Week"></select>
+            <button class="btn secondary small" id="casuals-next" title="Next week">Next &rsaquo;</button>
+            <span class="status-badge" id="casuals-status-badge"></span>
+            <span class="save-status" id="casuals-status"></span>
+          </div>
+          <div id="casuals-banner"></div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="casuals-table"></table>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px;">
+            <button class="btn" id="casuals-save-btn">Save hours</button>
+            <button class="btn secondary" id="casuals-submit-btn">Submit week</button>
+            <button class="btn secondary" id="casuals-reopen-btn" style="display:none;">Reopen week</button>
+            <span class="hint" id="casuals-hint" style="margin:0;"></span>
+          </div>
+        </div>
+
+        <div class="panel" id="casuals-pay-panel" style="display:none;">
+          <h2>Pay list</h2>
+          <p class="panel-sub" id="casuals-pay-sub"></p>
+          <div id="casuals-pay-warn"></div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="casuals-pay-table"></table>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px;">
+            <button class="btn secondary" id="casuals-csv-btn">Download CSV</button>
+            <button class="btn secondary" id="casuals-pdf-btn">Download PDF</button>
+            <button class="btn" id="casuals-paid-btn" style="display:none;">Mark week as paid</button>
+            <span class="save-status" id="casuals-pay-status"></span>
+          </div>
+        </div>
+
+        <div class="panel">
           <h2>Casuals</h2>
-          <p class="panel-sub" style="margin:0;">Casual / day-labour payroll isn't set up yet — this is a placeholder until that workflow is built.</p>
+          <p class="panel-sub">Everyone who works casual shifts. A cell number is required — they are paid by eWallet to it.</p>
+          <div class="form-grid" style="max-width:820px;">
+            <div class="field"><label for="casual-name">Name</label><input type="text" id="casual-name" maxlength="80" autocomplete="off"></div>
+            <div class="field"><label for="casual-cell">Cell number (eWallet)</label><input type="text" id="casual-cell" inputmode="tel" placeholder="082 123 4567" autocomplete="off"></div>
+            <div class="field"><label for="casual-dept">Department</label><select id="casual-dept"></select></div>
+            <div class="field" id="casual-active-field" style="display:none;"><label><input type="checkbox" id="casual-active" style="width:auto; margin-right:6px;">Active</label></div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="btn" id="casual-save-btn">Add casual</button>
+            <button class="btn secondary" id="casual-cancel-btn" style="display:none;">Cancel edit</button>
+            <span class="save-status" id="casual-form-status"></span>
+          </div>
+          <div style="overflow-x:auto; margin-top:16px;">
+            <table class="data-table" id="casuals-people-table"></table>
+          </div>
+        </div>
+
+        <div class="panel" id="casuals-rates-panel" style="display:none;">
+          <h2>Hourly rates</h2>
+          <p class="panel-sub">One hourly rate per department. Casuals are paid hours &times; their department's rate. A week that has been marked as paid keeps the rate it was paid at.</p>
+          <div style="overflow-x:auto;"><table class="data-table" id="casuals-rates-table"></table></div>
+          <div style="display:flex; gap:10px; align-items:center; margin-top:14px;">
+            <button class="btn" id="casuals-rates-save">Save rates</button>
+            <span class="save-status" id="casuals-rates-status"></span>
+          </div>
         </div>
       </div>
     </section>
@@ -1480,7 +1557,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-07.79-emp201-pdf-filename';
+  var FRONTEND_BUILD = '2026-10-07.80-casuals';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1498,7 +1575,8 @@
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, setBaseAmountOverride: true,
-    saveDepartments: true, saveCompanies: true, saveCategoryAliases: true
+    saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
+    getCasualWeek: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, markCasualWeekPaid: true, saveCasualRates: true
   };
 
   // ================= STATE =================
@@ -1953,6 +2031,7 @@
     state.payroll = null;
     state.payrollAdjustments = null;
     state.monthLocked = false;
+    casualState.week = null; casualState.dirty = {}; casualState.weekStart = null; casualState.editingId = '';
 
     document.getElementById('group-picker-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2123,6 +2202,10 @@
     Array.prototype.forEach.call(document.querySelectorAll('.payroll-subview'), function (v) { v.classList.remove('active'); });
     var view = document.getElementById('payroll-sub-' + key);
     if (view) view.classList.add('active');
+    // Casuals are weekly, so the monthly picker doesn't apply there.
+    var monthRow = document.getElementById('payroll-month-row');
+    if (monthRow) monthRow.style.display = key === 'casuals' ? 'none' : 'flex';
+    if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -3757,6 +3840,452 @@
         btn.disabled = false;
         btn.textContent = original;
       });
+  });
+
+
+  // ================= CASUALS (weekly, Monday–Sunday) =================
+  // Captured by HR (e.g. Zandi): hours per day for each casual, then
+  // "Submit week". The Owner sees the pay list (hours x department rate),
+  // pays the eWallets and marks the week paid. HR never receives rates or
+  // amounts from the server at all.
+  var CASUAL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var casualState = { weekStart: null, week: null, dirty: {}, editingId: '', loading: false };
+
+  function casualIso_(d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function casualParse_(iso) { var p = iso.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+  function casualAddDays_(iso, n) { var d = casualParse_(iso); d.setDate(d.getDate() + n); return casualIso_(d); }
+  function casualThisMonday_() {
+    var d = new Date(); d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return casualIso_(d);
+  }
+  function casualDayLabel_(iso) { return casualParse_(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' }); }
+  function casualWeekLabel_(ws) {
+    return casualDayLabel_(ws) + ' – ' + casualParse_(casualAddDays_(ws, 6)).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function casualPhone_(c) {
+    var d = String(c || '').replace(/\D/g, '');
+    return d.length === 10 ? d.slice(0, 3) + ' ' + d.slice(3, 6) + ' ' + d.slice(6) : String(c || '');
+  }
+  function casualHrs_(n) { n = Number(n) || 0; return n ? String(Math.round(n * 100) / 100) : ''; }
+  function casualRand_(n) { return 'R ' + (Number(n) || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function casualIsHr_() { return state.role === 'hr'; }
+  function casualIsOwner_() { return state.role === 'owner'; }
+  function casualParseHours_(txt) {
+    var s = String(txt || '').trim().replace(',', '.');
+    if (s === '') return 0;
+    var n = Number(s);
+    return (isFinite(n) && n >= 0 && n <= 24) ? Math.round(n * 100) / 100 : NaN;
+  }
+
+  function casualWeeks_() {
+    var cur = casualThisMonday_(), out = [];
+    for (var i = 0; i < 13; i++) out.push(casualAddDays_(cur, -7 * i));
+    return out;
+  }
+  function populateCasualWeekPicker_() {
+    var sel = document.getElementById('casuals-week');
+    var weeks = casualWeeks_();
+    if (casualState.weekStart && weeks.indexOf(casualState.weekStart) === -1) weeks.push(casualState.weekStart);
+    sel.innerHTML = weeks.map(function (w, i) {
+      return '<option value="' + w + '">' + esc(casualWeekLabel_(w)) + (i === 0 ? ' (this week)' : '') + '</option>';
+    }).join('');
+    sel.value = casualState.weekStart;
+  }
+
+  function casualDirtyCount_() { return Object.keys(casualState.dirty).length; }
+
+  function loadCasuals(weekStart) {
+    if (!hasSection('payroll')) return Promise.resolve();
+    casualState.weekStart = weekStart || casualState.weekStart || casualThisMonday_();
+    casualState.dirty = {};
+    populateCasualWeekPicker_();
+    var status = document.getElementById('casuals-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    casualState.loading = true;
+    var asked = casualState.weekStart;
+    return callApi('getCasualWeek', { weekStart: asked }).then(function (res) {
+      if (asked !== casualState.weekStart) return;
+      casualState.loading = false;
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load casuals', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      casualState.week = res;
+      renderCasuals();
+    }).catch(function () { casualState.loading = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+
+  function casualRowLive_(c) {
+    var d = casualState.dirty[c.id];
+    var hrs = d ? d.map(function (x) { return isNaN(x) ? 0 : x; }) : c.hours;
+    var total = Math.round(hrs.reduce(function (a, b) { return a + b; }, 0) * 100) / 100;
+    return { hours: hrs, total: total, amount: (!casualIsHr_() && c.rate && c.status !== 'paid') ? Math.round(total * c.rate * 100) / 100 : c.amount };
+  }
+
+  function renderCasuals() {
+    var w = casualState.week; if (!w) return;
+    var isHr = casualIsHr_(), isOwner = casualIsOwner_();
+    var badge = document.getElementById('casuals-status-badge');
+    badge.className = 'status-badge ' + (w.status === 'paid' ? 'finalized' : 'in-progress');
+    badge.textContent = w.status === 'paid' ? 'Paid' : (w.status === 'submitted' ? 'Submitted — awaiting payment' : 'Open');
+    document.getElementById('casuals-sub').textContent = casualWeekLabel_(w.weekStart) +
+      ' — Monday to Sunday, hours per day. Casuals are paid by eWallet to their cell number.';
+
+    // ----- hours grid -----
+    var days = CASUAL_DAYS.map(function (d, i) { return { name: d, iso: casualAddDays_(w.weekStart, i), weekend: i >= 5 }; });
+    var head = '<thead><tr><th style="text-align:left;">Casual</th>' + days.map(function (d) {
+      return '<th class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;">' + d.name + '<span class="dnum">' + esc(casualDayLabel_(d.iso)) + '</span></th>';
+    }).join('') + '<th>Total hrs</th>' + (isHr ? '' : '<th>Rate / hr</th><th>Amount</th>') + '</tr></thead>';
+    var cols = 9 + (isHr ? 0 : 2);
+    var body;
+    if (!w.casuals.length) {
+      body = '<tbody><tr><td colspan="' + cols + '" style="text-align:center; color:var(--text-muted);">No casuals yet — add the first one below.</td></tr></tbody>';
+    } else {
+      body = '<tbody>' + w.casuals.map(function (c) {
+        var live = casualRowLive_(c);
+        return '<tr data-casual="' + esc(c.id) + '"' + (c.active ? '' : ' class="inactive"') + '>' +
+          '<td class="name-cell"><strong>' + esc(c.name) + '</strong><span class="sub">' + esc(casualPhone_(c.cellNumber)) + ' &middot; ' + esc(c.department) + (c.active ? '' : ' &middot; inactive') + '</span></td>' +
+          days.map(function (d, i) {
+            return '<td class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;"><input class="hrs' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" inputmode="decimal" data-day="' + i + '" value="' + casualHrs_(live.hours[i]) + '"' +
+              (c.locked ? ' disabled title="' + (c.status === 'paid' ? 'Paid — locked' : 'Submitted — locked') + '"' : '') + ' aria-label="' + esc(c.name + ' ' + d.name) + ' hours"></td>';
+          }).join('') +
+          '<td class="tot"><strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong></td>' +
+          (isHr ? '' : '<td class="rate">' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td class="amt">' + (live.amount === null ? '—' : casualRand_(live.amount)) + '</td>') +
+          '</tr>';
+      }).join('') + '</tbody>' +
+        '<tfoot><tr><td>Total</td>' + days.map(function () { return '<td></td>'; }).join('') + '<td id="casuals-foot-hours">' + casualHrs_(w.totalHours) + '</td>' +
+        (isHr ? '' : '<td></td><td id="casuals-foot-amount">' + casualRand_(w.totalAmount) + '</td>') + '</tr></tfoot>';
+    }
+    var table = document.getElementById('casuals-table');
+    table.className = 'data-table casual-grid';
+    table.innerHTML = head + body;
+    wireCasualInputs_();
+
+    // ----- banner / buttons -----
+    var banner = '';
+    if (w.status === 'submitted' && isHr) banner = '<div class="casual-note">This week has been submitted to the Owner for payment. Hours are locked.</div>';
+    if (w.status === 'paid') banner = '<div class="casual-note">This week has been paid. Hours are locked.</div>';
+    if (!isHr && w.missingRates && w.missingRates.length && w.status !== 'paid') {
+      banner += '<div class="casual-note err">No hourly rate for the department of: ' + esc(w.missingRates.join(', ')) + (isOwner ? '. Set it under Hourly rates below.' : '. Ask the Owner to set the rate.') + '</div>';
+    }
+    document.getElementById('casuals-banner').innerHTML = banner;
+    var anyEditable = w.casuals.some(function (c) { return !c.locked; });
+    var saveBtn = document.getElementById('casuals-save-btn');
+    saveBtn.disabled = !casualDirtyCount_();
+    saveBtn.style.display = anyEditable || casualDirtyCount_() ? '' : 'none';
+    var submitBtn = document.getElementById('casuals-submit-btn');
+    submitBtn.style.display = (!isOwner && w.status === 'open') ? '' : 'none';
+    submitBtn.disabled = !(w.totalHours > 0);
+    var reopenBtn = document.getElementById('casuals-reopen-btn');
+    reopenBtn.style.display = (isOwner && w.status !== 'open') ? '' : 'none';
+    document.getElementById('casuals-hint').textContent = casualDirtyCount_()
+      ? casualDirtyCount_() + ' casual' + (casualDirtyCount_() === 1 ? '' : 's') + ' with unsaved hours.'
+      : (isOwner ? '' : (w.status === 'open' ? 'Save your hours, then Submit week when the week is complete.' : ''));
+
+    renderCasualPay_();
+    renderCasualPeople_();
+    renderCasualRates_();
+    if (document.activeElement === document.body) { /* keep focus where it was */ }
+  }
+
+  function wireCasualInputs_() {
+    Array.prototype.forEach.call(document.querySelectorAll('#casuals-table input.hrs'), function (inp) {
+      inp.addEventListener('focus', function () { try { inp.select(); } catch (e) { /* ignore */ } });
+      inp.addEventListener('input', function () { onCasualHoursInput_(inp); });
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') return;
+        ev.preventDefault();
+        var tr = inp.closest('tr'), next = tr && tr.nextElementSibling;
+        while (next && !next.querySelector('input.hrs:not(:disabled)')) next = next.nextElementSibling;
+        var target = next && next.querySelector('input.hrs[data-day="' + inp.getAttribute('data-day') + '"]:not(:disabled)');
+        if (target) target.focus();
+      });
+    });
+  }
+
+  function onCasualHoursInput_(inp) {
+    var tr = inp.closest('tr'), id = tr.getAttribute('data-casual');
+    var c = casualState.week.casuals.filter(function (x) { return x.id === id; })[0];
+    var vals = Array.prototype.map.call(tr.querySelectorAll('input.hrs'), function (i) { return casualParseHours_(i.value); });
+    Array.prototype.forEach.call(tr.querySelectorAll('input.hrs'), function (i, k) { i.classList.toggle('bad', isNaN(vals[k])); });
+    var same = vals.every(function (v, k) { return v === c.hours[k]; });
+    if (same) delete casualState.dirty[id]; else casualState.dirty[id] = vals;
+    inp.classList.toggle('dirty', !same);
+    var live = casualRowLive_(c);
+    tr.querySelector('td.tot').innerHTML = '<strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong>';
+    var amt = tr.querySelector('td.amt'); if (amt) amt.textContent = live.amount === null ? '—' : casualRand_(live.amount);
+    var tH = 0, tA = 0;
+    casualState.week.casuals.forEach(function (x) { var l = casualRowLive_(x); tH += l.total; tA += Number(l.amount) || 0; });
+    var fh = document.getElementById('casuals-foot-hours'); if (fh) fh.textContent = casualHrs_(Math.round(tH * 100) / 100);
+    var fa = document.getElementById('casuals-foot-amount'); if (fa) fa.textContent = casualRand_(tA);
+    document.getElementById('casuals-save-btn').disabled = !casualDirtyCount_();
+    document.getElementById('casuals-hint').textContent = casualDirtyCount_() ? casualDirtyCount_() + ' casual' + (casualDirtyCount_() === 1 ? '' : 's') + ' with unsaved hours.' : '';
+  }
+
+  function saveCasualHours_() {
+    var status = document.getElementById('casuals-status');
+    var rows = [], bad = false;
+    Object.keys(casualState.dirty).forEach(function (id) {
+      var v = casualState.dirty[id];
+      if (v.some(function (x) { return isNaN(x); })) bad = true;
+      rows.push({ casualId: id, hours: v });
+    });
+    if (bad) { flashStatus(status, 'Hours must be numbers between 0 and 24.', 'save-status err', 6000); return Promise.resolve(false); }
+    if (!rows.length) return Promise.resolve(true);
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    return callApi('saveCasualHours', { weekStart: casualState.weekStart, rows: JSON.stringify(rows) }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return false; }
+      casualState.dirty = {};
+      casualState.week = res;
+      renderCasuals();
+      flashStatus(status, 'Saved', 'save-status ok', 3000);
+      return true;
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); return false; });
+  }
+
+  function casualGroupName_() {
+    var g = state.companyGroups.filter(function (x) { return x.key === state.companyGroup; })[0];
+    return g ? g.name : 'Casuals';
+  }
+
+  // ----- pay list (Owner/staff; never sent to HR) -----
+  function renderCasualPay_() {
+    var panel = document.getElementById('casuals-pay-panel');
+    var w = casualState.week;
+    if (casualIsHr_()) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    var paying = w.casuals.filter(function (c) { return c.totalHours > 0; });
+    document.getElementById('casuals-pay-sub').textContent = casualWeekLabel_(w.weekStart) + ' — pay each casual by eWallet to the cell number shown' +
+      (w.status === 'paid' ? '. This week is marked as paid.' : '.');
+    var head = '<thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Cell number (eWallet)</th><th style="text-align:left;">Department</th><th>Hours</th><th>Rate / hr</th><th>Amount</th></tr></thead>';
+    var body = paying.length ? '<tbody>' + paying.map(function (c) {
+      return '<tr><td>' + esc(c.name) + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) + '</td><td>' + casualHrs_(c.totalHours) +
+        '</td><td>' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td>' + (c.amount === null ? '—' : casualRand_(c.amount)) + '</td></tr>';
+    }).join('') + '</tbody><tfoot><tr><td colspan="3">Total to pay</td><td>' + casualHrs_(w.totalHours) + '</td><td></td><td>' + casualRand_(w.totalAmount) + '</td></tr></tfoot>'
+      : '<tbody><tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No hours captured for this week yet.</td></tr></tbody>';
+    var t = document.getElementById('casuals-pay-table');
+    t.className = 'data-table casual-grid';
+    t.innerHTML = head + body;
+    document.getElementById('casuals-pay-warn').innerHTML = (casualDirtyCount_() ? '<div class="casual-note">Unsaved hours are not included here — save them first.</div>' : '');
+    document.getElementById('casuals-csv-btn').disabled = !paying.length;
+    document.getElementById('casuals-pdf-btn').disabled = !paying.length;
+    var paidBtn = document.getElementById('casuals-paid-btn');
+    paidBtn.style.display = (w.canPay && w.status !== 'paid') ? '' : 'none';
+    paidBtn.disabled = !paying.length;
+  }
+
+  function casualCsvCell_(v) {
+    var s = String(v === undefined || v === null ? '' : v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function casualFileBase_() {
+    var w = casualState.week;
+    return 'Casuals_' + sanitizeFilenamePart_(casualGroupName_()) + '_' + w.weekStart + '_to_' + casualAddDays_(w.weekStart, 6);
+  }
+  function downloadCasualCsv_() {
+    var w = casualState.week;
+    var rows = w.casuals.filter(function (c) { return c.totalHours > 0; });
+    var lines = [['Name', 'Cell number', 'Department'].concat(CASUAL_DAYS).concat(['Total hours', 'Rate per hour', 'Amount']).map(casualCsvCell_).join(',')];
+    rows.forEach(function (c) {
+      lines.push([casualCsvCell_(c.name), '="' + String(c.cellNumber).replace(/\D/g, '') + '"', casualCsvCell_(c.department)]
+        .concat(c.hours.map(function (x) { return x || 0; })).concat([c.totalHours, c.rate || '', c.amount === null ? '' : c.amount]).join(','));
+    });
+    lines.push(['Total', '', ''].concat(CASUAL_DAYS.map(function () { return ''; })).concat([w.totalHours, '', w.totalAmount]).join(','));
+    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = casualFileBase_() + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
+  function buildCasualPdfHtml_() {
+    var w = casualState.week;
+    var rows = w.casuals.filter(function (c) { return c.totalHours > 0; });
+    var th = 'padding:5px 5px; font-size:9px; font-weight:700; border-bottom:1px solid #999; background:#eee;';
+    var td = 'padding:4px 5px; font-size:9px; border-bottom:1px solid #ddd; text-align:right;';
+    var tdL = 'padding:4px 5px; font-size:9px; border-bottom:1px solid #ddd; text-align:left;';
+    var heading = '<div style="font-size:19px; font-weight:700; margin-bottom:4px;">Casuals pay list</div>' +
+      '<div style="font-size:12px; margin-bottom:2px;">' + esc(casualGroupName_()) + ' &middot; ' + esc(casualWeekLabel_(w.weekStart)) + '</div>' +
+      '<div style="font-size:10px; color:#555; margin-bottom:12px;">Week Monday to Sunday &middot; paid by eWallet to the cell number shown' + (w.status === 'paid' ? ' &middot; marked as paid' : '') + '</div>';
+    var thead = '<thead><tr><th style="' + th + ' text-align:left;">Casual</th><th style="' + th + ' text-align:left;">Cell number</th><th style="' + th + ' text-align:left;">Department</th>' +
+      CASUAL_DAYS.map(function (d) { return '<th style="' + th + '">' + d + '</th>'; }).join('') + '<th style="' + th + '">Hours</th><th style="' + th + '">Rate</th><th style="' + th + '">Amount</th></tr></thead>';
+    function rowHtml(c) {
+      return '<tr><td style="' + tdL + '">' + esc(c.name) + '</td><td style="' + tdL + '">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="' + tdL + '">' + esc(c.department) + '</td>' +
+        c.hours.map(function (x) { return '<td style="' + td + '">' + (x ? casualHrs_(x) : '') + '</td>'; }).join('') +
+        '<td style="' + td + '">' + casualHrs_(c.totalHours) + '</td><td style="' + td + '">' + (c.rate ? casualRand_(c.rate) : '') + '</td><td style="' + td + ' font-weight:700;">' + (c.amount === null ? '' : casualRand_(c.amount)) + '</td></tr>';
+    }
+    var total = '<tr style="font-weight:700;"><td style="' + tdL + ' border-top:1px solid #999;" colspan="3">Total to pay</td>' +
+      CASUAL_DAYS.map(function () { return '<td style="' + td + ' border-top:1px solid #999;"></td>'; }).join('') +
+      '<td style="' + td + ' border-top:1px solid #999;">' + casualHrs_(w.totalHours) + '</td><td style="' + td + ' border-top:1px solid #999;"></td><td style="' + td + ' border-top:1px solid #999;">' + casualRand_(w.totalAmount) + '</td></tr>';
+    var PER = 34, chunks = [];
+    for (var i = 0; i < rows.length; i += PER) chunks.push(rows.slice(i, i + PER));
+    if (!chunks.length) chunks.push([]);
+    return chunks.map(function (chunk, idx) {
+      var last = idx === chunks.length - 1;
+      return '<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' +
+        (idx === 0 ? heading : '<div style="font-size:11px; color:#666; margin-bottom:8px;">Casuals pay list — ' + esc(casualWeekLabel_(w.weekStart)) + ' (continued)</div>') +
+        '<table style="width:100%; border-collapse:collapse;">' + thead + '<tbody>' + chunk.map(rowHtml).join('') + (last ? total : '') + '</tbody></table>' +
+        (last ? '<div style="font-size:9px; color:#888; margin-top:12px;">Generated from Daily Fruit Financials. No tax or UIF is deducted from casual pay.</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  function downloadCasualPdf_() {
+    var btn = document.getElementById('casuals-pdf-btn'), original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating…';
+    var holder = document.getElementById('casuals-pdf-content');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.id = 'casuals-pdf-content';
+      holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:' + PDF_CAPTURE_WIDTH_PX + 'px; background:#fff;';
+      document.body.appendChild(holder);
+    }
+    holder.innerHTML = buildCasualPdfHtml_();
+    downloadPagesAsPdf(holder, casualFileBase_() + '.pdf')
+      .catch(function (err) { window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error')); })
+      .then(function () { holder.innerHTML = ''; btn.disabled = false; btn.textContent = original; });
+  }
+
+  // ----- people list + add/edit form -----
+  function renderCasualPeople_() {
+    var w = casualState.week;
+    var sel = document.getElementById('casual-dept');
+    var current = sel.value;
+    var depts = w.departments.slice();
+    if (casualState.editingId) {
+      var ed = w.allCasuals.filter(function (x) { return x.id === casualState.editingId; })[0];
+      if (ed && depts.indexOf(ed.department) === -1) depts.unshift(ed.department);
+    }
+    sel.innerHTML = depts.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') || '<option value="">No departments available</option>';
+    if (current && depts.indexOf(current) !== -1) sel.value = current;
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Cell number</th><th style="text-align:left;">Department</th><th style="text-align:left;">Status</th><th></th></tr></thead>';
+    var body = w.allCasuals.length ? '<tbody>' + w.allCasuals.map(function (c) {
+      return '<tr' + (c.active ? '' : ' class="inactive"') + '><td>' + esc(c.name) + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) +
+        '</td><td style="text-align:left;">' + (c.active ? 'Active' : 'Inactive') + '</td><td><button class="btn secondary small" data-casual-edit="' + esc(c.id) + '">Edit</button></td></tr>';
+    }).join('') + '</tbody>' : '<tbody><tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No casuals added yet.</td></tr></tbody>';
+    document.getElementById('casuals-people-table').innerHTML = head + body;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-casual-edit]'), function (b) {
+      b.addEventListener('click', function () { startEditCasual_(b.getAttribute('data-casual-edit')); });
+    });
+  }
+
+  function resetCasualForm_() {
+    casualState.editingId = '';
+    document.getElementById('casual-name').value = '';
+    document.getElementById('casual-cell').value = '';
+    document.getElementById('casual-active').checked = true;
+    document.getElementById('casual-active-field').style.display = 'none';
+    document.getElementById('casual-save-btn').textContent = 'Add casual';
+    document.getElementById('casual-cancel-btn').style.display = 'none';
+  }
+  function startEditCasual_(id) {
+    var c = casualState.week.allCasuals.filter(function (x) { return x.id === id; })[0];
+    if (!c) return;
+    casualState.editingId = id;
+    renderCasualPeople_();
+    document.getElementById('casual-name').value = c.name;
+    document.getElementById('casual-cell').value = casualPhone_(c.cellNumber);
+    document.getElementById('casual-dept').value = c.department;
+    document.getElementById('casual-active').checked = c.active;
+    document.getElementById('casual-active-field').style.display = '';
+    document.getElementById('casual-save-btn').textContent = 'Save changes';
+    document.getElementById('casual-cancel-btn').style.display = '';
+    document.getElementById('casual-name').focus();
+  }
+
+  // ----- hourly rates (Owner) -----
+  function renderCasualRates_() {
+    var panel = document.getElementById('casuals-rates-panel');
+    var w = casualState.week;
+    if (!casualIsOwner_() || !w.rates) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    document.getElementById('casuals-rates-table').innerHTML =
+      '<thead><tr><th style="text-align:left;">Department</th><th>Rate per hour (R)</th></tr></thead><tbody>' +
+      w.rates.map(function (r) {
+        return '<tr><td>' + esc(r.department) + '</td><td><input type="text" inputmode="decimal" class="hrs" style="width:90px;" data-rate-dept="' + esc(r.department) + '" value="' + (r.hourlyRate ? r.hourlyRate : '') + '" placeholder="0.00"></td></tr>';
+      }).join('') + '</tbody>';
+    var inputs = document.querySelectorAll('#casuals-rates-table input');
+    Array.prototype.forEach.call(inputs, function (i) { i.style.cssText = 'width:90px; text-align:right; padding:7px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);'; });
+  }
+
+  document.getElementById('casuals-week').addEventListener('change', function () {
+    var sel = this, target = sel.value;
+    if (casualDirtyCount_() && !window.confirm('You have unsaved hours. Switch week and discard them?')) { sel.value = casualState.weekStart; return; }
+    loadCasuals(target);
+  });
+  function casualStep_(delta) {
+    var weeks = casualWeeks_();
+    var i = weeks.indexOf(casualState.weekStart);
+    var next = i === -1 ? null : weeks[i + delta];
+    if (!next) return;
+    if (casualDirtyCount_() && !window.confirm('You have unsaved hours. Switch week and discard them?')) return;
+    loadCasuals(next);
+  }
+  document.getElementById('casuals-prev').addEventListener('click', function () { casualStep_(1); });
+  document.getElementById('casuals-next').addEventListener('click', function () { casualStep_(-1); });
+  document.getElementById('casuals-save-btn').addEventListener('click', function () { saveCasualHours_(); });
+  document.getElementById('casuals-submit-btn').addEventListener('click', function () {
+    var status = document.getElementById('casuals-status');
+    saveCasualHours_().then(function (ok) {
+      if (!ok) return;
+      if (!window.confirm('Submit ' + casualWeekLabel_(casualState.weekStart) + ' for payment? Hours will be locked until the Owner reopens the week.')) return;
+      flashStatus(status, 'Submitting…', 'save-status', 0);
+      callApi('submitCasualWeek', { weekStart: casualState.weekStart }).then(function (res) {
+        if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not submit', 'save-status err', 8000); return; }
+        casualState.week = res; renderCasuals(); flashStatus(status, 'Submitted', 'save-status ok', 4000);
+      }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+    });
+  });
+  document.getElementById('casuals-reopen-btn').addEventListener('click', function () {
+    var w = casualState.week, status = document.getElementById('casuals-status');
+    if (!window.confirm('Reopen ' + casualWeekLabel_(w.weekStart) + '?' + (w.status === 'paid' ? ' It will no longer be marked as paid and the amounts will follow the current rates again.' : ''))) return;
+    flashStatus(status, 'Reopening…', 'save-status', 0);
+    callApi('reopenCasualWeek', { weekStart: w.weekStart }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not reopen', 'save-status err', 8000); return; }
+      casualState.week = res; renderCasuals(); flashStatus(status, 'Reopened', 'save-status ok', 4000);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  });
+  document.getElementById('casuals-paid-btn').addEventListener('click', function () {
+    var w = casualState.week, status = document.getElementById('casuals-pay-status');
+    if (casualDirtyCount_()) { flashStatus(status, 'Save the hours first.', 'save-status err', 5000); return; }
+    if (!window.confirm('Mark ' + casualWeekLabel_(w.weekStart) + ' as paid (' + casualRand_(w.totalAmount) + ')? Hours and rates for this week will be locked.')) return;
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('markCasualWeekPaid', { weekStart: w.weekStart }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not mark as paid', 'save-status err', 9000); return; }
+      casualState.week = res; renderCasuals(); flashStatus(status, 'Marked as paid', 'save-status ok', 4000);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  });
+  document.getElementById('casuals-csv-btn').addEventListener('click', downloadCasualCsv_);
+  document.getElementById('casuals-pdf-btn').addEventListener('click', downloadCasualPdf_);
+  document.getElementById('casual-cancel-btn').addEventListener('click', function () { resetCasualForm_(); renderCasualPeople_(); });
+  document.getElementById('casual-save-btn').addEventListener('click', function () {
+    var status = document.getElementById('casual-form-status');
+    var name = document.getElementById('casual-name').value, cell = document.getElementById('casual-cell').value;
+    var dept = document.getElementById('casual-dept').value;
+    if (!name.trim()) { flashStatus(status, 'Enter the casual\'s name.', 'save-status err', 5000); return; }
+    if (!String(cell).replace(/\D/g, '')) { flashStatus(status, 'Enter a cell number — casuals are paid by eWallet to it.', 'save-status err', 6000); return; }
+    var params = { name: name, cellNumber: cell, department: dept, weekStart: casualState.weekStart };
+    if (casualState.editingId) { params.id = casualState.editingId; params.active = document.getElementById('casual-active').checked ? 'true' : 'false'; }
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('saveCasual', params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+      var keep = casualState.dirty; casualState.week = res; casualState.dirty = keep;
+      resetCasualForm_(); renderCasuals();
+      flashStatus(status, 'Saved', 'save-status ok', 3000);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  });
+  document.getElementById('casuals-rates-save').addEventListener('click', function () {
+    var status = document.getElementById('casuals-rates-status');
+    var rates = Array.prototype.map.call(document.querySelectorAll('#casuals-rates-table input[data-rate-dept]'), function (i) {
+      return { department: i.getAttribute('data-rate-dept'), hourlyRate: String(i.value).trim().replace(',', '.') };
+    });
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('saveCasualRates', { rates: JSON.stringify(rates), weekStart: casualState.weekStart }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+      var keep = casualState.dirty; casualState.week = res; casualState.dirty = keep;
+      renderCasuals(); flashStatus(document.getElementById('casuals-pay-status'), '', 'save-status', 0); flashStatus(status, 'Saved', 'save-status ok', 3000);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   });
 
   // ================= REPORTS > PAYSLIPS =================
