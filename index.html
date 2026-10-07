@@ -294,6 +294,16 @@
     padding: 2px 7px; border-radius: 999px; background: var(--brand); color: var(--brand-ink);
   }
   .role-badge.staff { background: var(--series-jhb); color: #fff; }
+  /* Dropdowns inside the Reports panels (EMP201 company picker, IRP5 employee,
+     Recon tax year/period/mode) match the app's other selects and buttons. */
+  #reports-panel-emp201 select, #reports-panel-irp5 select, #reports-panel-recon select {
+    padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+    font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #reports-panel-emp201 select:focus, #reports-panel-irp5 select:focus, #reports-panel-recon select:focus {
+    outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent); outline-offset: 1px;
+  }
   select#month-picker {
     padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--page); color: var(--text-primary); font-size: 13px; font-weight: 600;
@@ -357,6 +367,14 @@
   .kpi-row.hero .val { font-size: 20px; font-weight: 700; }
   .kpi-row.hero .val.neg { color: var(--critical); }
   .kpi-row.hero .val.pos { color: var(--good); }
+  /* EMP201 cards: label above, figure below on its own line so large Rand
+     amounts never get squeezed beside a wrapping label. */
+  .kpi-grid.emp201-grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .emp201-grid .kpi-card { padding: 18px 20px; }
+  .emp201-grid .kpi-card .kpi-head { margin-bottom: 12px; }
+  .emp201-grid .kpi-row.hero { flex-direction: column; align-items: flex-start; gap: 6px; padding: 0; }
+  .emp201-grid .kpi-row.hero .val { font-size: 24px; white-space: nowrap; line-height: 1.15; }
+  .emp201-grid .kpi-row:not(.hero) { padding: 5px 0; }
 
   .panel {
     background: var(--card);
@@ -1062,10 +1080,13 @@
             <button class="btn secondary" id="emp201-pdf-btn">Download PDF</button>
             <span class="save-status" id="payrollrun-status"></span>
           </div>
-          <div class="kpi-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
-          <div class="kpi-grid" id="emp201-declaration-grid" style="margin-top:10px;"></div>
-          <p class="panel-sub" style="margin-top:18px; margin-bottom:4px;">Per employee — current period and year to date (tax year <span id="emp201-taxyear-label"></span>).</p>
-          <div style="overflow-x:auto;">
+          <div class="kpi-grid emp201-grid" id="emp201-kpi-grid" style="margin-top:16px;"></div>
+          <div class="kpi-grid emp201-grid" id="emp201-declaration-grid" style="margin-top:4px;"></div>
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+            <button class="btn secondary" id="emp201-detail-btn" aria-expanded="false" aria-controls="emp201-detail">View per-employee details</button>
+            <span class="panel-sub" style="margin:0;">Current period and year to date (tax year <span id="emp201-taxyear-label"></span>).</span>
+          </div>
+          <div id="emp201-detail" style="display:none; overflow-x:auto; margin-top:12px;">
             <table class="data-table" id="payslips-table"></table>
           </div>
         </div>
@@ -1426,7 +1447,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-06.73-travel-repair-removed';
+  var FRONTEND_BUILD = '2026-10-07.74-emp201-layout';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3605,6 +3626,15 @@
     }
     return pagesHtml.join('');
   }
+
+  // Per-employee EMP201 detail is hidden until asked for (it is a wide table).
+  document.getElementById('emp201-detail-btn').addEventListener('click', function () {
+    var box = document.getElementById('emp201-detail');
+    var show = box.style.display === 'none';
+    box.style.display = show ? 'block' : 'none';
+    this.textContent = show ? 'Hide per-employee details' : 'View per-employee details';
+    this.setAttribute('aria-expanded', show ? 'true' : 'false');
+  });
 
   document.getElementById('emp201-company').addEventListener('change', function () {
     state.emp201Company = this.value;
