@@ -1175,6 +1175,10 @@
                 <option value="final">Final / Annual (Mar–Feb)</option>
               </select>
             </div>
+            <div class="field" id="recon-company-field" style="display:none;">
+              <label>Company</label>
+              <select id="recon-company"></select>
+            </div>
             <div class="field">
               <label>Mode</label>
               <select id="recon-mode">
@@ -1183,6 +1187,7 @@
               </select>
             </div>
           </div>
+          <div class="hint" style="margin:-4px 0 12px;"><strong>Test</strong> stamps the file as a trial (TEST in the header) — use it to check the import in e@syFile without filing anything. <strong>Live</strong> stamps it as the real return (LIVE) for submission to SARS.</div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <button class="btn secondary" id="recon-download-btn">Download recon CSV</button>
             <span class="save-status" id="recon-status"></span>
@@ -1475,7 +1480,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-07.76-dept-adjustment-totals';
+  var FRONTEND_BUILD = '2026-10-07.77-recon-per-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3516,6 +3521,7 @@
     document.getElementById('payrollrun-sub').textContent = monthLabel(state.selectedMonth) +
       (pr.hasRun ? ' — figures below are as of the last time payroll was run for this month.' : ' — payroll has not been run for this month yet.');
     document.getElementById('emp201-taxyear-label').textContent = pr.taxYear || '';
+    refreshReconCompanyPicker_();
 
     // EMP201 is filed per registered company (Daily Fruit JHB, Pyroca, Daily
     // Fruit Veg...), so the figures below follow the company picked in the
@@ -4173,6 +4179,34 @@
   }
   populateReconTaxYearPicker_();
 
+  // The Company picker only appears when this group has more than one active
+  // registered company (same idea as the EMP201 company picker). "All" keeps
+  // one file per company.
+  function refreshReconCompanyPicker_() {
+    var field = document.getElementById('recon-company-field');
+    var sel = document.getElementById('recon-company');
+    if (!field || !sel) return;
+    var cos = (state.companies || []).filter(function (c) { return c.id && c.active !== false; });
+    if (cos.length < 2) { field.style.display = 'none'; sel.innerHTML = ''; return; }
+    var prev = sel.value;
+    sel.innerHTML = '<option value="all">All companies (one file each)</option>' + cos.map(function (c) {
+      return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>';
+    }).join('');
+    if (prev && Array.prototype.some.call(sel.options, function (o) { return o.value === prev; })) sel.value = prev;
+    field.style.display = '';
+  }
+  function downloadReconFile_(f) {
+    var blob = new Blob([f.csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = f.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
   document.getElementById('recon-download-btn').addEventListener('click', function () {
     var status = document.getElementById('recon-status');
     var warningsBox = document.getElementById('recon-warnings');
@@ -4181,7 +4215,7 @@
     var period = document.getElementById('recon-period').value;
     var testMode = document.getElementById('recon-mode').value;
     flashStatus(status, 'Generating…', 'save-status', 0);
-    callApi('getEmployerRecon', { taxYearStartYear: taxYearStartYear, period: period, testMode: testMode, companyGroup: state.companyGroup }).then(function (res) {
+    callApi('getEmployerRecon', { taxYearStartYear: taxYearStartYear, period: period, testMode: testMode, companyGroup: state.companyGroup, companyId: (document.getElementById('recon-company') && document.getElementById('recon-company').value) || 'all' }).then(function (res) {
       if (!res.ok) {
         flashStatus(status, res.error || 'Failed', 'save-status err', 8000);
         return;
@@ -4191,17 +4225,9 @@
       // legal entities gets a separate recon file for each, downloaded here
       // one after another (each is its own, independently valid EMP501 file).
       var files = res.files || [];
-      files.forEach(function (f) {
-        var blob = new Blob([f.csv], { type: 'text/csv;charset=utf-8;' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = f.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
+      // Browsers can block several automatic downloads fired at once, so they
+      // are spaced out; each file also gets its own button below as a backup.
+      files.forEach(function (f, i) { setTimeout(function () { downloadReconFile_(f); }, i * 700); });
       var totalEmployees = files.reduce(function (sum, f) { return sum + f.employeeCount; }, 0);
       flashStatus(status,
         files.length > 1
@@ -4215,10 +4241,18 @@
           warningLines.push(files.length > 1 ? f.companyName + ': ' + w : w);
         });
       });
-      warningsBox.innerHTML = warningLines.length
+      var btns = files.length > 1
+        ? '<div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">' + files.map(function (f, i) {
+            return '<button class="btn secondary small" data-recon-file="' + i + '">Download ' + esc(f.companyName) + '</button>';
+          }).join('') + '</div>'
+        : '';
+      warningsBox.innerHTML = btns + (warningLines.length
         ? '<div class="hint" style="color:var(--text-secondary);"><strong>Check before relying on ' + (files.length > 1 ? 'these files' : 'this file') + ':</strong><br>' +
           warningLines.map(function (w) { return '• ' + esc(w); }).join('<br>') + '</div>'
-        : '';
+        : '');
+      Array.prototype.forEach.call(warningsBox.querySelectorAll('[data-recon-file]'), function (b) {
+        b.addEventListener('click', function () { downloadReconFile_(files[Number(b.getAttribute('data-recon-file'))]); });
+      });
     }).catch(function () {
       flashStatus(status, 'Network error', 'save-status err', 5000);
     });
