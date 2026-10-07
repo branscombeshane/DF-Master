@@ -213,6 +213,27 @@
     animation: btn-spin 0.6s linear infinite;
   }
   @keyframes btn-spin { to { transform: rotate(360deg); } }
+  /* Greyed-out loading cover shown over the Payroll sub-tabs and content
+     while a different month is being fetched. */
+  #view-payroll { position: relative; }
+  .payroll-loading {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: color-mix(in srgb, color-mix(in srgb, var(--page) 62%, #808080 38%) 82%, transparent);
+    border-radius: 12px; cursor: progress;
+  }
+  .payroll-loading[hidden] { display: none; }
+  .payroll-loading-inner {
+    position: sticky; top: 36vh; display: flex; flex-direction: column; align-items: center;
+    gap: 12px; width: max-content; margin: 60px auto 0; padding: 18px 28px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+    font-size: 14px; font-weight: 600; color: var(--text-primary);
+  }
+  .payroll-loading-spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 4px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
+    border-top-color: var(--brand); animation: btn-spin 0.8s linear infinite;
+  }
   .error-text {
     color: var(--critical);
     font-size: 13px;
@@ -912,6 +933,9 @@
       </div>
 
       <nav class="subtabs" id="payroll-subtabs"></nav>
+      <div class="payroll-loading" id="payroll-loading" hidden role="status" aria-live="polite">
+        <div class="payroll-loading-inner"><div class="payroll-loading-spinner"></div><div id="payroll-loading-text">Loading month…</div></div>
+      </div>
 
       <div class="payroll-subview" id="payroll-sub-dashboard">
         <div class="kpi-grid" id="payroll-kpi-grid"></div>
@@ -1447,7 +1471,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-07.74-emp201-layout';
+  var FRONTEND_BUILD = '2026-10-07.75-payroll-month-loading';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2092,6 +2116,22 @@
     if (view) view.classList.add('active');
   }
 
+  // Greys out the Payroll content (sub-tabs included) with a spinner until
+  // every request for the newly picked month has finished. If the month is
+  // changed again meanwhile, the cover stays until the LATEST pick is done.
+  var payrollLoadSeq_ = 0;
+  function showPayrollMonthLoading_(promises) {
+    var cover = document.getElementById('payroll-loading');
+    var nav = document.getElementById('payroll-subtabs');
+    if (!cover || !nav) return;
+    var mySeq = ++payrollLoadSeq_;
+    cover.style.top = nav.offsetTop + 'px';
+    document.getElementById('payroll-loading-text').textContent = 'Loading ' + monthLabel(state.selectedMonth) + '…';
+    cover.hidden = false;
+    var done = function () { if (mySeq === payrollLoadSeq_) cover.hidden = true; };
+    Promise.all(promises.map(function (p) { return Promise.resolve(p).then(null, function () {}); })).then(done, done);
+  }
+
   function populateMonthPicker() {
     var sel = document.getElementById('month-picker');
     sel.innerHTML = '';
@@ -2113,7 +2153,11 @@
     });
     sel.onchange = function () {
       state.selectedMonth = sel.value;
-      if (hasSection('payroll')) { loadPayroll(); if (state.role !== 'hr') { loadPayrollRun(); loadIrp5(); } loadAdjustments(); }
+      if (hasSection('payroll')) {
+        var loads = [loadPayroll(), loadAdjustments()];
+        if (state.role !== 'hr') { loads.push(loadPayrollRun()); loads.push(loadIrp5()); }
+        showPayrollMonthLoading_(loads);
+      }
     };
   }
 
