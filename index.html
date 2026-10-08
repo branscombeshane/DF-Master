@@ -456,6 +456,10 @@
   table.casual-grid input.hrs.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid input.hrs.dirty { border-color: var(--brand); }
   table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
+  table.casual-grid td.paid-cell { text-align: left; white-space: nowrap; min-width: 130px; }
+  table.casual-grid .paid-chip { color: var(--good); font-weight: 700; }
+  table.casual-grid label.paid-tick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  table.casual-grid label.paid-tick input { width: 18px; height: 18px; accent-color: var(--brand); }
   table.casual-grid td.meta-cell { min-width: 135px; vertical-align: top; }
   table.casual-grid td.meta-cell:last-of-type { min-width: 190px; }
   table.casual-grid .cmeta {
@@ -1268,7 +1272,6 @@
           <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px;">
             <button class="btn secondary" id="casuals-csv-btn">Download CSV</button>
             <button class="btn secondary" id="casuals-pdf-btn">Download PDF</button>
-            <button class="btn" id="casuals-paid-btn" style="display:none;">Mark week as paid</button>
             <span class="save-status" id="casuals-pay-status"></span>
           </div>
         </div>
@@ -1294,7 +1297,7 @@
 
         <div class="panel" id="casuals-rates-panel" style="display:none;">
           <h2>Hourly rates</h2>
-          <p class="panel-sub">One hourly rate per department. Casuals are paid hours &times; their department's rate. A week that has been marked as paid keeps the rate it was paid at.</p>
+          <p class="panel-sub">One hourly rate per department. Casuals are paid hours &times; their department's rate. Someone ticked as paid keeps the rate they were paid at.</p>
           <div style="overflow-x:auto;"><table class="data-table" id="casuals-rates-table"></table></div>
           <div style="display:flex; gap:10px; align-items:center; margin-top:14px;">
             <button class="btn" id="casuals-rates-save">Save rates</button>
@@ -1580,7 +1583,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-09.87-recon-cert-travel';
+  var FRONTEND_BUILD = '2026-10-12.88-casual-paid-tick';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1599,7 +1602,7 @@
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
-    getCasualWeek: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, markCasualWeekPaid: true, saveCasualRates: true
+    getCasualWeek: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
 
   // ================= STATE =================
@@ -3961,6 +3964,18 @@
     }).catch(function () { casualState.loading = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
 
+  // '2026-10-12 14:32:10' -> '12 Oct 2026, 14:32' (shown exactly as stamped).
+  function casualStamp_(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(s || ''));
+    if (!m) return '';
+    var mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
+    return Number(m[3]) + ' ' + mon + ' ' + m[1] + ', ' + m[4] + ':' + m[5];
+  }
+  function casualPaidCounts_(w) {
+    var people = w.casuals.filter(function (c) { return c.totalHours > 0; });
+    return { n: people.length, paid: people.filter(function (c) { return c.status === 'paid'; }).length };
+  }
+
   // The approving manager + reason shown for a casual: unsaved edits first.
   function casualMeta_(c) {
     var d = casualState.dirty[c.id];
@@ -3979,7 +3994,8 @@
     var isHr = casualIsHr_(), isOwner = casualIsOwner_();
     var badge = document.getElementById('casuals-status-badge');
     badge.className = 'status-badge ' + (w.status === 'paid' ? 'finalized' : 'in-progress');
-    badge.textContent = w.status === 'paid' ? 'Paid' : (w.status === 'submitted' ? 'Submitted — awaiting payment' : 'Open');
+    var pc = casualPaidCounts_(w);
+    badge.textContent = w.status === 'paid' ? 'Paid' : (w.status === 'submitted' ? (pc.paid ? 'Submitted — ' + pc.paid + ' of ' + pc.n + ' paid' : 'Submitted — awaiting payment') : 'Open');
     document.getElementById('casuals-sub').textContent = casualWeekLabel_(w.weekStart) +
       ' — Monday to Sunday, hours per day. Casuals are paid by eWallet to their cell number.';
 
@@ -3987,8 +4003,8 @@
     var days = CASUAL_DAYS.map(function (d, i) { return { name: d, iso: casualAddDays_(w.weekStart, i), weekend: i >= 5 }; });
     var head = '<thead><tr><th style="text-align:left;">Casual</th>' + days.map(function (d) {
       return '<th class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;">' + d.name + '<span class="dnum">' + esc(casualDayLabel_(d.iso)) + '</span></th>';
-    }).join('') + '<th>Total hrs</th><th style="text-align:left;">Approved by (manager)</th><th style="text-align:left;">Why was the casual needed?</th>' + (isHr ? '' : '<th>Rate / hr</th><th>Amount</th>') + '</tr></thead>';
-    var cols = 11 + (isHr ? 0 : 2);
+    }).join('') + '<th>Total hrs</th><th style="text-align:left;">Approved by (manager)</th><th style="text-align:left;">Why was the casual needed?</th>' + (isHr ? '' : '<th>Rate / hr</th><th>Amount</th>') + '<th style="text-align:left;">Paid</th></tr></thead>';
+    var cols = 12 + (isHr ? 0 : 2);
     var body;
     if (!w.casuals.length) {
       body = '<tbody><tr><td colspan="' + cols + '" style="text-align:center; color:var(--text-muted);">No casuals yet — add the first one below.</td></tr></tbody>';
@@ -4005,10 +4021,13 @@
           '<td class="meta-cell"><input class="cmeta cm-by' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" list="casual-managers" maxlength="80" autocomplete="off" placeholder="Manager\'s name" value="' + esc(casualMeta_(c).approvedBy) + '"' + (c.locked ? ' disabled' : '') + ' aria-label="' + esc(c.name) + ' approved by"></td>' +
           '<td class="meta-cell"><textarea class="cmeta cm-why' + (casualState.dirty[c.id] ? ' dirty' : '') + '" rows="2" maxlength="500" placeholder="Reason" ' + (c.locked ? 'disabled ' : '') + 'aria-label="' + esc(c.name) + ' reason">' + esc(casualMeta_(c).reason) + '</textarea></td>' +
           (isHr ? '' : '<td class="rate">' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td class="amt">' + (live.amount === null ? '—' : casualRand_(live.amount)) + '</td>') +
+          '<td class="paid-cell">' + (c.status === 'paid'
+            ? '<span class="paid-chip">&#10003; Paid</span><span class="sub">' + esc(casualStamp_(c.paidAt)) + '</span>'
+            : (c.totalHours > 0 ? '<span class="sub" style="margin:0;">Not paid yet</span>' : '<span class="sub" style="margin:0;">—</span>')) + '</td>' +
           '</tr>';
       }).join('') + '</tbody>' +
         '<tfoot><tr><td>Total</td>' + days.map(function () { return '<td></td>'; }).join('') + '<td id="casuals-foot-hours">' + casualHrs_(w.totalHours) + '</td><td></td><td></td>' +
-        (isHr ? '' : '<td></td><td id="casuals-foot-amount">' + casualRand_(w.totalAmount) + '</td>') + '</tr></tfoot>';
+        (isHr ? '' : '<td></td><td id="casuals-foot-amount">' + casualRand_(w.totalAmount) + '</td>') + '<td></td></tr></tfoot>';
     }
     var table = document.getElementById('casuals-table');
     table.className = 'data-table casual-grid';
@@ -4019,7 +4038,8 @@
     // ----- banner / buttons -----
     var banner = '';
     if (w.status === 'submitted' && isHr) banner = '<div class="casual-note">This week has been submitted to the Owner for payment. Hours are locked.</div>';
-    if (w.status === 'paid') banner = '<div class="casual-note">This week has been paid. Hours are locked.</div>';
+    if (w.status === 'paid') banner = '<div class="casual-note">Everyone has been paid for this week. Hours are locked.</div>';
+    else if (pc.paid) banner += '<div class="casual-note">' + pc.paid + ' of ' + pc.n + ' paid so far — paid rows are locked.</div>';
     if (!isHr && w.missingRates && w.missingRates.length && w.status !== 'paid') {
       banner += '<div class="casual-note err">No hourly rate for the department of: ' + esc(w.missingRates.join(', ')) + (isOwner ? '. Set it under Hourly rates below.' : '. Ask the Owner to set the rate.') + '</div>';
     }
@@ -4029,10 +4049,11 @@
     saveBtn.disabled = !casualDirtyCount_();
     saveBtn.style.display = anyEditable || casualDirtyCount_() ? '' : 'none';
     var submitBtn = document.getElementById('casuals-submit-btn');
-    submitBtn.style.display = (!isOwner && w.status === 'open') ? '' : 'none';
-    submitBtn.disabled = !(w.totalHours > 0);
+    var openWithHours = w.casuals.filter(function (c) { return c.status === 'open' && c.totalHours > 0; }).length;
+    submitBtn.style.display = (w.status === 'open' || (isOwner && openWithHours)) ? '' : 'none';
+    submitBtn.disabled = !(openWithHours || (w.status === 'open' && w.totalHours > 0));
     var reopenBtn = document.getElementById('casuals-reopen-btn');
-    reopenBtn.style.display = (isOwner && w.status !== 'open') ? '' : 'none';
+    reopenBtn.style.display = (isOwner && w.casuals.some(function (c) { return c.status === 'submitted'; })) ? '' : 'none';
     document.getElementById('casuals-hint').textContent = casualDirtyCount_()
       ? casualDirtyCount_() + ' casual' + (casualDirtyCount_() === 1 ? '' : 's') + ' with unsaved hours.'
       : (isOwner ? '' : (w.status === 'open' ? 'Save your hours, then Submit week when the week is complete.' : ''));
@@ -4124,23 +4145,49 @@
     if (casualIsHr_()) { panel.style.display = 'none'; return; }
     panel.style.display = '';
     var paying = w.casuals.filter(function (c) { return c.totalHours > 0; });
+    var pc = casualPaidCounts_(w);
     document.getElementById('casuals-pay-sub').textContent = casualWeekLabel_(w.weekStart) + ' — pay each casual by eWallet to the cell number shown' +
-      (w.status === 'paid' ? '. This week is marked as paid.' : '.');
-    var head = '<thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Cell number (eWallet)</th><th style="text-align:left;">Department</th><th style="text-align:left;">Approved by</th><th>Hours</th><th>Rate / hr</th><th>Amount</th></tr></thead>';
+      '. Tick each person once they have been paid — the date and time are stamped.';
+    var head = '<thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Cell number (eWallet)</th><th style="text-align:left;">Department</th><th style="text-align:left;">Approved by</th><th>Hours</th><th>Rate / hr</th><th>Amount</th><th style="text-align:left;">Paid</th></tr></thead>';
     var body = paying.length ? '<tbody>' + paying.map(function (c) {
       return '<tr><td>' + esc(c.name) + (c.reason ? '<span class="sub" style="white-space:normal; max-width:340px;">' + esc(c.reason) + '</span>' : '') + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) + '</td><td style="text-align:left;">' + (c.approvedBy ? esc(c.approvedBy) : '<span style="color:var(--critical);">—</span>') + '</td><td>' + casualHrs_(c.totalHours) +
-        '</td><td>' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td>' + (c.amount === null ? '—' : casualRand_(c.amount)) + '</td></tr>';
-    }).join('') + '</tbody><tfoot><tr><td colspan="4">Total to pay</td><td>' + casualHrs_(w.totalHours) + '</td><td></td><td>' + casualRand_(w.totalAmount) + '</td></tr></tfoot>'
-      : '<tbody><tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No hours captured for this week yet.</td></tr></tbody>';
+        '</td><td>' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td>' + (c.amount === null ? '—' : casualRand_(c.amount)) + '</td>' +
+        '<td class="paid-cell"><label class="paid-tick"><input type="checkbox" class="paid-cb" data-casual-paid="' + esc(c.id) + '"' + (c.status === 'paid' ? ' checked' : '') +
+        (w.canPay && (c.status === 'paid' || c.status === 'submitted') ? '' : ' disabled title="' + (c.status === 'open' ? 'The week has not been submitted yet' : 'Not available') + '"') + ' aria-label="' + esc(c.name) + ' paid"> ' +
+        (c.status === 'paid' ? '<span class="paid-chip">Paid</span>' : '<span style="color:var(--text-muted);">Not paid</span>') + '</label>' +
+        (c.status === 'paid' ? '<span class="sub">' + esc(casualStamp_(c.paidAt)) + '</span>' : '') + '</td></tr>';
+    }).join('') + '</tbody><tfoot><tr><td colspan="4">Total to pay</td><td>' + casualHrs_(w.totalHours) + '</td><td></td><td>' + casualRand_(w.totalAmount) + '</td><td>' + pc.paid + ' of ' + pc.n + ' paid</td></tr></tfoot>'
+      : '<tbody><tr><td colspan="8" style="text-align:center; color:var(--text-muted);">No hours captured for this week yet.</td></tr></tbody>';
     var t = document.getElementById('casuals-pay-table');
     t.className = 'data-table casual-grid';
     t.innerHTML = head + body;
     document.getElementById('casuals-pay-warn').innerHTML = (casualDirtyCount_() ? '<div class="casual-note">Unsaved hours are not included here — save them first.</div>' : '');
     document.getElementById('casuals-csv-btn').disabled = !paying.length;
     document.getElementById('casuals-pdf-btn').disabled = !paying.length;
-    var paidBtn = document.getElementById('casuals-paid-btn');
-    paidBtn.style.display = (w.canPay && w.status !== 'paid') ? '' : 'none';
-    paidBtn.disabled = !paying.length;
+    Array.prototype.forEach.call(t.querySelectorAll('.paid-cb'), function (cb) {
+      cb.addEventListener('change', function () { onCasualPaidToggle_(cb); });
+    });
+  }
+
+  // Owner ticks / un-ticks one casual as paid.
+  function onCasualPaidToggle_(cb) {
+    var w = casualState.week, id = cb.getAttribute('data-casual-paid'), want = cb.checked;
+    var status = document.getElementById('casuals-pay-status');
+    var c = w.casuals.filter(function (x) { return x.id === id; })[0];
+    function undo() { cb.checked = !want; }
+    if (!c) { undo(); return; }
+    if (casualDirtyCount_()) { undo(); flashStatus(status, 'Save the hours first.', 'save-status err', 5000); return; }
+    var msg = want
+      ? 'Mark ' + c.name + ' as paid (' + (c.amount === null ? '' : casualRand_(c.amount) + ' to ') + casualPhone_(c.cellNumber) + ')? Their hours and rate will be locked and the date and time stamped.'
+      : 'Un-mark ' + c.name + ' as paid? The paid date will be cleared and the amount will follow the current rate again.';
+    if (!window.confirm(msg)) { undo(); return; }
+    cb.disabled = true;
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApi('setCasualPaid', { weekStart: w.weekStart, casualId: id, paid: want ? 'true' : 'false' }).then(function (res) {
+      if (!res || !res.ok) { undo(); cb.disabled = false; flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
+      casualState.week = res; renderCasuals();
+      flashStatus(document.getElementById('casuals-pay-status'), want ? c.name + ' marked as paid' : c.name + ' un-marked', 'save-status ok', 4000);
+    }).catch(function () { undo(); cb.disabled = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
 
   function casualCsvCell_(v) {
@@ -4155,12 +4202,12 @@
   function downloadCasualCsv_() {
     var w = casualState.week;
     var rows = w.casuals.filter(function (c) { return c.totalHours > 0; });
-    var lines = [['Name', 'Cell number', 'Department'].concat(CASUAL_DAYS).concat(['Total hours', 'Approved by', 'Reason', 'Rate per hour', 'Amount']).map(casualCsvCell_).join(',')];
+    var lines = [['Name', 'Cell number', 'Department'].concat(CASUAL_DAYS).concat(['Total hours', 'Approved by', 'Reason', 'Rate per hour', 'Amount', 'Paid at']).map(casualCsvCell_).join(',')];
     rows.forEach(function (c) {
       lines.push([casualCsvCell_(c.name), '="' + String(c.cellNumber).replace(/\D/g, '') + '"', casualCsvCell_(c.department)]
-        .concat(c.hours.map(function (x) { return x || 0; })).concat([c.totalHours, casualCsvCell_(c.approvedBy), casualCsvCell_(c.reason), c.rate || '', c.amount === null ? '' : c.amount]).join(','));
+        .concat(c.hours.map(function (x) { return x || 0; })).concat([c.totalHours, casualCsvCell_(c.approvedBy), casualCsvCell_(c.reason), c.rate || '', c.amount === null ? '' : c.amount, casualCsvCell_(c.status === 'paid' ? casualStamp_(c.paidAt) : '')]).join(','));
     });
-    lines.push(['Total', '', ''].concat(CASUAL_DAYS.map(function () { return ''; })).concat([w.totalHours, '', '', '', w.totalAmount]).join(','));
+    lines.push(['Total', '', ''].concat(CASUAL_DAYS.map(function () { return ''; })).concat([w.totalHours, '', '', '', w.totalAmount, '']).join(','));
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = casualFileBase_() + '.csv';
@@ -4315,21 +4362,11 @@
   });
   document.getElementById('casuals-reopen-btn').addEventListener('click', function () {
     var w = casualState.week, status = document.getElementById('casuals-status');
-    if (!window.confirm('Reopen ' + casualWeekLabel_(w.weekStart) + '?' + (w.status === 'paid' ? ' It will no longer be marked as paid and the amounts will follow the current rates again.' : ''))) return;
+    if (!window.confirm('Reopen the submitted hours for ' + casualWeekLabel_(w.weekStart) + ' so they can be edited again? People already ticked as paid stay paid.')) return;
     flashStatus(status, 'Reopening…', 'save-status', 0);
     callApi('reopenCasualWeek', { weekStart: w.weekStart }).then(function (res) {
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not reopen', 'save-status err', 8000); return; }
       casualState.week = res; renderCasuals(); flashStatus(status, 'Reopened', 'save-status ok', 4000);
-    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
-  });
-  document.getElementById('casuals-paid-btn').addEventListener('click', function () {
-    var w = casualState.week, status = document.getElementById('casuals-pay-status');
-    if (casualDirtyCount_()) { flashStatus(status, 'Save the hours first.', 'save-status err', 5000); return; }
-    if (!window.confirm('Mark ' + casualWeekLabel_(w.weekStart) + ' as paid (' + casualRand_(w.totalAmount) + ')? Hours and rates for this week will be locked.')) return;
-    flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('markCasualWeekPaid', { weekStart: w.weekStart }).then(function (res) {
-      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not mark as paid', 'save-status err', 9000); return; }
-      casualState.week = res; renderCasuals(); flashStatus(status, 'Marked as paid', 'save-status ok', 4000);
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   });
   document.getElementById('casuals-csv-btn').addEventListener('click', downloadCasualCsv_);
