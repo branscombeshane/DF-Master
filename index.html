@@ -1586,7 +1586,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-12.89-casual-notify';
+  var FRONTEND_BUILD = '2026-10-12.90-casual-round-down';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4065,7 +4065,7 @@
             return '<td class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;"><input class="hrs' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" inputmode="decimal" data-day="' + i + '" value="' + casualHrs_(live.hours[i]) + '"' +
               (c.locked ? ' disabled title="' + (c.status === 'paid' ? 'Paid — locked' : 'Submitted — locked') + '"' : '') + ' aria-label="' + esc(c.name + ' ' + d.name) + ' hours"></td>';
           }).join('') +
-          '<td class="tot"><strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong></td>' +
+          '<td class="tot">' + casualTotInner_(c, live, isHr) + '</td>' +
           '<td class="meta-cell"><input class="cmeta cm-by' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" list="casual-managers" maxlength="80" autocomplete="off" placeholder="Manager\'s name" value="' + esc(casualMeta_(c).approvedBy) + '"' + (c.locked ? ' disabled' : '') + ' aria-label="' + esc(c.name) + ' approved by"></td>' +
           '<td class="meta-cell"><textarea class="cmeta cm-why' + (casualState.dirty[c.id] ? ' dirty' : '') + '" rows="2" maxlength="500" placeholder="Reason" ' + (c.locked ? 'disabled ' : '') + 'aria-label="' + esc(c.name) + ' reason">' + esc(casualMeta_(c).reason) + '</textarea></td>' +
           (isHr ? '' : '<td class="rate">' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td class="amt">' + (live.amount === null ? '—' : casualRand_(live.amount)) + '</td>') +
@@ -4131,6 +4131,11 @@
     });
   }
 
+  // Total hours cell. The Owner also sees what HR originally entered when it was rounded down.
+  function casualTotInner_(c, live, isHr) {
+    var note = (!isHr && c.hrTotal && !casualState.dirty[c.id]) ? '<span class="sub" title="HR entered this; each day is rounded down when HR submits" style="display:block;font-weight:400;white-space:nowrap;">HR entered ' + casualHrs_(c.hrTotal) + '</span>' : '';
+    return '<strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong>' + note;
+  }
   function onCasualHoursInput_(inp) {
     var tr = inp.closest('tr'), id = tr.getAttribute('data-casual');
     var c = casualState.week.casuals.filter(function (x) { return x.id === id; })[0];
@@ -4142,7 +4147,7 @@
     Array.prototype.forEach.call(tr.querySelectorAll('input.hrs, .cmeta'), function (i) { i.classList.toggle('dirty', !same); });
     if (inp.classList.contains('cmeta') && inp.value.trim()) inp.classList.remove('bad');
     var live = casualRowLive_(c);
-    tr.querySelector('td.tot').innerHTML = '<strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong>';
+    tr.querySelector('td.tot').innerHTML = casualTotInner_(c, live, casualIsHr_());
     var amt = tr.querySelector('td.amt'); if (amt) amt.textContent = live.amount === null ? '—' : casualRand_(live.amount);
     var tH = 0, tA = 0;
     casualState.week.casuals.forEach(function (x) { var l = casualRowLive_(x); tH += l.total; tA += Number(l.amount) || 0; });
