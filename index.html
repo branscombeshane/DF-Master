@@ -456,6 +456,8 @@
   table.casual-grid input.hrs.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid input.hrs.dirty { border-color: var(--brand); }
   table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
+  .pending-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
+  .link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); font-weight: 600; text-decoration: underline; text-decoration-color: var(--brand); text-underline-offset: 3px; cursor: pointer; }
   table.casual-grid td.paid-cell { text-align: left; white-space: nowrap; min-width: 130px; }
   table.casual-grid .paid-chip { color: var(--good); font-weight: 700; }
   table.casual-grid label.paid-tick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -1250,6 +1252,7 @@
             <span class="save-status" id="casuals-status"></span>
           </div>
           <div id="casuals-banner"></div>
+          <div id="casuals-pending-note"></div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="casuals-table"></table>
             <datalist id="casual-managers"></datalist>
@@ -1583,7 +1586,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-12.88-casual-paid-tick';
+  var FRONTEND_BUILD = '2026-10-12.89-casual-notify';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1602,7 +1605,7 @@
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
-    getCasualWeek: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
+    getCasualWeek: true, getCasualPending: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
 
   // ================= STATE =================
@@ -2057,7 +2060,7 @@
     state.payroll = null;
     state.payrollAdjustments = null;
     state.monthLocked = false;
-    casualState.week = null; casualState.dirty = {}; casualState.weekStart = null; casualState.editingId = '';
+    casualState.week = null; casualState.dirty = {}; casualState.weekStart = null; casualState.editingId = ''; casualState.pending = { people: 0, weeks: [] };
 
     document.getElementById('group-picker-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2080,6 +2083,7 @@
     renderNav();
     if (hasSection('payroll')) renderPayrollSubNav();
     populateMonthPicker();
+    loadCasualPending_();
 
     // Every tab's own data now loads independently and in parallel. This used
     // to be one long chain -- dashboard, THEN history, THEN (only once BOTH
@@ -3897,7 +3901,47 @@
   // pays the eWallets and marks the week paid. HR never receives rates or
   // amounts from the server at all.
   var CASUAL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  var casualState = { weekStart: null, week: null, dirty: {}, editingId: '', loading: false };
+  var casualState = { weekStart: null, week: null, dirty: {}, editingId: '', loading: false, pending: { people: 0, weeks: [] } };
+
+  // Owner: how many casuals HR has submitted that are still waiting to be paid.
+  function paintCasualBadges_() {
+    var n = (casualState.pending && casualState.pending.people) || 0;
+    var targets = [document.querySelector('nav#nav-tabs button[data-view="payroll"]'), document.querySelector('#payroll-subtabs button[data-subview="casuals"]')];
+    targets.forEach(function (b) {
+      if (!b) return;
+      var old = b.querySelector('.pending-count'); if (old) old.remove();
+      if (n > 0 && state.role === 'owner') {
+        var s = document.createElement('span'); s.className = 'pending-count'; s.textContent = String(n);
+        s.title = n + (n === 1 ? ' casual' : ' casuals') + ' submitted by HR, waiting to be paid';
+        b.appendChild(s);
+      }
+    });
+  }
+  function loadCasualPending_() {
+    if (state.role !== 'owner' || !hasSection('payroll')) { casualState.pending = { people: 0, weeks: [] }; paintCasualBadges_(); return Promise.resolve(); }
+    var grp = state.companyGroup;
+    return callApi('getCasualPending', {}).then(function (res) {
+      if (grp !== state.companyGroup) return;
+      casualState.pending = (res && res.ok) ? { people: res.people || 0, weeks: res.weeks || [] } : { people: 0, weeks: [] };
+      paintCasualBadges_();
+      if (casualState.week) renderCasualPendingNote_();
+    }).catch(function () { /* the badge is a convenience; ignore errors */ });
+  }
+  function renderCasualPendingNote_() {
+    var el = document.getElementById('casuals-pending-note');
+    if (!el) return;
+    var others = (casualState.pending.weeks || []).filter(function (x) { return x.weekStart !== casualState.weekStart; });
+    if (state.role !== 'owner' || !others.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="casual-note">Also waiting to be paid: ' + others.map(function (x) {
+      return '<button type="button" class="link-btn" data-pending-week="' + esc(x.weekStart) + '">' + esc(casualWeekLabel_(x.weekStart)) + ' (' + x.people + ')</button>';
+    }).join(', ') + '</div>';
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pending-week]'), function (b) {
+      b.addEventListener('click', function () {
+        if (casualDirtyCount_() && !window.confirm('You have unsaved hours. Switch week and discard them?')) return;
+        loadCasuals(b.getAttribute('data-pending-week'));
+      });
+    });
+  }
 
   function casualIso_(d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
@@ -3989,8 +4033,12 @@
     return { hours: hrs, total: total, amount: (!casualIsHr_() && c.rate && c.status !== 'paid') ? Math.round(total * c.rate * 100) / 100 : c.amount };
   }
 
+  var casualPendingSig_ = '';
   function renderCasuals() {
     var w = casualState.week; if (!w) return;
+    // Keep the owner's red count in step with what was just saved / submitted / paid.
+    var sig = w.weekStart + '|' + w.casuals.map(function (c) { return c.id + c.status + c.totalHours; }).join(',');
+    if (sig !== casualPendingSig_) { casualPendingSig_ = sig; loadCasualPending_(); }
     var isHr = casualIsHr_(), isOwner = casualIsOwner_();
     var badge = document.getElementById('casuals-status-badge');
     badge.className = 'status-badge ' + (w.status === 'paid' ? 'finalized' : 'in-progress');
@@ -4044,6 +4092,7 @@
       banner += '<div class="casual-note err">No hourly rate for the department of: ' + esc(w.missingRates.join(', ')) + (isOwner ? '. Set it under Hourly rates below.' : '. Ask the Owner to set the rate.') + '</div>';
     }
     document.getElementById('casuals-banner').innerHTML = banner;
+    renderCasualPendingNote_();
     var anyEditable = w.casuals.some(function (c) { return !c.locked; });
     var saveBtn = document.getElementById('casuals-save-btn');
     saveBtn.disabled = !casualDirtyCount_();
