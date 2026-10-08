@@ -1569,7 +1569,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-08.84-recon-trailer';
+  var FRONTEND_BUILD = '2026-10-08.85-recon-fields';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5436,9 +5436,14 @@
           '<div class="field"><label>PAYE number</label><input type="text" data-idx="' + i + '" data-field="payeNumber" value="' + esc(co.payeNumber) + '"></div>' +
           '<div class="field"><label>UIF number</label><input type="text" data-idx="' + i + '" data-field="uifNumber" value="' + esc(co.uifNumber) + '"></div>' +
           '<div class="field"><label>SDL number</label><input type="text" data-idx="' + i + '" data-field="sdlNumber" value="' + esc(co.sdlNumber) + '"></div>' +
-          '<div class="field"><label>Address (optional — shown on payslips)</label><input type="text" data-idx="' + i + '" data-field="address" value="' + esc(co.address) + '"></div>' +
+          '<div class="field"><label>Address (shown on payslips; also used on the recon file)</label><input type="text" data-idx="' + i + '" data-field="address" value="' + esc(co.address) + '" placeholder="Unit 48, The Old Timber Yard, 27 7th Avenue, Maitland, Cape Town, 7405">' +
+            '<div class="hint">Comma-separated, ending with the 4-digit postal code. Optional unit and complex first: Unit, Complex, Number Street, Suburb, City, Postal code.</div></div>' +
           '<div class="field"><label>SIC7 code</label><input type="text" data-idx="' + i + '" data-field="sic7Code" value="' + esc(co.sic7Code || '') + '">' +
             '<div class="hint">SARS 5-digit industry code — required on the Employer Reconciliation export.</div></div>' +
+          '<div class="field"><label>Recon contact — first name</label><input type="text" data-idx="' + i + '" data-field="contactFirstName" value="' + esc(co.contactFirstName || '') + '">' +
+            '<div class="hint">The person SARS contacts about the Employer Reconciliation (required on the recon file).</div></div>' +
+          '<div class="field"><label>Recon contact — surname</label><input type="text" data-idx="' + i + '" data-field="contactSurname" value="' + esc(co.contactSurname || '') + '"></div>' +
+          '<div class="field"><label>Recon contact — cell number</label><input type="text" inputmode="tel" data-idx="' + i + '" data-field="contactCell" value="' + esc(co.contactCell || '') + '"></div>' +
           '<div class="field"><label>SDL registered from</label><input type="text" data-idx="' + i + '" data-field="sdlRegisteredFrom" placeholder="YYYY-MM-DD" value="' + esc(co.sdlRegisteredFrom || '') + '">' +
             '<div class="hint">Leave blank if always registered. Set this if SDL registration only started partway through a tax year — months before this date report SDL as R0 on the Employer Reconciliation export.</div></div>' +
         '</div>' +
@@ -5463,7 +5468,7 @@
 
   document.getElementById('add-company-btn').addEventListener('click', function () {
     state.companies = state.companies || [];
-    state.companies.push({ id: '', name: '', payeNumber: '', uifNumber: '', sdlNumber: '', address: '', sic7Code: '', sdlRegisteredFrom: '', active: true });
+    state.companies.push({ id: '', name: '', payeNumber: '', uifNumber: '', sdlNumber: '', address: '', sic7Code: '', sdlRegisteredFrom: '', contactFirstName: '', contactSurname: '', contactCell: '', active: true });
     renderCompanySettings();
   });
 
@@ -5480,6 +5485,9 @@
         address: row.querySelector('[data-field="address"]').value.trim(),
         sic7Code: row.querySelector('[data-field="sic7Code"]').value.trim(),
         sdlRegisteredFrom: row.querySelector('[data-field="sdlRegisteredFrom"]').value.trim(),
+        contactFirstName: row.querySelector('[data-field="contactFirstName"]').value.trim(),
+        contactSurname: row.querySelector('[data-field="contactSurname"]').value.trim(),
+        contactCell: row.querySelector('[data-field="contactCell"]').value.trim(),
         active: row.querySelector('[data-field="active"]').checked
       });
     });
