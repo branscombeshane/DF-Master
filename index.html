@@ -222,6 +222,14 @@
     border-radius: 12px; cursor: progress;
   }
   .payroll-loading[hidden] { display: none; }
+  /* Same greyed-out cover, full screen, shown while a company (group) is being
+     opened or switched. */
+  .group-loading {
+    position: fixed; inset: 0; z-index: 300; cursor: progress;
+    background: color-mix(in srgb, color-mix(in srgb, var(--page) 62%, #808080 38%) 82%, transparent);
+  }
+  .group-loading[hidden] { display: none; }
+  .group-loading .payroll-loading-inner { position: absolute; top: 36vh; left: 50%; transform: translateX(-50%); margin: 0; }
   .payroll-loading-inner {
     position: sticky; top: 36vh; display: flex; flex-direction: column; align-items: center;
     gap: 12px; width: max-content; margin: 60px auto 0; padding: 18px 28px;
@@ -643,6 +651,10 @@
 </div>
 
 <!-- ==================== COMPANY GROUP TILE PICKER ==================== -->
+<div class="group-loading" id="group-loading" hidden role="status" aria-live="polite">
+  <div class="payroll-loading-inner"><div class="payroll-loading-spinner"></div><div id="group-loading-text">Loading…</div></div>
+</div>
+
 <div id="group-picker-screen">
   <div class="group-picker-card">
     <h1>Which company?</h1>
@@ -1557,7 +1569,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-08.81-recon-eol';
+  var FRONTEND_BUILD = '2026-10-08.82-group-loading';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2067,37 +2079,45 @@
     // same time, and the visible tab is revealed as soon as ITS data (and
     // only its data) is ready, instead of waiting on every other tab too.
     var activeTabReady = Promise.resolve();
+    var allLoads = [];
 
     if (hasSection('dashboard')) {
       var dashboardReady = loadFinancialYear().then(renderDashboard);
+      allLoads.push(dashboardReady);
       if (state.activeTab === 'dashboard') activeTabReady = dashboardReady;
     }
     if (hasSection('history')) {
       var historyReady = loadFiscalYearsList().then(renderHistory);
+      allLoads.push(historyReady);
       if (state.activeTab === 'history') activeTabReady = historyReady;
     }
     if (hasSection('payroll')) {
       var payrollReady = loadPayroll();
+      allLoads.push(payrollReady);
       // HR accounts never see the Payroll Dashboard or Reports sub-tabs
       // (payslips/EMP201/IRP5/recon all show Basic-Salary-derived figures
       // HR isn't permitted to see — see renderPayrollSubNav), so there's no
       // point loading the data that backs them; the backend would just
       // refuse these calls anyway.
-      if (state.role !== 'hr') { loadPayrollRun(); loadIrp5(); }
-      loadAdjustments();
+      if (state.role !== 'hr') { allLoads.push(loadPayrollRun()); allLoads.push(loadIrp5()); }
+      allLoads.push(loadAdjustments());
       if (state.activeTab === 'payroll') activeTabReady = payrollReady;
     }
     if (hasSection('vehicles')) {
       var vehiclesReady = loadVehicles();
+      allLoads.push(vehiclesReady);
       if (state.activeTab === 'vehicles') activeTabReady = vehiclesReady;
     }
     if (state.role === 'owner') {
       renderSettings(); // synchronous, no API call -- Settings tab is ready immediately
       var usersReady = loadUsers();
+      allLoads.push(usersReady);
       if (state.activeTab === 'users') activeTabReady = usersReady;
     }
 
-    activeTabReady.then(function () { showTab(state.activeTab); });
+    var shown = activeTabReady.then(function () { showTab(state.activeTab); });
+    allLoads.push(shown);
+    showGroupLoading_(activeGroup ? activeGroup.name : '', allLoads);
   }
 
   function hasSection(s) { return state.sections.indexOf(s) !== -1; }
@@ -2221,6 +2241,20 @@
     document.getElementById('payroll-loading-text').textContent = 'Loading ' + monthLabel(state.selectedMonth) + '…';
     cover.hidden = false;
     var done = function () { if (mySeq === payrollLoadSeq_) cover.hidden = true; };
+    Promise.all(promises.map(function (p) { return Promise.resolve(p).then(null, function () {}); })).then(done, done);
+  }
+
+  // Full-screen version of the same cover, used while a company is opened or
+  // switched: stays until every request for that company has finished, and
+  // only the LATEST company pick can clear it.
+  var groupLoadSeq_ = 0;
+  function showGroupLoading_(label, promises, afterFirst) {
+    var cover = document.getElementById('group-loading');
+    if (!cover) return;
+    var mySeq = ++groupLoadSeq_;
+    document.getElementById('group-loading-text').textContent = label ? 'Loading ' + label + '…' : 'Loading…';
+    cover.hidden = false;
+    var done = function () { if (mySeq === groupLoadSeq_) cover.hidden = true; };
     Promise.all(promises.map(function (p) { return Promise.resolve(p).then(null, function () {}); })).then(done, done);
   }
 
