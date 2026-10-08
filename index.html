@@ -456,6 +456,16 @@
   table.casual-grid input.hrs.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid input.hrs.dirty { border-color: var(--brand); }
   table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
+  table.casual-grid td.meta-cell { min-width: 135px; vertical-align: top; }
+  table.casual-grid td.meta-cell:last-of-type { min-width: 190px; }
+  table.casual-grid .cmeta {
+    width: 100%; box-sizing: border-box; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font: inherit; font-size: 13px;
+  }
+  table.casual-grid textarea.cmeta { resize: vertical; min-height: 50px; line-height: 1.3; }
+  table.casual-grid .cmeta:disabled { opacity: 0.55; cursor: not-allowed; }
+  table.casual-grid .cmeta.dirty { border-color: var(--brand); }
+  table.casual-grid .cmeta.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid tfoot td { font-weight: 700; border-top: 2px solid var(--border); }
   table.casual-grid td.weekend, table.casual-grid th.weekend { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
   .casual-note { font-size: 12px; color: var(--text-secondary); margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warning) 14%, transparent); }
@@ -1238,6 +1248,7 @@
           <div id="casuals-banner"></div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="casuals-table"></table>
+            <datalist id="casual-managers"></datalist>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:14px;">
             <button class="btn" id="casuals-save-btn">Save hours</button>
@@ -1569,7 +1580,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-08.85-recon-fields';
+  var FRONTEND_BUILD = '2026-10-09.86-casual-approval';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3950,9 +3961,15 @@
     }).catch(function () { casualState.loading = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
 
+  // The approving manager + reason shown for a casual: unsaved edits first.
+  function casualMeta_(c) {
+    var d = casualState.dirty[c.id];
+    return d ? { approvedBy: d.approvedBy, reason: d.reason } : { approvedBy: c.approvedBy || '', reason: c.reason || '' };
+  }
+
   function casualRowLive_(c) {
     var d = casualState.dirty[c.id];
-    var hrs = d ? d.map(function (x) { return isNaN(x) ? 0 : x; }) : c.hours;
+    var hrs = d ? d.hours.map(function (x) { return isNaN(x) ? 0 : x; }) : c.hours;
     var total = Math.round(hrs.reduce(function (a, b) { return a + b; }, 0) * 100) / 100;
     return { hours: hrs, total: total, amount: (!casualIsHr_() && c.rate && c.status !== 'paid') ? Math.round(total * c.rate * 100) / 100 : c.amount };
   }
@@ -3970,8 +3987,8 @@
     var days = CASUAL_DAYS.map(function (d, i) { return { name: d, iso: casualAddDays_(w.weekStart, i), weekend: i >= 5 }; });
     var head = '<thead><tr><th style="text-align:left;">Casual</th>' + days.map(function (d) {
       return '<th class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;">' + d.name + '<span class="dnum">' + esc(casualDayLabel_(d.iso)) + '</span></th>';
-    }).join('') + '<th>Total hrs</th>' + (isHr ? '' : '<th>Rate / hr</th><th>Amount</th>') + '</tr></thead>';
-    var cols = 9 + (isHr ? 0 : 2);
+    }).join('') + '<th>Total hrs</th><th style="text-align:left;">Approved by (manager)</th><th style="text-align:left;">Why was the casual needed?</th>' + (isHr ? '' : '<th>Rate / hr</th><th>Amount</th>') + '</tr></thead>';
+    var cols = 11 + (isHr ? 0 : 2);
     var body;
     if (!w.casuals.length) {
       body = '<tbody><tr><td colspan="' + cols + '" style="text-align:center; color:var(--text-muted);">No casuals yet — add the first one below.</td></tr></tbody>';
@@ -3985,15 +4002,18 @@
               (c.locked ? ' disabled title="' + (c.status === 'paid' ? 'Paid — locked' : 'Submitted — locked') + '"' : '') + ' aria-label="' + esc(c.name + ' ' + d.name) + ' hours"></td>';
           }).join('') +
           '<td class="tot"><strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong></td>' +
+          '<td class="meta-cell"><input class="cmeta cm-by' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" list="casual-managers" maxlength="80" autocomplete="off" placeholder="Manager\'s name" value="' + esc(casualMeta_(c).approvedBy) + '"' + (c.locked ? ' disabled' : '') + ' aria-label="' + esc(c.name) + ' approved by"></td>' +
+          '<td class="meta-cell"><textarea class="cmeta cm-why' + (casualState.dirty[c.id] ? ' dirty' : '') + '" rows="2" maxlength="500" placeholder="Reason" ' + (c.locked ? 'disabled ' : '') + 'aria-label="' + esc(c.name) + ' reason">' + esc(casualMeta_(c).reason) + '</textarea></td>' +
           (isHr ? '' : '<td class="rate">' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td class="amt">' + (live.amount === null ? '—' : casualRand_(live.amount)) + '</td>') +
           '</tr>';
       }).join('') + '</tbody>' +
-        '<tfoot><tr><td>Total</td>' + days.map(function () { return '<td></td>'; }).join('') + '<td id="casuals-foot-hours">' + casualHrs_(w.totalHours) + '</td>' +
+        '<tfoot><tr><td>Total</td>' + days.map(function () { return '<td></td>'; }).join('') + '<td id="casuals-foot-hours">' + casualHrs_(w.totalHours) + '</td><td></td><td></td>' +
         (isHr ? '' : '<td></td><td id="casuals-foot-amount">' + casualRand_(w.totalAmount) + '</td>') + '</tr></tfoot>';
     }
     var table = document.getElementById('casuals-table');
     table.className = 'data-table casual-grid';
     table.innerHTML = head + body;
+    document.getElementById('casual-managers').innerHTML = (w.managers || []).map(function (m) { return '<option value="' + esc(m) + '"></option>'; }).join('');
     wireCasualInputs_();
 
     // ----- banner / buttons -----
@@ -4024,6 +4044,9 @@
   }
 
   function wireCasualInputs_() {
+    Array.prototype.forEach.call(document.querySelectorAll('#casuals-table .cmeta'), function (inp) {
+      inp.addEventListener('input', function () { onCasualHoursInput_(inp); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('#casuals-table input.hrs'), function (inp) {
       inp.addEventListener('focus', function () { try { inp.select(); } catch (e) { /* ignore */ } });
       inp.addEventListener('input', function () { onCasualHoursInput_(inp); });
@@ -4043,9 +4066,11 @@
     var c = casualState.week.casuals.filter(function (x) { return x.id === id; })[0];
     var vals = Array.prototype.map.call(tr.querySelectorAll('input.hrs'), function (i) { return casualParseHours_(i.value); });
     Array.prototype.forEach.call(tr.querySelectorAll('input.hrs'), function (i, k) { i.classList.toggle('bad', isNaN(vals[k])); });
-    var same = vals.every(function (v, k) { return v === c.hours[k]; });
-    if (same) delete casualState.dirty[id]; else casualState.dirty[id] = vals;
-    inp.classList.toggle('dirty', !same);
+    var by = tr.querySelector('.cm-by').value.replace(/\s+/g, ' ').trim(), why = tr.querySelector('.cm-why').value.trim();
+    var same = vals.every(function (v, k) { return v === c.hours[k]; }) && by === (c.approvedBy || '') && why === (c.reason || '');
+    if (same) delete casualState.dirty[id]; else casualState.dirty[id] = { hours: vals, approvedBy: by, reason: why };
+    Array.prototype.forEach.call(tr.querySelectorAll('input.hrs, .cmeta'), function (i) { i.classList.toggle('dirty', !same); });
+    if (inp.classList.contains('cmeta') && inp.value.trim()) inp.classList.remove('bad');
     var live = casualRowLive_(c);
     tr.querySelector('td.tot').innerHTML = '<strong>' + (live.total ? casualHrs_(live.total) : '0') + '</strong>';
     var amt = tr.querySelector('td.amt'); if (amt) amt.textContent = live.amount === null ? '—' : casualRand_(live.amount);
@@ -4057,13 +4082,22 @@
     document.getElementById('casuals-hint').textContent = casualDirtyCount_() ? casualDirtyCount_() + ' casual' + (casualDirtyCount_() === 1 ? '' : 's') + ' with unsaved hours.' : '';
   }
 
+  // Ids of casuals with hours (including unsaved ones) but no approver / reason.
+  function casualMissingApproval_() {
+    return casualState.week.casuals.filter(function (c) {
+      if (c.locked) return false;
+      var live = casualRowLive_(c), m = casualMeta_(c);
+      return live.total > 0 && (!String(m.approvedBy || '').trim() || !String(m.reason || '').trim());
+    }).map(function (c) { return c.id; });
+  }
+
   function saveCasualHours_() {
     var status = document.getElementById('casuals-status');
     var rows = [], bad = false;
     Object.keys(casualState.dirty).forEach(function (id) {
       var v = casualState.dirty[id];
-      if (v.some(function (x) { return isNaN(x); })) bad = true;
-      rows.push({ casualId: id, hours: v });
+      if (v.hours.some(function (x) { return isNaN(x); })) bad = true;
+      rows.push({ casualId: id, hours: v.hours, approvedBy: v.approvedBy, reason: v.reason });
     });
     if (bad) { flashStatus(status, 'Hours must be numbers between 0 and 24.', 'save-status err', 6000); return Promise.resolve(false); }
     if (!rows.length) return Promise.resolve(true);
@@ -4092,12 +4126,12 @@
     var paying = w.casuals.filter(function (c) { return c.totalHours > 0; });
     document.getElementById('casuals-pay-sub').textContent = casualWeekLabel_(w.weekStart) + ' — pay each casual by eWallet to the cell number shown' +
       (w.status === 'paid' ? '. This week is marked as paid.' : '.');
-    var head = '<thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Cell number (eWallet)</th><th style="text-align:left;">Department</th><th>Hours</th><th>Rate / hr</th><th>Amount</th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Cell number (eWallet)</th><th style="text-align:left;">Department</th><th style="text-align:left;">Approved by</th><th>Hours</th><th>Rate / hr</th><th>Amount</th></tr></thead>';
     var body = paying.length ? '<tbody>' + paying.map(function (c) {
-      return '<tr><td>' + esc(c.name) + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) + '</td><td>' + casualHrs_(c.totalHours) +
+      return '<tr><td>' + esc(c.name) + (c.reason ? '<span class="sub" style="white-space:normal; max-width:340px;">' + esc(c.reason) + '</span>' : '') + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) + '</td><td style="text-align:left;">' + (c.approvedBy ? esc(c.approvedBy) : '<span style="color:var(--critical);">—</span>') + '</td><td>' + casualHrs_(c.totalHours) +
         '</td><td>' + (c.rate ? casualRand_(c.rate) : '<span style="color:var(--critical);">no rate</span>') + '</td><td>' + (c.amount === null ? '—' : casualRand_(c.amount)) + '</td></tr>';
-    }).join('') + '</tbody><tfoot><tr><td colspan="3">Total to pay</td><td>' + casualHrs_(w.totalHours) + '</td><td></td><td>' + casualRand_(w.totalAmount) + '</td></tr></tfoot>'
-      : '<tbody><tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No hours captured for this week yet.</td></tr></tbody>';
+    }).join('') + '</tbody><tfoot><tr><td colspan="4">Total to pay</td><td>' + casualHrs_(w.totalHours) + '</td><td></td><td>' + casualRand_(w.totalAmount) + '</td></tr></tfoot>'
+      : '<tbody><tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No hours captured for this week yet.</td></tr></tbody>';
     var t = document.getElementById('casuals-pay-table');
     t.className = 'data-table casual-grid';
     t.innerHTML = head + body;
@@ -4121,12 +4155,12 @@
   function downloadCasualCsv_() {
     var w = casualState.week;
     var rows = w.casuals.filter(function (c) { return c.totalHours > 0; });
-    var lines = [['Name', 'Cell number', 'Department'].concat(CASUAL_DAYS).concat(['Total hours', 'Rate per hour', 'Amount']).map(casualCsvCell_).join(',')];
+    var lines = [['Name', 'Cell number', 'Department'].concat(CASUAL_DAYS).concat(['Total hours', 'Approved by', 'Reason', 'Rate per hour', 'Amount']).map(casualCsvCell_).join(',')];
     rows.forEach(function (c) {
       lines.push([casualCsvCell_(c.name), '="' + String(c.cellNumber).replace(/\D/g, '') + '"', casualCsvCell_(c.department)]
-        .concat(c.hours.map(function (x) { return x || 0; })).concat([c.totalHours, c.rate || '', c.amount === null ? '' : c.amount]).join(','));
+        .concat(c.hours.map(function (x) { return x || 0; })).concat([c.totalHours, casualCsvCell_(c.approvedBy), casualCsvCell_(c.reason), c.rate || '', c.amount === null ? '' : c.amount]).join(','));
     });
-    lines.push(['Total', '', ''].concat(CASUAL_DAYS.map(function () { return ''; })).concat([w.totalHours, '', w.totalAmount]).join(','));
+    lines.push(['Total', '', ''].concat(CASUAL_DAYS.map(function () { return ''; })).concat([w.totalHours, '', '', '', w.totalAmount]).join(','));
     var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = casualFileBase_() + '.csv';
@@ -4144,16 +4178,16 @@
       '<div style="font-size:12px; margin-bottom:2px;">' + esc(casualGroupName_()) + ' &middot; ' + esc(casualWeekLabel_(w.weekStart)) + '</div>' +
       '<div style="font-size:10px; color:#555; margin-bottom:12px;">Week Monday to Sunday &middot; paid by eWallet to the cell number shown' + (w.status === 'paid' ? ' &middot; marked as paid' : '') + '</div>';
     var thead = '<thead><tr><th style="' + th + ' text-align:left;">Casual</th><th style="' + th + ' text-align:left;">Cell number</th><th style="' + th + ' text-align:left;">Department</th>' +
-      CASUAL_DAYS.map(function (d) { return '<th style="' + th + '">' + d + '</th>'; }).join('') + '<th style="' + th + '">Hours</th><th style="' + th + '">Rate</th><th style="' + th + '">Amount</th></tr></thead>';
+      CASUAL_DAYS.map(function (d) { return '<th style="' + th + '">' + d + '</th>'; }).join('') + '<th style="' + th + '">Hours</th><th style="' + th + ' text-align:left;">Approved by</th><th style="' + th + '">Rate</th><th style="' + th + '">Amount</th></tr></thead>';
     function rowHtml(c) {
-      return '<tr><td style="' + tdL + '">' + esc(c.name) + '</td><td style="' + tdL + '">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="' + tdL + '">' + esc(c.department) + '</td>' +
+      return '<tr><td style="' + tdL + '">' + esc(c.name) + (c.reason ? '<div style="font-size:7.5px; color:#555; font-style:italic; margin-top:2px;">' + esc(c.reason) + '</div>' : '') + '</td><td style="' + tdL + '">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="' + tdL + '">' + esc(c.department) + '</td>' +
         c.hours.map(function (x) { return '<td style="' + td + '">' + (x ? casualHrs_(x) : '') + '</td>'; }).join('') +
-        '<td style="' + td + '">' + casualHrs_(c.totalHours) + '</td><td style="' + td + '">' + (c.rate ? casualRand_(c.rate) : '') + '</td><td style="' + td + ' font-weight:700;">' + (c.amount === null ? '' : casualRand_(c.amount)) + '</td></tr>';
+        '<td style="' + td + '">' + casualHrs_(c.totalHours) + '</td><td style="' + tdL + '">' + esc(c.approvedBy || '') + '</td><td style="' + td + '">' + (c.rate ? casualRand_(c.rate) : '') + '</td><td style="' + td + ' font-weight:700;">' + (c.amount === null ? '' : casualRand_(c.amount)) + '</td></tr>';
     }
     var total = '<tr style="font-weight:700;"><td style="' + tdL + ' border-top:1px solid #999;" colspan="3">Total to pay</td>' +
       CASUAL_DAYS.map(function () { return '<td style="' + td + ' border-top:1px solid #999;"></td>'; }).join('') +
-      '<td style="' + td + ' border-top:1px solid #999;">' + casualHrs_(w.totalHours) + '</td><td style="' + td + ' border-top:1px solid #999;"></td><td style="' + td + ' border-top:1px solid #999;">' + casualRand_(w.totalAmount) + '</td></tr>';
-    var PER = 34, chunks = [];
+      '<td style="' + td + ' border-top:1px solid #999;">' + casualHrs_(w.totalHours) + '</td><td style="' + td + ' border-top:1px solid #999;"></td><td style="' + td + ' border-top:1px solid #999;"></td><td style="' + td + ' border-top:1px solid #999;">' + casualRand_(w.totalAmount) + '</td></tr>';
+    var PER = 26, chunks = [];
     for (var i = 0; i < rows.length; i += PER) chunks.push(rows.slice(i, i + PER));
     if (!chunks.length) chunks.push([]);
     return chunks.map(function (chunk, idx) {
@@ -4261,6 +4295,14 @@
   document.getElementById('casuals-save-btn').addEventListener('click', function () { saveCasualHours_(); });
   document.getElementById('casuals-submit-btn').addEventListener('click', function () {
     var status = document.getElementById('casuals-status');
+    var missing = casualMissingApproval_();
+    if (missing.length) {
+      missing.forEach(function (id) {
+        Array.prototype.forEach.call(document.querySelectorAll('#casuals-table tr[data-casual="' + id + '"] .cmeta'), function (i) { if (!i.value.trim()) i.classList.add('bad'); });
+      });
+      flashStatus(status, 'Fill in the approving manager and the reason for: ' + missing.map(function (id) { return casualState.week.casuals.filter(function (c) { return c.id === id; })[0].name; }).join(', ') + '.', 'save-status err', 9000);
+      return;
+    }
     saveCasualHours_().then(function (ok) {
       if (!ok) return;
       if (!window.confirm('Submit ' + casualWeekLabel_(casualState.weekStart) + ' for payment? Hours will be locked until the Owner reopens the week.')) return;
