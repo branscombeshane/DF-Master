@@ -1569,7 +1569,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-08.82-group-loading';
+  var FRONTEND_BUILD = '2026-10-08.83-wa-throttle';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4531,7 +4531,7 @@
   function runWhatsappSend(emps, month) {
     var sendBtn = document.getElementById('wa-send-btn'), cancelBtn = document.getElementById('wa-cancel-btn');
     var progress = document.getElementById('wa-progress');
-    var CHUNK = 25, all = [], fatal = null, i = 0;
+    var CHUNK = 10, all = [], fatal = null, i = 0;
     waSending = true; sendBtn.disabled = true; cancelBtn.disabled = true;
     function step() {
       if (i >= emps.length || fatal) return finish();
