@@ -1365,8 +1365,19 @@
           <label>Notes</label>
           <input type="text" id="vehicles-notes">
         </div>
-        <div class="field" id="vehicles-active-field" style="display:none;">
-          <label><input type="checkbox" id="vehicles-active" checked style="width:auto; margin-right:6px;">Active</label>
+        <div class="field" id="vehicles-sold-field" style="display:none;">
+          <label><input type="checkbox" id="vehicles-sold" style="width:auto; margin-right:6px;">This vehicle has been sold</label>
+          <div class="form-grid" id="vehicles-sold-details" style="display:none; margin-top:10px;">
+            <div class="field">
+              <label>Sale date</label>
+              <input type="text" id="vehicles-sold-date" placeholder="YYYY-MM-DD">
+            </div>
+            <div class="field">
+              <label>Sale price (R)</label>
+              <input type="number" step="0.01" min="0" id="vehicles-sale-price" placeholder="0.00">
+            </div>
+          </div>
+          <div class="hint" id="vehicles-sold-hint" style="display:none;">A sold vehicle leaves the active fleet (and the finance totals) but stays on record under "Show sold vehicles". Untick to put it back.</div>
         </div>
         <div class="error-text" id="vehicles-error"></div>
         <div style="display:flex; gap:10px; align-items:center;">
@@ -1383,7 +1394,7 @@
         <div class="toolbar">
           <input type="text" id="vehicles-search" placeholder="Search by license, code or VIN...">
           <select id="vehicles-type-filter"><option value="">All types</option></select>
-          <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="vehicles-show-inactive" style="width:auto;">Show sold/inactive</label>
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="vehicles-show-inactive" style="width:auto;">Show sold vehicles</label>
         </div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="vehicles-table"></table>
@@ -1586,7 +1597,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-13.92-sales-spend-replace';
+  var FRONTEND_BUILD = '2026-10-13.93-vehicle-sold';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5348,7 +5359,9 @@
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Total Finance Cost</span></div>' +
       '<div class="kpi-row hero"><span>Per month</span><span class="val">' + money(state.vehicles.totalFinanceCost) + '</span></div></div>' +
       '<div class="kpi-card"><div class="kpi-head"><span class="name">Contracts Ending Soon</span></div>' +
-      '<div class="kpi-row hero"><span>Within 3 months</span><span class="val">' + state.vehicles.endingSoonCount + '</span></div></div>';
+      '<div class="kpi-row hero"><span>Within 3 months</span><span class="val">' + state.vehicles.endingSoonCount + '</span></div></div>' +
+      (state.vehicles.soldCount ? '<div class="kpi-card"><div class="kpi-head"><span class="name">Sold Vehicles</span></div>' +
+        '<div class="kpi-row hero"><span>' + state.vehicles.soldCount + (state.vehicles.soldCount === 1 ? ' vehicle' : ' vehicles') + '</span><span class="val">' + money(state.vehicles.soldTotal) + '</span></div></div>' : '');
 
     var typeGrid = document.getElementById('vehicles-type-grid');
     typeGrid.innerHTML = '';
@@ -5392,7 +5405,7 @@
     });
 
     var table = document.getElementById('vehicles-table');
-    var head = '<thead><tr><th>Code</th><th style="text-align:left;">License</th><th style="text-align:left;">Type</th><th style="text-align:left;">VIN</th><th>Finance/mo</th><th>Term expiry</th><th>Months left</th><th style="text-align:left;">Notes</th><th></th></tr></thead>';
+    var head = '<thead><tr><th>Code</th><th style="text-align:left;">License</th><th style="text-align:left;">Type</th><th style="text-align:left;">VIN</th><th>Finance/mo</th><th>Term expiry</th><th>Months left</th>' + (showInactive ? '<th style="text-align:left;">Sold</th>' : '') + '<th style="text-align:left;">Notes</th><th></th></tr></thead>';
     var body = '<tbody>' + rows.map(function (v) {
       return '<tr class="' + (v.active ? '' : 'inactive') + '">' +
         '<td>' + esc(v.code) + '</td>' +
@@ -5402,8 +5415,10 @@
         '<td>' + (v.financeCost ? money(v.financeCost) : '—') + '</td>' +
         '<td style="text-align:left;">' + esc(v.financeTermExpiry) + '</td>' +
         '<td>' + monthsLeftLabel(v) + '</td>' +
+        (showInactive ? '<td style="text-align:left; white-space:nowrap;">' + (v.active ? '' : esc('Sold' + (v.soldDate ? ' ' + v.soldDate : '') + (v.salePrice !== null && v.salePrice !== undefined ? ' — ' + money(v.salePrice) : ''))) + '</td>' : '') +
         '<td style="text-align:left; max-width:220px; white-space:normal;">' + esc(v.notes) + '</td>' +
-        '<td><button class="btn secondary small" data-edit-id="' + esc(v.id) + '">Edit</button></td>' +
+        '<td style="white-space:nowrap;"><button class="btn secondary small" data-edit-id="' + esc(v.id) + '">Edit</button>' +
+          (v.active ? ' <button class="btn secondary small" data-sold-id="' + esc(v.id) + '">Mark sold</button>' : '') + '</td>' +
         '</tr>';
     }).join('') + '</tbody>';
     table.innerHTML = head + body;
@@ -5413,13 +5428,33 @@
         startEditVehicle(btn.getAttribute('data-edit-id'));
       });
     });
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sold-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        startEditVehicle(btn.getAttribute('data-sold-id'), { markSold: true });
+      });
+    });
   }
 
   document.getElementById('vehicles-search').addEventListener('input', renderVehicleTable);
   document.getElementById('vehicles-type-filter').addEventListener('change', renderVehicleTable);
   document.getElementById('vehicles-show-inactive').addEventListener('change', renderVehicleTable);
 
-  function startEditVehicle(id) {
+  function vehicleToday_() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function syncVehicleSoldUi_() {
+    var sold = document.getElementById('vehicles-sold').checked;
+    document.getElementById('vehicles-sold-details').style.display = sold ? '' : 'none';
+    document.getElementById('vehicles-sold-hint').style.display = sold ? '' : 'none';
+  }
+  document.getElementById('vehicles-sold').addEventListener('change', function () {
+    syncVehicleSoldUi_();
+    if (this.checked && !document.getElementById('vehicles-sold-date').value) document.getElementById('vehicles-sold-date').value = vehicleToday_();
+    if (this.checked) document.getElementById('vehicles-sale-price').focus();
+  });
+
+  function startEditVehicle(id, opts) {
     var v = state.vehicles.vehicles.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!v) return;
     document.getElementById('vehicles-form-title').textContent = 'Edit vehicle — ' + (v.license || v.code || v.type);
@@ -5434,13 +5469,18 @@
     document.getElementById('vehicles-schedule').value = v.scheduleNumber || '';
     document.getElementById('vehicles-invoice-date').value = v.invoiceDate || '';
     document.getElementById('vehicles-notes').value = v.notes || '';
-    document.getElementById('vehicles-active').checked = v.active;
-    document.getElementById('vehicles-active-field').style.display = '';
+    var isSold = !v.active || !!(opts && opts.markSold);
+    document.getElementById('vehicles-sold').checked = isSold;
+    document.getElementById('vehicles-sold-date').value = !v.active ? (v.soldDate || '') : (isSold ? vehicleToday_() : '');
+    document.getElementById('vehicles-sale-price').value = (!v.active && v.salePrice !== null && v.salePrice !== undefined) ? v.salePrice : '';
+    document.getElementById('vehicles-sold-field').style.display = '';
+    syncVehicleSoldUi_();
     document.getElementById('vehicles-save-btn').textContent = 'Update vehicle';
     document.getElementById('vehicles-cancel-btn').style.display = '';
     document.getElementById('vehicles-delete-btn').style.display = '';
     document.getElementById('vehicles-error').textContent = '';
     document.getElementById('view-vehicles').scrollIntoView({ behavior: 'smooth' });
+    if (opts && opts.markSold) document.getElementById('vehicles-sale-price').focus();
   }
 
   function resetVehicleForm() {
@@ -5456,7 +5496,11 @@
     document.getElementById('vehicles-schedule').value = '';
     document.getElementById('vehicles-invoice-date').value = '';
     document.getElementById('vehicles-notes').value = '';
-    document.getElementById('vehicles-active-field').style.display = 'none';
+    document.getElementById('vehicles-sold-field').style.display = 'none';
+    document.getElementById('vehicles-sold').checked = false;
+    document.getElementById('vehicles-sold-date').value = '';
+    document.getElementById('vehicles-sale-price').value = '';
+    syncVehicleSoldUi_();
     document.getElementById('vehicles-save-btn').textContent = 'Save vehicle';
     document.getElementById('vehicles-cancel-btn').style.display = 'none';
     document.getElementById('vehicles-delete-btn').style.display = 'none';
@@ -5472,6 +5516,8 @@
     var license = document.getElementById('vehicles-license').value.trim();
     var type = document.getElementById('vehicles-type').value.trim();
     if (!license && !type) { errEl.textContent = 'License or type is required.'; return; }
+    var soldTicked = !!id && document.getElementById('vehicles-sold').checked;
+    if (soldTicked && document.getElementById('vehicles-sale-price').value.trim() === '') { errEl.textContent = 'Enter the sale price (use 0 if it was scrapped or given away).'; document.getElementById('vehicles-sale-price').focus(); return; }
     errEl.textContent = '';
 
     var payload = {
@@ -5490,7 +5536,7 @@
     var action, extra;
     if (id) {
       action = 'updateVehicle';
-      extra = { id: id, active: document.getElementById('vehicles-active').checked };
+      extra = { id: id, sold: soldTicked, soldDate: document.getElementById('vehicles-sold-date').value.trim(), salePrice: document.getElementById('vehicles-sale-price').value.trim() };
     } else {
       action = 'addVehicle';
       extra = {};
@@ -5516,7 +5562,7 @@
     if (!id) return;
     var v = state.vehicles.vehicles.filter(function (x) { return String(x.id) === String(id); })[0];
     var label = v ? (v.license || v.code || v.type) : 'this vehicle';
-    if (!window.confirm('Delete ' + label + '? This permanently removes it from the fleet register and cannot be undone.\n\nIf it might come back, consider unticking Active instead of deleting.')) return;
+    if (!window.confirm('Delete ' + label + '? This permanently removes it from the fleet register and cannot be undone.\n\nIf it might come back, consider marking it as sold instead of deleting.')) return;
 
     var errEl = document.getElementById('vehicles-error');
     var status = document.getElementById('vehicles-save-status');
