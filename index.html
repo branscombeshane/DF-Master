@@ -1586,7 +1586,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-13.91-recon-cert-month';
+  var FRONTEND_BUILD = '2026-10-13.92-sales-spend-replace';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6418,17 +6418,18 @@
             for (var i = 0; i < parsed.order.length; i += BATCH) {
               batches.push(parsed.order.slice(i, i + BATCH).map(function (n) { return { name: n, total: Math.round(parsed.totals[n] * 100) / 100 }; }));
             }
-            var imported = 0, last = null, chain = Promise.resolve();
-            batches.forEach(function (customers) {
+            var imported = 0, replaced = 0, last = null, chain = Promise.resolve();
+            batches.forEach(function (customers, bi) {
               chain = chain.then(function () {
                 return call('POST', url, {
                   customers: customers, week_start: weekStart, week_start_detected: !!parsed.detectedWeekStart,
-                  transactions_processed: parsed.transactionsProcessed, filename: file.name || null, rep_id: repId
-                }).then(function (r) { imported += r.imported; last = r; });
+                  transactions_processed: parsed.transactionsProcessed, filename: file.name || null, rep_id: repId,
+                  replace_week: bi === 0   // the first batch clears this rep's old figures for the week
+                }).then(function (r) { imported += r.imported; replaced += (r.replaced || 0); last = r; });
               });
             });
             chain.then(function () {
-              resolve({ imported: imported, transactions_processed: parsed.transactionsProcessed, week_start: last.week_start, week_start_detected: !!parsed.detectedWeekStart });
+              resolve({ imported: imported, replaced: replaced, transactions_processed: parsed.transactionsProcessed, week_start: last.week_start, week_start_detected: !!parsed.detectedWeekStart });
             }, reject);
           };
           reader.readAsText(file);
@@ -7767,7 +7768,10 @@
             Upload the "Sales By Sales Rep Report" CSV export as-is. The week and each
             customer's total are read straight from the file (Customer and Total Selling
             columns) — transactions for the same customer are added together automatically.
-            Re-uploading for the same week corrects it rather than duplicating.
+            Re-uploading a week <strong>replaces</strong> what was there for that week
+            (customers no longer in the file are removed too). If a file was uploaded with
+            the wrong dates, delete that week under "Uploaded weeks" below, then upload the
+            corrected file.
           </p>
           <form id="spend-upload-form" class="form-grid">
             ${isAdmin ? `
@@ -7789,6 +7793,11 @@
         </div>
 
         <div class="view-header">
+          <h2 style="font-size:1.05rem">Uploaded weeks</h2>
+        </div>
+        <div id="spend-uploads-table" class="table-wrap" style="margin-bottom:20px"><div class="empty-state">Loading…</div></div>
+
+        <div class="view-header">
           <h2 style="font-size:1.05rem">Customer spend by week</h2>
           ${isAdmin ? `<select id="comparison-rep-filter"><option value="">All reps</option>${repOptions}</select>` : ''}
         </div>
@@ -7806,14 +7815,52 @@
         try {
           const result = await api.upload('/api/wholesale/spend/upload', fd);
           resultEl.textContent = `Imported ${result.imported} customer(s) from ${result.transactions_processed} transaction row(s) for the week of ${fmtDate(result.week_start)}` +
-            (result.week_start_detected ? '.' : ' (couldn\'t find a date range in the file, so today\'s week was used).');
+            (result.week_start_detected ? '.' : ' (couldn\'t find a date range in the file, so today\'s week was used).') +
+            (result.replaced ? ` Replaced the ${result.replaced} line(s) uploaded earlier for that week.` : '');
           toast('Spend uploaded.');
-          await loadComparisonTable();
+          await Promise.all([loadComparisonTable(), loadUploadsTable()]);
         } catch (err) {
           resultEl.textContent = '';
           toast(err.message, true);
         }
       });
+
+      async function loadUploadsTable() {
+        const wrap = $('#spend-uploads-table');
+        if (!wrap) return;
+        const { uploads } = await api.get('/api/wholesale/spend/uploads');
+        if (!isViewActive('wholesale', 'spend')) return;
+        if (!uploads.length) { wrap.innerHTML = '<div class="empty-state">Nothing uploaded yet.</div>'; return; }
+        wrap.innerHTML = `
+          <table>
+            <thead><tr>${isAdmin ? '<th>Rep</th>' : ''}<th>Week</th><th>Customers</th><th>Total</th><th>File</th><th></th></tr></thead>
+            <tbody>
+              ${uploads.map((u, i) => `
+                <tr>
+                  ${isAdmin ? `<td>${escapeHtml(u.rep_name || '')}</td>` : ''}
+                  <td>${fmtDate(u.week_start)} – ${fmtDate(u.week_end)}</td>
+                  <td>${u.customers}</td>
+                  <td>${fmtCurrency(u.total)}</td>
+                  <td>${escapeHtml(u.source_filename || '')}</td>
+                  <td><button class="btn btn-secondary btn-sm" data-delete-upload="${i}">Delete week</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+        wrap.querySelectorAll('[data-delete-upload]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const u = uploads[Number(btn.getAttribute('data-delete-upload'))];
+            const who = isAdmin && u.rep_name ? ` for ${u.rep_name}` : '';
+            if (!(await confirmModal(`Delete the spend uploaded${who} for ${fmtDate(u.week_start)} – ${fmtDate(u.week_end)} (${u.customers} customers)? You can then upload the corrected file.`))) return;
+            try {
+              const qs = new URLSearchParams({ week_start: u.week_start });
+              if (isAdmin && u.rep_id) qs.set('rep_id', u.rep_id);
+              await api.delete('/api/wholesale/spend?' + qs.toString());
+              toast('Week deleted.');
+              await Promise.all([loadComparisonTable(), loadUploadsTable()]);
+            } catch (err) { toast(err.message, true); }
+          });
+        });
+      }
 
       async function loadComparisonTable() {
         const repFilter = $('#comparison-rep-filter');
@@ -7847,7 +7894,7 @@
       const repFilterEl = $('#comparison-rep-filter');
       if (repFilterEl) repFilterEl.addEventListener('change', loadComparisonTable);
 
-      await loadComparisonTable();
+      await Promise.all([loadComparisonTable(), loadUploadsTable()]);
     }
 
     function mondayOfToday() {
