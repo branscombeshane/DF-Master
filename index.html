@@ -1597,7 +1597,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-15.96-hr-unlinked-depts';
+  var FRONTEND_BUILD = '2026-10-16.97-no-answer-followup';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6765,6 +6765,53 @@
       });
     }
 
+    // Follow-up logging: either "spoke to them" (note required, next reminder in 5 working days)
+    // or "no answer" (note optional, retry the next working day). Resolves { outcome, note } or null.
+    function followUpModal() {
+      return new Promise((resolve) => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop';
+        backdrop.style.zIndex = '200';
+        backdrop.innerHTML = `
+          <div class="modal" style="max-width:420px">
+            <h3 style="margin-top:0">Log this follow-up</h3>
+            <form data-role="fu-form">
+              <div class="form-field">
+                <label><input type="radio" name="fu-outcome" value="contacted" checked style="width:auto"> Spoke to them <span style="color:var(--text-muted)">(next reminder in 5 working days)</span></label>
+                <label style="margin-top:8px"><input type="radio" name="fu-outcome" value="no_answer" style="width:auto"> No answer <span style="color:var(--text-muted)">(try again next working day)</span></label>
+              </div>
+              <div class="form-field">
+                <input type="text" data-role="fu-note" placeholder="What happened? What's next?" />
+              </div>
+              <div class="modal-actions">
+                <div></div>
+                <div class="modal-actions-right">
+                  <button type="button" class="btn btn-secondary" data-action="cancel">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Log it</button>
+                </div>
+              </div>
+            </form>
+          </div>`;
+        SR.appendChild(backdrop);
+        const note = backdrop.querySelector('[data-role=fu-note]');
+        const radios = backdrop.querySelectorAll('input[name=fu-outcome]');
+        const outcome = () => backdrop.querySelector('input[name=fu-outcome]:checked').value;
+        radios.forEach(r => r.addEventListener('change', () => {
+          note.placeholder = outcome() === 'no_answer' ? 'Optional note (e.g. phone off, left voicemail)' : "What happened? What's next?";
+        }));
+        note.focus();
+        const cleanup = (result) => { backdrop.remove(); resolve(result); };
+        backdrop.querySelector('[data-action=cancel]').addEventListener('click', () => cleanup(null));
+        backdrop.querySelector('[data-role=fu-form]').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const val = note.value.trim();
+          if (outcome() === 'contacted' && !val) { toast('Add a short note about what happened.', true); return; }
+          cleanup({ outcome: outcome(), note: val });
+        });
+        backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cleanup(null); });
+      });
+    }
+
     // A quick, focused form for logging a client contact — date, phone or in-person,
     // and notes — used from the Wholesale Clients tab. Stacks above the client's
     // edit modal the same way confirmModal/promptModal do, so it doesn't clobber it.
@@ -7359,11 +7406,11 @@
         badge.addEventListener('click', async (e) => {
           e.stopPropagation();
           const id = Number(badge.closest('.deal-card').dataset.id);
-          const note = await promptModal('Log this follow-up', { placeholder: "What happened? What's next?", minLength: 1 });
-          if (!note) return;
+          const res = await followUpModal();
+          if (!res) return;
           try {
-            await api.post(`/api/deals/${id}/follow-up`, { note });
-            toast('Follow-up logged — next reminder in 5 working days.');
+            await api.post(`/api/deals/${id}/follow-up`, { note: res.note, outcome: res.outcome });
+            toast(res.outcome === 'no_answer' ? 'No answer logged — retry reminder set for the next working day.' : 'Follow-up logged — next reminder in 5 working days.');
             loadKanban(division);
           } catch (err) {
             toast(err.message, true);
@@ -7375,7 +7422,7 @@
     function dealCardHtml(d, stages) {
       const stageOptions = stages.map(s => `<option value="${s}" ${s === d.stage ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('');
       const followUpBadge = d.next_follow_up_date
-        ? `<div class="follow-up-badge ${d.next_follow_up_date === today() ? 'due-today' : ''}" title="Click to log this follow-up">📞 Follow up: ${fmtDate(d.next_follow_up_date)}</div>`
+        ? `<div class="follow-up-badge ${d.next_follow_up_date === today() ? 'due-today' : ''}" title="Click to log this follow-up">📞 Follow up: ${fmtDate(d.next_follow_up_date)}${Number(d.follow_up_attempts) > 0 ? ` · ${Number(d.follow_up_attempts)} no answer` : ''}</div>`
         : '';
       return `
         <div class="deal-card" data-id="${d.id}">
