@@ -1597,7 +1597,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-13.94-followup-badge';
+  var FRONTEND_BUILD = '2026-10-15.96-hr-unlinked-depts';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6187,6 +6187,24 @@
         return '<label><input type="checkbox" value="' + esc(d.name) + '" class="user-department-cb"' + (checked ? ' checked' : '') + ' style="width:auto;">' + esc(d.name) + '</label>';
       }).join('');
     });
+    // Departments in the same company group that aren't linked to any real
+    // company (never linked, or linked to a company that was since deleted
+    // and re-added) would otherwise be impossible to pick here — list them
+    // separately so the owner can still scope an HR account to them.
+    var groupOfTicked = (state.allCompanies.filter(function (c) { return c.id === companyIds[0]; })[0] || {}).companyGroup;
+    var knownIds = {};
+    state.allCompanies.forEach(function (c) { knownIds[c.id] = true; });
+    var orphanDepts = state.allDepartments.filter(function (d) {
+      return d.companyGroup === groupOfTicked && (!d.companyId || !knownIds[d.companyId]) && !seenNames[d.name];
+    });
+    if (orphanDepts.length) {
+      anyDepts = true;
+      html += '<div style="font-size:12px; font-weight:600; margin:8px 0 2px; width:100%;">Not linked to a company (link them in Settings &gt; Employee departments)</div>';
+      html += orphanDepts.map(function (d) {
+        var checked = checkedNames && checkedNames.indexOf(d.name) !== -1;
+        return '<label><input type="checkbox" value="' + esc(d.name) + '" class="user-department-cb"' + (checked ? ' checked' : '') + ' style="width:auto;">' + esc(d.name) + '</label>';
+      }).join('');
+    }
     if (!anyDepts) {
       grid.innerHTML = '';
       hint.style.display = '';
@@ -6242,9 +6260,10 @@
       };
       var scopeHtml;
       if (u.role === 'hr') {
-        var companyLabels = (u.companyIds || []).map(function (id) { return companyNameById[id] || id; });
+        var missingCo = (u.companyIds || []).some(function (id) { return !companyNameById[id]; });
+        var companyLabels = (u.companyIds || []).map(function (id) { return companyNameById[id] || '\u26a0 company no longer exists'; });
         var companyLine = companyLabels.length ? companyLabels.join(', ') : '(no company set)';
-        scopeHtml = '<div style="font-size:12px; margin-bottom:4px;">' + esc(companyLine) + '</div>' + chips(u.departments);
+        scopeHtml = '<div style="font-size:12px; margin-bottom:4px;' + ((missingCo || !(u.companyIds || []).length) ? ' color:#b42318; font-weight:600;' : '') + '">' + esc(companyLine) + (missingCo ? ' \u2014 click Manage and re-tick the company' : '') + '</div>' + chips(u.departments);
       } else {
         scopeHtml = chips(u.entities);
       }
