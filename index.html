@@ -1597,7 +1597,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-20.100-spend-tiles';
+  var FRONTEND_BUILD = '2026-10-21.102-tile-detail-stage-entries';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7035,6 +7035,87 @@
     function activityTrendUrl(repId) { return '/api/dashboard/rep-weekly-trend' + (repId ? '?rep_id=' + repId : ''); }
     function checkinsTrendUrl(repId) { return '/api/dashboard/client-checkins-trend' + (repId ? '?rep_id=' + repId : ''); }
 
+    // The deals behind a dashboard pipeline tile: stage breakdown + every open deal, and the
+    // deals won this month. Click a deal to open it.
+    async function openPipelineDetail(div) {
+      let d;
+      try { d = await api.get('/api/dashboard/pipeline-detail?division=' + encodeURIComponent(div), { fresh: true }); }
+      catch (err) { toast(err.message, true); return; }
+      const isTrays = div === 'trays';
+      const label = isTrays ? 'Trays' : 'Wholesale';
+      const val = v => isTrays ? `${Number(v || 0).toLocaleString('en-ZA')} people` : fmtCurrency(v) + '/mo';
+      const daysSince = ts => { if (!ts) return null; const t = new Date(String(ts).replace(' ', 'T')); if (isNaN(t)) return null; return Math.max(0, Math.floor((Date.now() - t.getTime()) / 86400000)); };
+      const showRep = state.user.role === 'admin' || !isTrays;
+      const stageIdx = s => { const i = d.stages.indexOf(s); return i === -1 ? 99 : i; };
+      let tab = 'open', stageFilter = '', repFilter = '';
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.style.zIndex = '200';
+      SR.appendChild(backdrop);
+      const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+      const onKey = (e) => { if (e.key === 'Escape') close(); };
+      document.addEventListener('keydown', onKey);
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+      function paint() {
+        const list = tab === 'open' ? d.open : d.won;
+        const reps = Array.from(new Set(d.open.concat(d.won).map(x => x.rep_name).filter(Boolean))).sort();
+        let rows = list.filter(x => (!stageFilter || x.stage === stageFilter) && (!repFilter || x.rep_name === repFilter));
+        rows = rows.slice().sort((p, q) => tab === 'open' ? (stageIdx(p.stage) - stageIdx(q.stage) || q.estimated_monthly_value - p.estimated_monthly_value) : String(q.updated_at || '').localeCompare(String(p.updated_at || '')));
+        const sumV = l => l.reduce((s, x) => s + x.estimated_monthly_value, 0);
+        const stageChips = d.stages.map(s => {
+          const n = d.open.filter(x => x.stage === s && (!repFilter || x.rep_name === repFilter)).length;
+          if (!n && !['Order Loaded', 'Proposal Rejected', 'First Order Loaded', 'Lost / Rejected'].includes(s)) return `<button type="button" class="spend-chip info" data-stage="${escapeHtml(s)}" style="border:none; opacity:0.55">${escapeHtml(s)} · 0</button>`;
+          if (!n) return '';
+          return `<button type="button" class="spend-chip ${stageFilter === s ? 'good' : 'info'}" data-stage="${escapeHtml(s)}" style="border:none">${escapeHtml(s)} · ${n}</button>`;
+        }).join(' ');
+        const overdue = x => x.next_follow_up_date && x.next_follow_up_date < d.today;
+        backdrop.innerHTML = `
+          <div class="modal" style="max-width:1000px" role="dialog" aria-label="${label} pipeline">
+            <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            <h3>${label} pipeline</h3>
+            <div class="subtabs" style="margin-bottom:10px">
+              <button type="button" class="subtab-btn ${tab === 'open' ? 'active' : ''}" data-tab="open">Open deals (${d.open.length})</button>
+              <button type="button" class="subtab-btn ${tab === 'won' ? 'active' : ''}" data-tab="won">Won this month (${d.won.length})</button>
+            </div>
+            <p style="font-size:13px; color:var(--text-secondary); margin:0 0 10px">
+              ${tab === 'open'
+                ? `${rows.length} open deal${rows.length === 1 ? '' : 's'}${stageFilter || repFilter ? ' (filtered)' : ''} · ${val(sumV(rows))} estimated.${stageFilter ? '' : ' Click a stage to filter.'}`
+                : `${rows.length} deal${rows.length === 1 ? '' : 's'} won this month · ${val(sumV(rows))}.`}
+            </p>
+            ${tab === 'open' ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px">${stageChips}</div>` : ''}
+            ${showRep && reps.length > 1 ? `<div class="filters-bar"><select data-role="rep-filter"><option value="">All reps</option>${reps.map(r => `<option ${r === repFilter ? 'selected' : ''}>${escapeHtml(r)}</option>`).join('')}</select></div>` : ''}
+            ${rows.length ? `<div class="table-wrap" style="max-height:55vh; overflow:auto"><table class="detail-table">
+              <thead><tr><th>Company</th><th>Stage</th><th>Type</th>${showRep ? '<th>Rep</th>' : ''}<th class="num">${isTrays ? 'People' : 'Est. / month'}</th><th>${tab === 'open' ? 'Next follow-up' : 'Won on'}</th><th class="num">${tab === 'open' ? 'Days since update' : ''}</th></tr></thead>
+              <tbody>${rows.map(x => {
+                const ds = daysSince(x.updated_at);
+                return `<tr class="clickable" data-deal="${x.id}">
+                  <td><strong>${escapeHtml(x.company_name)}</strong>${x.contact_name ? `<div style="color:var(--text-muted); font-size:11px">${escapeHtml(x.contact_name)}</div>` : ''}</td>
+                  <td>${escapeHtml(x.stage)}</td>
+                  <td><span class="badge ${x.deal_type === 'growth' ? 'badge-growth' : 'badge-new'}">${x.deal_type === 'growth' ? 'Growth' : 'New biz'}</span></td>
+                  ${showRep ? `<td>${escapeHtml(x.rep_name || '')}</td>` : ''}
+                  <td class="num">${isTrays ? Number(x.estimated_monthly_value || 0).toLocaleString('en-ZA') : fmtCurrency(x.estimated_monthly_value)}</td>
+                  <td>${tab === 'open'
+                    ? (x.next_follow_up_date ? `<span class="${overdue(x) ? 'delta-down' : ''}">${fmtDate(x.next_follow_up_date)}${overdue(x) ? ' (overdue)' : ''}${x.follow_up_attempts > 0 ? ` · ${x.follow_up_attempts} no answer` : ''}</span>` : '—')
+                    : fmtDate(String(x.updated_at || '').slice(0, 10))}</td>
+                  <td class="num">${tab === 'open' ? (ds === null ? '—' : `<span class="${ds >= 14 ? 'delta-down' : ''}">${ds}</span>`) : ''}</td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table></div>` : '<div class="empty-state">Nothing to show.</div>'}
+            <div class="modal-actions" style="margin-top:12px"><div style="font-size:12px; color:var(--text-muted)">Click a deal to open it.</div>
+              <div class="modal-actions-right"><button type="button" class="btn btn-secondary" data-role="goto">Open ${label} pipeline</button></div></div>
+          </div>`;
+        backdrop.querySelector('.modal-close').addEventListener('click', close);
+        backdrop.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { tab = b.getAttribute('data-tab'); stageFilter = ''; paint(); }));
+        backdrop.querySelectorAll('[data-stage]').forEach(b => b.addEventListener('click', () => { const s = b.getAttribute('data-stage'); stageFilter = stageFilter === s ? '' : s; paint(); }));
+        const rf = backdrop.querySelector('[data-role=rep-filter]');
+        if (rf) rf.addEventListener('change', () => { repFilter = rf.value; paint(); });
+        backdrop.querySelector('[data-role=goto]').addEventListener('click', () => { close(); navigateTo(div); });
+        backdrop.querySelectorAll('tr[data-deal]').forEach(tr => tr.addEventListener('click', () => { close(); openDealModal(div, Number(tr.getAttribute('data-deal'))); }));
+      }
+      paint();
+    }
+
     async function renderDashboard() {
       const root = $('#view-root');
       // Ask for the charts' data in the same breath as the summary so everything
@@ -7060,10 +7141,11 @@
           ? `${(won ? won.won_value : 0).toLocaleString('en-ZA')} people`
           : fmtCurrency(won ? won.won_value : 0);
         return `
-          <div class="card stat-card">
+          <div class="card stat-card clickable" role="button" tabindex="0" data-pipeline-tile="${div}" title="Click to see these deals">
             <div class="stat-label">${div === 'trays' ? 'Trays' : 'Wholesale'} Pipeline</div>
             <div class="stat-value">${openCount} Deal${openCount === 1 ? '' : 's'} Open</div>
             <div class="stat-sub">${won ? won.won_count : 0} won this month (${wonValueDisplay})</div>
+            <div class="stat-more">View deals ›</div>
           </div>`;
       }).join('');
 
@@ -7114,6 +7196,11 @@
         <div id="checkins-trend-grid" class="trend-grid"></div>
       `;
 
+      $$('#view-root .stat-card[data-pipeline-tile]').forEach(el => {
+        const open = () => openPipelineDetail(el.getAttribute('data-pipeline-tile'));
+        el.addEventListener('click', open);
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      });
       $$('#view-root tr[data-deal-id]').forEach(row => {
         row.addEventListener('click', () => openDealModal('trays', Number(row.dataset.dealId)));
       });
@@ -7325,6 +7412,57 @@
       await loadKanban(division);
     }
 
+    // The deals behind a "New into <stage>" tile, with This week / This month / All-time tabs.
+    async function openStageEntryDetail(division, stage) {
+      let d;
+      try { d = await api.get('/api/deals/stage-entry-detail?division=' + encodeURIComponent(division) + '&stage=' + encodeURIComponent(stage), { fresh: true }); }
+      catch (err) { toast(err.message, true); return; }
+      const isTrays = division === 'trays';
+      const showRep = state.user.role === 'admin' || !isTrays;
+      let tab = 'week';
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.style.zIndex = '200';
+      SR.appendChild(backdrop);
+      const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+      const onKey = (e) => { if (e.key === 'Escape') close(); };
+      document.addEventListener('keydown', onKey);
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+      const counts = { week: d.entries.filter(x => x.in_week).length, month: d.entries.filter(x => x.in_month).length, all: d.entries.length };
+      const val = v => isTrays ? Number(v || 0).toLocaleString('en-ZA') : fmtCurrency(v);
+      function paint() {
+        const rows = d.entries.filter(x => tab === 'all' || (tab === 'week' ? x.in_week : x.in_month));
+        const label = { week: 'this week', month: 'this month', all: 'all-time' }[tab];
+        backdrop.innerHTML = `
+          <div class="modal" style="max-width:980px" role="dialog" aria-label="New into ${escapeHtml(stage)}">
+            <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            <h3>New into "${escapeHtml(stage)}"</h3>
+            <div class="subtabs" style="margin-bottom:10px">
+              <button type="button" class="subtab-btn ${tab === 'week' ? 'active' : ''}" data-tab="week">This week (${counts.week})</button>
+              <button type="button" class="subtab-btn ${tab === 'month' ? 'active' : ''}" data-tab="month">This month (${counts.month})</button>
+              <button type="button" class="subtab-btn ${tab === 'all' ? 'active' : ''}" data-tab="all">All-time (${counts.all})</button>
+            </div>
+            <p style="font-size:13px; color:var(--text-secondary); margin:0 0 10px">${rows.length} deal${rows.length === 1 ? '' : 's'} moved into ${escapeHtml(stage)} ${label}. Newest first.</p>
+            ${rows.length ? `<div class="table-wrap" style="max-height:60vh; overflow:auto"><table class="detail-table">
+              <thead><tr><th>Date</th><th>Company</th>${showRep ? '<th>Rep</th>' : ''}<th>Came from</th><th>Now</th><th class="num">${isTrays ? 'People' : 'Est. / month'}</th></tr></thead>
+              <tbody>${rows.map(x => `<tr class="clickable" data-deal="${x.deal_id}">
+                <td>${fmtDate(String(x.changed_at || '').slice(0, 10))}</td>
+                <td><strong>${escapeHtml(x.company_name)}</strong></td>
+                ${showRep ? `<td>${escapeHtml(x.rep_name || '')}</td>` : ''}
+                <td>${x.from_stage ? escapeHtml(x.from_stage) : '<span style="color:var(--text-muted)">New deal</span>'}</td>
+                <td>${escapeHtml(x.current_stage)}${x.status === 'won' ? ' <span class="badge badge-won">Won</span>' : (x.status === 'lost' ? ' <span class="badge badge-lost">Lost</span>' : '')}</td>
+                <td class="num">${val(x.estimated_monthly_value)}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>` : '<div class="empty-state">Nothing in this period.</div>'}
+            <div class="modal-actions" style="margin-top:12px"><div style="font-size:12px; color:var(--text-muted)">Click a deal to open it.</div></div>
+          </div>`;
+        backdrop.querySelector('.modal-close').addEventListener('click', close);
+        backdrop.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { tab = b.getAttribute('data-tab'); paint(); }));
+        backdrop.querySelectorAll('tr[data-deal]').forEach(tr => tr.addEventListener('click', () => { close(); openDealModal(division, Number(tr.getAttribute('data-deal'))); }));
+      }
+      paint();
+    }
+
     async function loadStageStats(division) {
       const tracked = TRACKED_ENTRY_STAGES[division];
       if (!tracked) return;
@@ -7336,12 +7474,18 @@
         el.innerHTML = tracked.map(stage => {
           const s = stats[stage] || { week: 0, month: 0, all_time: 0 };
           return `
-            <div class="card stat-card">
+            <div class="card stat-card clickable" role="button" tabindex="0" data-entry-stage="${escapeHtml(stage)}" title="Click to see these deals">
               <div class="stat-label">New into "${escapeHtml(stage)}"</div>
               <div class="stat-value">${s.week}</div>
               <div class="stat-sub">this week · ${s.month} this month · ${s.all_time} all-time</div>
+              <div class="stat-more">View deals ›</div>
             </div>`;
         }).join('');
+        $$('.stat-card[data-entry-stage]', el).forEach(card => {
+          const open = () => openStageEntryDetail(division, card.getAttribute('data-entry-stage'));
+          card.addEventListener('click', open);
+          card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+        });
       } catch (err) {
         if (division === 'trays' ? !isViewActive('trays') : !isViewActive('wholesale', 'pipeline')) return;
         el.innerHTML = `<div class="empty-state">Couldn't load stage stats: ${escapeHtml(err.message)}</div>`;
