@@ -229,6 +229,8 @@
     background: color-mix(in srgb, color-mix(in srgb, var(--page) 62%, #808080 38%) 82%, transparent);
   }
   .group-loading[hidden] { display: none; }
+  #click-loading-dismiss[hidden] { display: none; }
+  .click-loading { z-index: 10000; background: color-mix(in srgb, color-mix(in srgb, var(--page) 62%, #808080 38%) 55%, transparent); }
   .group-loading .payroll-loading-inner { position: absolute; top: 36vh; left: 50%; transform: translateX(-50%); margin: 0; }
   .payroll-loading-inner {
     position: sticky; top: 36vh; display: flex; flex-direction: column; align-items: center;
@@ -669,6 +671,15 @@
 <!-- ==================== COMPANY GROUP TILE PICKER ==================== -->
 <div class="group-loading" id="group-loading" hidden role="status" aria-live="polite">
   <div class="payroll-loading-inner"><div class="payroll-loading-spinner"></div><div id="group-loading-text">Loading…</div></div>
+</div>
+
+<!-- Click-loading window: shown while any click-triggered request is running (see busyBegin_ in the script). -->
+<div class="group-loading click-loading" id="click-loading" hidden role="status" aria-live="polite">
+  <div class="payroll-loading-inner">
+    <div class="payroll-loading-spinner"></div>
+    <div id="click-loading-text">Loading…</div>
+    <button type="button" class="btn secondary small" id="click-loading-dismiss" hidden>Still waiting — hide this</button>
+  </div>
 </div>
 
 <div id="group-picker-screen">
@@ -1597,7 +1608,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-21.102-tile-detail-stage-entries';
+  var FRONTEND_BUILD = '2026-10-22.103-click-loading';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1713,6 +1724,83 @@
     if (spinner) spinner.remove();
   }
 
+  // ================= Click-loading window =================
+  // Every click (or change / Enter) that sets off a request gets a loading window, so it is
+  // always obvious something is happening. Requests that start by themselves (background
+  // refreshes, polling) never show it: a call only counts as click-driven if it starts within
+  // CLICK_WINDOW_MS of the user's last interaction, or while / just after a click-driven call
+  // is still running (so a "save, then reload the list" chain stays under one window).
+  // It appears after SHOW_DELAY_MS (so instant answers don't flicker) and stays at least
+  // MIN_VISIBLE_MS once shown. After 12 s a "hide this" button appears in case a request hangs.
+  var CLICK_WINDOW_MS = 2000, SHOW_DELAY_MS = 220, MIN_VISIBLE_MS = 350, CHAIN_GRACE_MS = 1200;
+  var busy = { count: 0, lastInteraction: 0, lastEnd: 0, active: false, showTimer: null, hintTimer: null, shownAt: 0, hideTimer: null, dismissed: false, saving: false };
+  ['click', 'change', 'keydown'].forEach(function (evt) {
+    document.addEventListener(evt, function (e) {
+      if (evt === 'keydown' && e.key !== 'Enter') return;
+      busy.lastInteraction = Date.now();
+    }, true);
+  });
+  function busyOwnCoverVisible_() {
+    var g = document.getElementById('group-loading');
+    if (g && !g.hidden) return true;
+    var p = document.querySelector('.payroll-loading:not([hidden])');
+    return !!p;
+  }
+  function busyShow_() {
+    busy.showTimer = null;
+    if (busy.count <= 0 || busy.dismissed || busyOwnCoverVisible_()) return;
+    var el = document.getElementById('click-loading');
+    if (!el) return;
+    document.getElementById('click-loading-text').textContent = busy.saving ? 'Saving…' : 'Loading…';
+    document.getElementById('click-loading-dismiss').hidden = true;
+    el.hidden = false;
+    busy.shownAt = Date.now();
+    clearTimeout(busy.hintTimer);
+    busy.hintTimer = setTimeout(function () { var b = document.getElementById('click-loading-dismiss'); if (b) b.hidden = false; }, 12000);
+  }
+  function busyHide_() {
+    busy.hideTimer = null;
+    if (busy.count > 0) return;
+    clearTimeout(busy.hintTimer);
+    var el = document.getElementById('click-loading');
+    if (el) el.hidden = true;
+    busy.active = false; busy.dismissed = false; busy.saving = false;
+  }
+  function busyBegin_(action, params) {
+    var now = Date.now();
+    var chained = busy.active || (now - busy.lastEnd < CHAIN_GRACE_MS && busy.lastEnd > busy.lastInteraction);
+    var clickDriven = (now - busy.lastInteraction < CLICK_WINDOW_MS) || chained;
+    if (!clickDriven) return null;
+    busy.count++;
+    busy.active = true;
+    var method = String((params && params.m) || '').toUpperCase();
+    if (/^(save|add|update|delete|remove|set|submit|import|upload|run|finalize|mark|send|reset|merge|create|reopen|approve|unlock|change|apply)/i.test(action) || (action === 'salesApi' && method && method !== 'GET')) busy.saving = true;
+    if (busy.count === 1) {
+      clearTimeout(busy.hideTimer); busy.hideTimer = null;
+      var el = document.getElementById('click-loading');
+      if (el && !el.hidden) { /* already showing from the previous step of a chain */ }
+      else { clearTimeout(busy.showTimer); busy.showTimer = setTimeout(busyShow_, SHOW_DELAY_MS); }
+    }
+    return true;
+  }
+  function busyEnd_(token) {
+    if (!token) return;
+    busy.count = Math.max(0, busy.count - 1);
+    busy.lastEnd = Date.now();
+    if (busy.count > 0) return;
+    clearTimeout(busy.showTimer); busy.showTimer = null;
+    var el = document.getElementById('click-loading');
+    if (el && !el.hidden) {
+      var left = Math.max(0, MIN_VISIBLE_MS - (Date.now() - busy.shownAt));
+      // hold briefly so a chained follow-up call keeps the same window instead of flashing
+      busy.hideTimer = setTimeout(busyHide_, left + 150);
+    } else { busy.active = false; busy.saving = false; }
+  }
+  document.getElementById('click-loading-dismiss').addEventListener('click', function () {
+    busy.dismissed = true;
+    document.getElementById('click-loading').hidden = true;
+  });
+
   // ================= API =================
   function callApi(action, params) {
     params = params || {};
@@ -1729,6 +1817,7 @@
       (qs ? '&' + qs : '') + '&_=' + Date.now();
     var loadingBtn = pendingLoadingButton;
     if (loadingBtn) beginButtonLoading_(loadingBtn);
+    var busyToken = busyBegin_(action, params);
     return fetch(url, { method: 'GET', cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (res) {
@@ -1739,6 +1828,7 @@
       })
       .finally(function () {
         if (loadingBtn) endButtonLoading_(loadingBtn);
+        busyEnd_(busyToken);
       });
   }
 
@@ -6885,6 +6975,8 @@
     function buildShell() {
       var host = document.getElementById('sales-host');
       SR = host.attachShadow({ mode: 'open' });
+      // 'change' doesn't cross the shadow boundary, so tell the click-loading window about it here
+      ['change', 'click', 'submit'].forEach(function (evt) { SR.addEventListener(evt, function () { busy.lastInteraction = Date.now(); }, true); });
       SR.innerHTML = '<style>' + SALES_CSS + '</style>' + SALES_SHELL;
       $('#modal-close').addEventListener('click', closeModal);
       $('#modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop') closeModal(); });
