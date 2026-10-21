@@ -448,6 +448,23 @@
   table.data-table tr.inactive td { opacity: 0.45; }
   /* Casuals hours grid */
   table.casual-grid td, table.casual-grid th { padding: 6px 6px; }
+  .rc-box { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 16px 18px; }
+  .rc-box > .rc-title { font-size: 14px; font-weight: 700; margin: 0 0 2px; }
+  .rc-box > .rc-lead { font-size: 12px; color: var(--text-secondary); margin: 0 0 12px; }
+  .rc-group { border-left: 4px solid var(--rc, var(--warning)); background: color-mix(in srgb, var(--rc, var(--warning)) 8%, transparent); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .rc-group.sev-error { --rc: var(--critical); }
+  .rc-group.sev-action { --rc: var(--warning); }
+  .rc-group.sev-check { --rc: var(--brand); }
+  .rc-group.sev-info { --rc: var(--text-muted); }
+  .rc-head { display: flex; gap: 12px; align-items: flex-start; }
+  .rc-count { flex: 0 0 auto; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px; background: var(--rc); color: #fff; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+  .rc-head .rc-h { font-weight: 700; font-size: 13px; display: block; }
+  .rc-head .rc-fix { font-size: 12px; color: var(--text-secondary); display: block; margin-top: 2px; line-height: 1.45; }
+  .rc-co { margin: 10px 0 0 42px; }
+  .rc-co .rc-coname { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .rc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .rc-chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); white-space: nowrap; }
+  .rc-box ul.rc-notes { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--text-secondary); }
   table.casual-grid td.name-cell { white-space: normal; min-width: 170px; }
   table.casual-grid .sub { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; }
   table.casual-grid input.hrs {
@@ -1628,7 +1645,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.104-casual-weeks-worked';
+  var FRONTEND_BUILD = '2026-10-22.105-recon-warnings-layout';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5116,6 +5133,47 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
   }
 
+  // The "Check before relying on these files" box: issues grouped by type, most serious first,
+  // each with a one-line fix and the employees affected listed per company.
+  var RECON_ISSUE_INFO_ = {
+    noCountry: { title: 'Passport country missing or not recognised', fix: 'SARS will reject these certificates. On the Roster, set the passport country (for example Zimbabwe) for each person below.' },
+    noTaxRef: { title: 'No income tax reference number', fix: 'SARS asks for a valid 10-digit income tax number on every IRP5 up to R600 000. Add it on the Roster where you have it. The file still imports without it.' },
+    congo: { title: 'Passport country "Congo" is ambiguous', fix: 'Sent to SARS as COD (Democratic Republic of the Congo). If any of these people are from the Republic of Congo, change their country on the Roster to "Republic of Congo".' },
+    longStreet: { title: 'Street name was shortened', fix: 'SARS allows 26 characters, so the street name was cut to fit. No action needed unless it matters.' }
+  };
+  function reconChecksHtml_(res, files) {
+    var multi = files.length > 1;
+    var order = ['noCountry', 'noTaxRef', 'congo', 'longStreet'], sev = { noCountry: 'error', noTaxRef: 'action', congo: 'check', longStreet: 'info' };
+    var byKind = {}, setup = [], general = [];
+    files.forEach(function (f) {
+      if (f.issues) {
+        f.issues.forEach(function (it) { (byKind[it.kind] = byKind[it.kind] || []).push({ company: f.companyName, names: it.names }); });
+        (f.otherWarnings || []).forEach(function (w) { setup.push({ company: f.companyName, text: w }); });
+      } else {
+        (f.warnings || []).forEach(function (w) { setup.push({ company: f.companyName, text: w }); });   // older backend: plain lines
+      }
+    });
+    (res.warnings || []).forEach(function (w) { if (!/^This company group pays employees through/.test(w)) general.push(w); });
+    var html = '';
+    order.forEach(function (k) {
+      var rows = byKind[k]; if (!rows) return;
+      var total = rows.reduce(function (n, r) { return n + r.names.length; }, 0), info = RECON_ISSUE_INFO_[k];
+      html += '<div class="rc-group sev-' + sev[k] + '"><div class="rc-head"><span class="rc-count">' + total + '</span><div><span class="rc-h">' + esc(info.title) + '</span><span class="rc-fix">' + esc(info.fix) + '</span></div></div>' +
+        rows.map(function (r) {
+          return '<div class="rc-co">' + (multi ? '<span class="rc-coname">' + esc(r.company) + ' &middot; ' + r.names.length + '</span>' : '') +
+            '<div class="rc-chips">' + r.names.map(function (n) { return '<span class="rc-chip">' + esc(n) + '</span>'; }).join('') + '</div></div>';
+        }).join('') + '</div>';
+    });
+    if (setup.length || general.length) {
+      html += '<div class="rc-group sev-action"><div class="rc-head"><span class="rc-count">' + (setup.length + general.length) + '</span><div><span class="rc-h">Company set-up</span><span class="rc-fix">Fix these in Settings &gt; Companies before a real SARS submission.</span></div></div>' +
+        '<ul class="rc-notes" style="margin:8px 0 0 42px; padding-left:16px;">' + general.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
+        setup.map(function (r) { return '<li>' + (multi ? '<strong>' + esc(r.company) + ':</strong> ' : '') + esc(r.text) + '</li>'; }).join('') + '</ul></div>';
+    }
+    if (!html) return '';
+    return '<div class="rc-box"><div class="rc-title">Check before relying on ' + (multi ? 'these files' : 'this file') + '</div>' +
+      '<p class="rc-lead">' + (multi ? files.length + ' files were generated, one for each registered company. ' : '') + 'Most serious first.</p>' + html + '</div>';
+  }
+
   document.getElementById('recon-download-btn').addEventListener('click', function () {
     var status = document.getElementById('recon-status');
     var warningsBox = document.getElementById('recon-warnings');
@@ -5144,21 +5202,12 @@
           : totalEmployees + ' certificate' + (totalEmployees === 1 ? '' : 's') + ' — downloaded',
         'save-status ok', 5000);
 
-      var warningLines = (res.warnings || []).slice();
-      files.forEach(function (f) {
-        (f.warnings || []).forEach(function (w) {
-          warningLines.push(files.length > 1 ? f.companyName + ': ' + w : w);
-        });
-      });
       var btns = files.length > 1
         ? '<div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">' + files.map(function (f, i) {
             return '<button class="btn secondary small" data-recon-file="' + i + '">Download ' + esc(f.companyName) + '</button>';
           }).join('') + '</div>'
         : '';
-      warningsBox.innerHTML = btns + (warningLines.length
-        ? '<div class="hint" style="color:var(--text-secondary);"><strong>Check before relying on ' + (files.length > 1 ? 'these files' : 'this file') + ':</strong><br>' +
-          warningLines.map(function (w) { return '• ' + esc(w); }).join('<br>') + '</div>'
-        : '');
+      warningsBox.innerHTML = btns + reconChecksHtml_(res, files);
       Array.prototype.forEach.call(warningsBox.querySelectorAll('[data-recon-file]'), function (b) {
         b.addEventListener('click', function () { downloadReconFile_(files[Number(b.getAttribute('data-recon-file'))]); });
       });
