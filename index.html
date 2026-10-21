@@ -460,6 +460,14 @@
   table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
   .pending-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
   .link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); font-weight: 600; text-decoration: underline; text-decoration-color: var(--brand); text-underline-offset: 3px; cursor: pointer; }
+  .wk-chip { display:inline-block; white-space:nowrap; margin-top:3px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; border:0; cursor:pointer; background:var(--gridline); color:var(--text-secondary); font-family:inherit; }
+  .wk-chip.near { background: rgba(250,178,25,0.18); color: var(--warning); }
+  .wk-chip.perm { background: rgba(12,163,12,0.15); color: var(--good); }
+  .wk-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+  .casual-tiles .kpi-card { cursor:pointer; transition: box-shadow .12s, transform .12s; text-align:left; font-family:inherit; color:inherit; width:100%; }
+  .casual-tiles .kpi-card:hover, .casual-tiles .kpi-card:focus-visible { box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: translateY(-1px); outline:none; }
+  .casual-tiles .kpi-card .big { font-size:26px; font-weight:700; font-variant-numeric: tabular-nums; }
+  .casual-tiles .kpi-card .cap { font-size:12px; color:var(--text-secondary); margin-top:2px; }
   table.casual-grid td.paid-cell { text-align: left; white-space: nowrap; min-width: 130px; }
   table.casual-grid .paid-chip { color: var(--good); font-weight: 700; }
   table.casual-grid label.paid-tick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -738,6 +746,17 @@
       </div>
     </div>
     <div id="payslip-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="casual-weeks-modal">
+  <div class="modal-card wide" style="max-width:900px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px;">
+      <h2 id="casual-weeks-title" style="margin:0;">Weeks worked</h2>
+      <button class="btn secondary small" id="casual-weeks-close">Close</button>
+    </div>
+    <p class="sub" id="casual-weeks-sub" style="margin-bottom:12px;"></p>
+    <div id="casual-weeks-body" style="overflow-x:auto;"></div>
   </div>
 </div>
 
@@ -1263,6 +1282,7 @@
             <span class="save-status" id="casuals-status"></span>
           </div>
           <div id="casuals-banner"></div>
+          <div id="casuals-tiles"></div>
           <div id="casuals-pending-note"></div>
           <div style="overflow-x:auto;">
             <table class="data-table" id="casuals-table"></table>
@@ -1608,7 +1628,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.103-click-loading';
+  var FRONTEND_BUILD = '2026-10-22.104-casual-weeks-worked';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4161,7 +4181,7 @@
       body = '<tbody>' + w.casuals.map(function (c) {
         var live = casualRowLive_(c);
         return '<tr data-casual="' + esc(c.id) + '"' + (c.active ? '' : ' class="inactive"') + '>' +
-          '<td class="name-cell"><strong>' + esc(c.name) + '</strong><span class="sub">' + esc(casualPhone_(c.cellNumber)) + ' &middot; ' + esc(c.department) + (c.active ? '' : ' &middot; inactive') + '</span></td>' +
+          '<td class="name-cell"><strong>' + esc(c.name) + '</strong><span class="sub">' + esc(casualPhone_(c.cellNumber)) + ' &middot; ' + esc(c.department) + (c.active ? '' : ' &middot; inactive') + '</span>' + casualWeeksChip_(c) + '</td>' +
           days.map(function (d, i) {
             return '<td class="' + (d.weekend ? 'weekend' : '') + '" style="text-align:center;"><input class="hrs' + (casualState.dirty[c.id] ? ' dirty' : '') + '" type="text" inputmode="decimal" data-day="' + i + '" value="' + casualHrs_(live.hours[i]) + '"' +
               (c.locked ? ' disabled title="' + (c.status === 'paid' ? 'Paid — locked' : 'Submitted — locked') + '"' : '') + ' aria-label="' + esc(c.name + ' ' + d.name) + ' hours"></td>';
@@ -4208,6 +4228,7 @@
       ? casualDirtyCount_() + ' casual' + (casualDirtyCount_() === 1 ? '' : 's') + ' with unsaved hours.'
       : (isOwner ? '' : (w.status === 'open' ? 'Save your hours, then Submit week when the week is complete.' : ''));
 
+    renderCasualTiles_();
     renderCasualPay_();
     renderCasualPeople_();
     renderCasualRates_();
@@ -4418,6 +4439,90 @@
   }
 
   // ----- people list + add/edit form -----
+  // ----- weeks worked / "consider for permanent" -----
+  function casualPermWeeks_() { return (casualState.week && casualState.week.permanentWeeks) || 3; }
+  function casualWeeksFlag_(c) {
+    var n = Number(c.weeksWorked) || 0, t = casualPermWeeks_();
+    if (!c.active) return '';
+    if (n >= t) return 'perm';
+    if (n === t - 1 && n > 0) return 'near';
+    return '';
+  }
+  function casualWeeksChip_(c, plain) {
+    var n = Number(c.weeksWorked) || 0, f = casualWeeksFlag_(c);
+    var label = n + (n === 1 ? ' week' : ' weeks') + (f === 'perm' ? ' · consider permanent' : (f === 'near' ? ' · 1 to go' : ''));
+    return '<button type="button" class="wk-chip ' + f + '" data-casual-weeks="' + esc(c.id) + '" title="Weeks worked — click for the week-by-week detail">' + esc(label) + '</button>';
+  }
+  function renderCasualTiles_() {
+    var el = document.getElementById('casuals-tiles'); if (!el) return;
+    var w = casualState.week, t = casualPermWeeks_();
+    var active = w.allCasuals.filter(function (c) { return c.active; });
+    var consider = active.filter(function (c) { return casualWeeksFlag_(c) === 'perm'; });
+    var near = active.filter(function (c) { return casualWeeksFlag_(c) === 'near'; });
+    var tile = function (key, name, count, cap, color) {
+      return '<button type="button" class="kpi-card" data-casual-tile="' + key + '" style="--dot:' + color + ';"><div class="kpi-head"><span class="name">' + name + '</span></div>' +
+        '<div class="big">' + count + '</div><div class="cap">' + cap + '</div></button>';
+    };
+    el.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' +
+      tile('perm', 'Consider for permanent', consider.length, consider.length ? 'Worked ' + t + '+ weeks — click to see who' : 'Nobody has reached ' + t + ' weeks yet', 'var(--good)') +
+      tile('near', 'Nearly there', near.length, 'On ' + (t - 1) + ' weeks — one more and they qualify', 'var(--warning)') +
+      tile('all', 'All active casuals', active.length, 'Weeks worked per casual', 'var(--brand)') + '</div>';
+    Array.prototype.forEach.call(el.querySelectorAll('[data-casual-tile]'), function (b) {
+      b.addEventListener('click', function () { openCasualWeeksModal_(b.getAttribute('data-casual-tile')); });
+    });
+  }
+  function openCasualWeeksModal_(mode, id) {
+    var w = casualState.week, t = casualPermWeeks_();
+    var all = w.allCasuals, rows, title, sub;
+    var fmt = function (iso) { return iso ? casualParse_(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'; };
+    if (mode === 'one') {
+      var c = all.filter(function (x) { return x.id === id; })[0]; if (!c) return;
+      var f = casualWeeksFlag_(c);
+      title = c.name;
+      sub = esc(c.department) + ' · ' + (Number(c.weeksWorked) || 0) + ' week' + (c.weeksWorked === 1 ? '' : 's') + ' worked' +
+        (f === 'perm' ? ' — worked ' + t + ' or more weeks, so consider for a permanent position.' : (f === 'near' ? ' — one more week and they qualify to be considered for a permanent position.' : '.'));
+      var wl = c.weekList || [];
+      document.getElementById('casual-weeks-body').innerHTML = wl.length
+        ? '<table class="data-table"><thead><tr><th style="text-align:left;">#</th><th style="text-align:left;">Week</th><th>Hours</th></tr></thead><tbody>' +
+          wl.map(function (x, i) { return '<tr><td style="text-align:left;">' + (wl.length - i) + '</td><td style="text-align:left;">' + esc(casualWeekLabel_(x.weekStart)) + '</td><td>' + casualHrs_(x.hours) + '</td></tr>'; }).join('') +
+          '</tbody><tfoot><tr><td></td><td style="text-align:left;">Total</td><td>' + casualHrs_(c.totalHoursEver) + '</td></tr></tfoot></table>'
+        : '<p style="color:var(--text-muted);">No hours recorded yet.</p>';
+    } else {
+      var list = all.filter(function (c) {
+        if (mode === 'all') return c.active;
+        return c.active && casualWeeksFlag_(c) === mode;
+      }).sort(function (a, b) { return (b.weeksWorked - a.weeksWorked) || (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1); });
+      title = mode === 'perm' ? 'Consider for permanent' : (mode === 'near' ? 'Nearly there' : 'Weeks worked — all active casuals');
+      sub = mode === 'perm' ? 'Casuals who have worked ' + t + ' or more weeks. Deactivate a casual under Manage casuals once they are hired permanently.'
+        : (mode === 'near' ? 'Casuals on ' + (t - 1) + ' weeks — one more week and they qualify.' : 'A week counts when the casual has any hours recorded. It does not have to be consecutive.');
+      document.getElementById('casual-weeks-body').innerHTML = list.length
+        ? '<table class="data-table"><thead><tr><th style="text-align:left;">Casual</th><th style="text-align:left;">Department</th><th>Weeks</th><th style="text-align:left;">First week</th><th style="text-align:left;">Last week</th><th>Total hrs</th><th>Avg / wk</th><th></th></tr></thead><tbody>' +
+          list.map(function (c) {
+            var f = casualWeeksFlag_(c), n = Number(c.weeksWorked) || 0;
+            return '<tr><td style="text-align:left;"><strong>' + esc(c.name) + '</strong>' + (f === 'perm' ? '<br><span class="badge good">Consider permanent</span>' : (f === 'near' ? '<br><span class="status-badge in-progress">1 to go</span>' : '')) + '</td><td style="text-align:left;">' + esc(c.department) + '</td><td><strong>' + n + '</strong></td>' +
+              '<td style="text-align:left;">' + fmt(c.firstWeek) + '</td><td style="text-align:left;">' + fmt(c.lastWeek) + '</td><td>' + casualHrs_(c.totalHoursEver) + '</td><td>' + (n ? casualHrs_(Math.round(c.totalHoursEver / n * 10) / 10) : '') + '</td>' +
+              '<td style="text-align:left;"><button class="btn secondary small" data-casual-weeks-one="' + esc(c.id) + '">Weeks</button></td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<p style="color:var(--text-muted);">Nobody here yet.</p>';
+    }
+    document.getElementById('casual-weeks-title').textContent = title;
+    document.getElementById('casual-weeks-sub').innerHTML = sub;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-casual-weeks-one]'), function (b) {
+      b.addEventListener('click', function () { openCasualWeeksModal_('one', b.getAttribute('data-casual-weeks-one')); });
+    });
+    document.getElementById('casual-weeks-modal').classList.add('active');
+  }
+  (function () {
+    var m = document.getElementById('casual-weeks-modal');
+    document.getElementById('casual-weeks-close').addEventListener('click', function () { m.classList.remove('active'); });
+    m.addEventListener('click', function (e) { if (e.target === m) m.classList.remove('active'); });
+    // chips in the hours grid and the people table (delegated — those tables re-render)
+    document.addEventListener('click', function (e) {
+      var chip = e.target.closest && e.target.closest('[data-casual-weeks]');
+      if (chip && casualState.week) openCasualWeeksModal_('one', chip.getAttribute('data-casual-weeks'));
+    });
+  })();
+
   function renderCasualPeople_() {
     var w = casualState.week;
     var sel = document.getElementById('casual-dept');
@@ -4429,11 +4534,11 @@
     }
     sel.innerHTML = depts.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') || '<option value="">No departments available</option>';
     if (current && depts.indexOf(current) !== -1) sel.value = current;
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Cell number</th><th style="text-align:left;">Department</th><th style="text-align:left;">Status</th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Cell number</th><th style="text-align:left;">Department</th><th style="text-align:left;">Weeks worked</th><th style="text-align:left;">Status</th><th></th></tr></thead>';
     var body = w.allCasuals.length ? '<tbody>' + w.allCasuals.map(function (c) {
       return '<tr' + (c.active ? '' : ' class="inactive"') + '><td>' + esc(c.name) + '</td><td style="text-align:left;">' + esc(casualPhone_(c.cellNumber)) + '</td><td style="text-align:left;">' + esc(c.department) +
-        '</td><td style="text-align:left;">' + (c.active ? 'Active' : 'Inactive') + '</td><td><button class="btn secondary small" data-casual-edit="' + esc(c.id) + '">Edit</button></td></tr>';
-    }).join('') + '</tbody>' : '<tbody><tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No casuals added yet.</td></tr></tbody>';
+        '</td><td style="text-align:left;">' + (c.weeksWorked ? casualWeeksChip_(c, true) : '<span style="color:var(--text-muted);">0</span>') + '</td><td style="text-align:left;">' + (c.active ? 'Active' : 'Inactive') + '</td><td><button class="btn secondary small" data-casual-edit="' + esc(c.id) + '">Edit</button></td></tr>';
+    }).join('') + '</tbody>' : '<tbody><tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No casuals added yet.</td></tr></tbody>';
     document.getElementById('casuals-people-table').innerHTML = head + body;
     Array.prototype.forEach.call(document.querySelectorAll('[data-casual-edit]'), function (b) {
       b.addEventListener('click', function () { startEditCasual_(b.getAttribute('data-casual-edit')); });
