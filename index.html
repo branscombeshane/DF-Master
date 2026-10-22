@@ -1225,7 +1225,7 @@
                   <span class="save-status" id="adj-ded-status"></span>
                 </div>
               </div>
-              <div id="adj-give-advance-form" style="display:none; margin-top:4px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--card); width:260px; max-width:100%;">
+              <div id="adj-give-advance-form" style="display:none; margin-top:4px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--card); width:300px; max-width:100%;">
                 <div class="field" style="margin-bottom:12px;">
                   <label>Amount (R)</label>
                   <input type="number" step="0.01" min="0" id="adj-advance-amount">
@@ -1234,6 +1234,15 @@
                   <label>Note (optional)</label>
                   <input type="text" id="adj-advance-note">
                 </div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>Repay per month (R, optional)</label>
+                  <input type="number" step="0.01" min="0" id="adj-advance-monthly" placeholder="Leave blank to repay by hand">
+                </div>
+                <div class="field" style="margin-bottom:12px;" id="adj-advance-start-field">
+                  <label>First repayment in</label>
+                  <input type="month" id="adj-advance-start">
+                </div>
+                <div class="ded-preview" id="adj-advance-preview" style="display:none;"></div>
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                   <button class="btn" id="adj-advance-confirm-btn">Confirm</button>
                   <button class="btn secondary" id="adj-advance-cancel-btn">Cancel</button>
@@ -1266,6 +1275,18 @@
           <div id="emp201-detail" style="display:none; overflow-x:auto; margin-top:12px;">
             <table class="data-table" id="payslips-table"></table>
           </div>
+        </div>
+
+        <!-- 1b. Payments report -->
+        <div class="panel" id="reports-panel-payments">
+          <h2>Payments report</h2>
+          <p class="panel-sub" id="payreport-sub"></p>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="payreport-company" style="display:none; max-width:280px;" title="Payments are made from one company's bank account"></select>
+            <button class="btn secondary" id="payreport-pdf-btn">Download PDF</button>
+            <span class="save-status" id="payreport-status"></span>
+          </div>
+          <div class="hint" style="margin-top:10px;">Net pay for the month, split by how each person is paid (EFT with bank details, Cash and Cheque with a signature line). Casuals are paid weekly by eWallet and are not included.</div>
         </div>
 
         <!-- 2. Payslips -->
@@ -1703,7 +1724,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.106-deduction-accounts';
+  var FRONTEND_BUILD = '2026-10-22.108-payments-report';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1720,7 +1741,7 @@
     getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
-    giveAdvance: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
+    giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
@@ -3433,10 +3454,16 @@
     var balWrap = document.getElementById('advance-balances-wrap');
     if (pa.advanceBalances && pa.advanceBalances.length) {
       balWrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Outstanding advances</h3>' +
-        '<div class="dept-grid">' + pa.advanceBalances.map(function (b) {
-          return '<div class="dept-card"><div class="dept-name">' + esc(b.name) + '</div>' +
-            '<div class="dept-row"><span>Balance owed</span><span>' + money(b.balance) + '</span></div></div>';
+        '<div class="ded-grid">' + pa.advanceBalances.map(function (b) {
+          var sched = dedAccounts_().filter(function (a) { return a.employeeId === b.employeeId && a.kind === 'advance' && a.status === 'active'; })[0];
+          return '<button type="button" class="ded-card" style="border-left-color:var(--brand);" data-adv-open="' + esc(b.employeeId) + '">' +
+            '<div class="d-name">' + esc(b.name) + '</div>' +
+            '<div class="d-sub" style="margin:0 0 6px;">Advance owed' + (sched ? ' &middot; ' + dedRand_(sched.monthly) + ' a month' : ' &middot; no repayment schedule') + '</div>' +
+            '<div class="d-bal">' + dedRand_(b.balance) + '</div></button>';
         }).join('') + '</div>';
+      Array.prototype.forEach.call(balWrap.querySelectorAll('[data-adv-open]'), function (btn) {
+        btn.addEventListener('click', function () { openAdvanceModal_(btn.getAttribute('data-adv-open')); });
+      });
     } else {
       balWrap.innerHTML = '';
     }
@@ -3629,11 +3656,14 @@
     document.getElementById('adj-give-advance-form').style.display = 'none';
     document.getElementById('adj-advance-amount').value = '';
     document.getElementById('adj-advance-note').value = '';
+    document.getElementById('adj-advance-monthly').value = '';
+    document.getElementById('adj-advance-preview').style.display = 'none';
     flashStatus(document.getElementById('adj-advance-status'), '', 'save-status', 0);
   }
 
   document.getElementById('adj-give-advance-btn').addEventListener('click', function () {
     document.getElementById('adj-give-advance-form').style.display = 'block';
+    document.getElementById('adj-advance-start').value = state.selectedMonth;
     document.getElementById('adj-advance-amount').focus();
   });
   document.getElementById('adj-advance-cancel-btn').addEventListener('click', hideGiveAdvanceForm);
@@ -3645,8 +3675,12 @@
     var statusEl = document.getElementById('adj-advance-status');
     if (!amount || amount <= 0) { flashStatus(statusEl, 'Enter an amount greater than 0.', 'save-status err', 4000); return; }
     var note = document.getElementById('adj-advance-note').value.trim();
+    var monthlyRep = Number(document.getElementById('adj-advance-monthly').value) || 0;
+    if (monthlyRep < 0 || monthlyRep > amount) { flashStatus(statusEl, 'The monthly repayment cannot be more than the advance.', 'save-status err', 4000); return; }
     flashStatus(statusEl, 'Recording…', 'save-status', 0);
-    callApi('giveAdvance', { employeeId: emp.id, amount: amount, note: note, month: state.selectedMonth }).then(function (res) {
+    var advParams = { employeeId: emp.id, amount: amount, note: note, month: state.selectedMonth };
+    if (monthlyRep > 0) { advParams.monthly = monthlyRep; advParams.startMonth = document.getElementById('adj-advance-start').value || state.selectedMonth; }
+    callApi('giveAdvance', advParams).then(function (res) {
       if (res.ok) {
         state.payrollAdjustments = res.payrollAdjustments;
         renderAdjustments();
@@ -3679,14 +3713,14 @@
     var card = function (a) {
       return '<button type="button" class="ded-card ' + esc(a.status) + '" data-ded-open="' + esc(a.id) + '">' +
         '<div class="d-name">' + esc(a.name) + (a.employeeActive ? '' : ' <span class="status-badge locked" style="margin-left:4px;">Left</span>') + '</div>' +
-        '<div class="d-what">' + esc(a.description) + '</div>' +
+        '<div class="d-what">' + (a.kind === 'advance' ? '<span class="status-badge in-progress" style="margin-right:4px;">Advance</span>' : '') + esc(a.description) + '</div>' +
         (a.status === 'active'
           ? '<div class="d-bal">' + dedRand_(a.balance) + '</div><div class="d-sub">owed &middot; ' + dedRand_(a.monthly) + ' a month &middot; ' + a.instalmentsLeft + (a.instalmentsLeft === 1 ? ' payment' : ' payments') + ' left</div>'
           : '<div class="d-bal">' + dedRand_(a.total) + '</div><div class="d-sub">' + esc(dedStatusLabel_(a)) + (a.status === 'closed' ? ' with ' + dedRand_(a.balance) + ' unpaid' : ' &mdash; fully repaid') + '</div>') +
         '</button>';
     };
-    wrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Deduction accounts</h3>' +
-      (active.length ? '<div class="ded-grid">' + active.map(card).join('') + '</div>' : '<p class="hint" style="margin:0 0 12px;">No active deduction accounts.</p>') +
+    wrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Deduction accounts &amp; advance repayments</h3>' +
+      (active.length ? '<div class="ded-grid">' + active.map(card).join('') + '</div>' : '<p class="hint" style="margin:0 0 12px;">Nothing scheduled right now.</p>') +
       (other.length ? '<p style="margin:-6px 0 12px;"><button type="button" class="btn secondary small" id="ded-toggle-all">' + (dedShowAll ? 'Hide' : 'Show') + ' settled &amp; stopped (' + other.length + ')</button></p>' +
         (dedShowAll ? '<div class="ded-grid">' + other.map(card).join('') + '</div>' : '') : '');
     Array.prototype.forEach.call(wrap.querySelectorAll('[data-ded-open]'), function (b) {
@@ -3698,12 +3732,49 @@
     if (dedOpenId && document.getElementById('ded-modal').classList.contains('active')) openDedModal_(dedOpenId, true);
   }
 
+  // Click an Outstanding advance: its repayment schedule, or a form to put it on one.
+  function openAdvanceModal_(employeeId) {
+    var b = ((state.payrollAdjustments && state.payrollAdjustments.advanceBalances) || []).filter(function (x) { return x.employeeId === employeeId; })[0];
+    var sched = dedAccounts_().filter(function (a) { return a.employeeId === employeeId && a.kind === 'advance' && a.status === 'active'; })[0];
+    if (sched) { openDedModal_(sched.id); return; }
+    if (!b) return;
+    dedOpenId = null;
+    document.getElementById('ded-modal-title').textContent = b.name + ' — Advance';
+    document.getElementById('ded-modal-sub').innerHTML = '<span class="status-badge in-progress">No repayment schedule</span> &nbsp;Repayments are currently added by hand under Add for this month &rarr; Advance repayment.';
+    document.getElementById('ded-modal-body').innerHTML = '<div class="ded-stats"><div><div class="k">Balance owed</div><div class="v">' + dedRand_(b.balance) + '</div></div></div>' +
+      '<h3 style="margin:0 0 6px; font-size:14px;">Schedule repayments</h3>' +
+      '<p class="hint" style="margin:0 0 10px; font-size:13px;">Takes the amount off their net pay automatically each month until the advance is repaid.</p>' +
+      '<div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">' +
+        '<div class="field" style="margin:0;"><label>Repay per month (R)</label><input type="number" step="0.01" min="0" id="adv-sched-monthly" style="width:160px;"></div>' +
+        '<div class="field" style="margin:0;"><label>First repayment in</label><input type="month" id="adv-sched-start" value="' + esc(state.selectedMonth) + '"></div>' +
+      '</div><div class="ded-preview" id="adv-sched-preview" style="display:none; margin-top:12px;"></div>' +
+      '<div style="margin-top:12px;"><button class="btn" id="adv-sched-save">Start repayments</button></div><div class="hint" id="ded-modal-status" style="margin-top:10px;"></div>';
+    document.getElementById('ded-modal').classList.add('active');
+    var upd = function () {
+      var m = Number(document.getElementById('adv-sched-monthly').value), box = document.getElementById('adv-sched-preview');
+      if (!(m > 0)) { box.style.display = 'none'; return; }
+      box.style.display = 'block'; box.textContent = m > b.balance ? 'More than the balance owed.' : dedSchedule_(b.balance, m, document.getElementById('adv-sched-start').value || state.selectedMonth);
+    };
+    document.getElementById('adv-sched-monthly').addEventListener('input', upd);
+    document.getElementById('adv-sched-start').addEventListener('input', upd);
+    document.getElementById('adv-sched-save').addEventListener('click', function () {
+      var m = Number(document.getElementById('adv-sched-monthly').value), st = document.getElementById('ded-modal-status');
+      if (!(m > 0)) { st.textContent = 'Enter the monthly repayment.'; st.style.color = 'var(--critical)'; return; }
+      callApi('scheduleAdvanceRepayments', { employeeId: employeeId, monthly: m, startMonth: document.getElementById('adv-sched-start').value || state.selectedMonth, month: state.selectedMonth }).then(function (res) {
+        if (res.ok) {
+          state.payrollAdjustments = res.payrollAdjustments; state.monthLocked = !!res.monthLocked; renderAdjustments();
+          document.getElementById('ded-modal').classList.remove('active');
+        } else { st.textContent = res.error || 'Could not save.'; st.style.color = 'var(--critical)'; }
+      }).catch(function () { st.textContent = 'Network error — nothing was changed.'; st.style.color = 'var(--critical)'; });
+    });
+  }
+
   function openDedModal_(id, keepScroll) {
     var a = dedAccounts_().filter(function (x) { return x.id === id; })[0];
     var modal = document.getElementById('ded-modal');
     if (!a) { modal.classList.remove('active'); dedOpenId = null; return; }
     dedOpenId = id;
-    document.getElementById('ded-modal-title').textContent = a.name + ' — ' + a.description;
+    document.getElementById('ded-modal-title').textContent = a.name + ' — ' + (a.kind === 'advance' ? 'Advance repayments' : a.description);
     document.getElementById('ded-modal-sub').innerHTML = '<span class="status-badge ' + (a.status === 'active' ? 'in-progress' : (a.status === 'settled' ? 'finalized' : 'not-started')) + '">' + esc(dedStatusLabel_(a)) + '</span>' +
       (a.startMonth ? ' &nbsp;First deduction ' + esc(monthLabel(a.startMonth)) : '') + (a.note ? ' &middot; ' + esc(a.note) : '') +
       (a.status === 'closed' && a.closedNote ? ' &middot; Stopped: ' + esc(a.closedNote) : '') +
@@ -3792,6 +3863,14 @@
     document.getElementById('adj-ded-preview').style.display = 'none';
     flashStatus(document.getElementById('adj-ded-status'), '', 'save-status', 0);
   }
+  function dedSchedule_(total, monthly, start) {
+    var n = Math.ceil(total / monthly - 1e-9), last = Math.round((total - monthly * (n - 1)) * 100) / 100;
+    var first = start;
+    if (start === state.selectedMonth && state.monthLocked) first = dedMonthAdd_(start, 1);
+    return dedRand_(monthly) + ' a month for ' + n + (n === 1 ? ' month' : ' months') + (n > 1 && last !== monthly ? ' (last one ' + dedRand_(last) + ')' : '') +
+      ', from ' + monthLabel(first) + ' to ' + monthLabel(dedMonthAdd_(first, n - 1)) + '.' +
+      (first !== start ? ' Payroll for ' + monthLabel(start) + ' has already been run, so it starts the following month.' : '');
+  }
   function dedPreview_() {
     var total = Number(document.getElementById('adj-ded-total').value), monthly = Number(document.getElementById('adj-ded-monthly').value);
     var start = document.getElementById('adj-ded-start').value || state.selectedMonth;
@@ -3808,6 +3887,18 @@
   }
   ['adj-ded-total', 'adj-ded-monthly', 'adj-ded-start'].forEach(function (id) {
     document.getElementById(id).addEventListener('input', dedPreview_);
+  });
+  function advPreview_() {
+    var amount = Number(document.getElementById('adj-advance-amount').value), monthly = Number(document.getElementById('adj-advance-monthly').value);
+    var start = document.getElementById('adj-advance-start').value || state.selectedMonth;
+    var box = document.getElementById('adj-advance-preview');
+    if (!(amount > 0) || !(monthly > 0)) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    if (monthly > amount) { box.textContent = 'The monthly repayment is more than the advance.'; return; }
+    box.textContent = dedSchedule_(amount, monthly, start);
+  }
+  ['adj-advance-amount', 'adj-advance-monthly', 'adj-advance-start'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', advPreview_);
   });
   document.getElementById('adj-ded-account-btn').addEventListener('click', function () {
     document.getElementById('adj-ded-form').style.display = 'block';
@@ -4039,6 +4130,7 @@
       (pr.hasRun ? ' — figures below are as of the last time payroll was run for this month.' : ' — payroll has not been run for this month yet.');
     document.getElementById('emp201-taxyear-label').textContent = pr.taxYear || '';
     refreshReconCompanyPicker_();
+    refreshPayReportPicker_();
 
     // EMP201 is filed per registered company (Daily Fruit JHB, Pyroca, Daily
     // Fruit Veg...), so the figures below follow the company picked in the
@@ -4274,6 +4366,147 @@
         btn.disabled = false;
         btn.textContent = original;
       });
+  });
+
+
+  // ================= PAYMENTS REPORT (PDF) =================
+  // Who to pay, how much and where, for a month payroll has been run for.
+  // Built from payrollRun.payslips (net pay per person + pay method + bank
+  // details), one section per company -- each company pays from its own bank
+  // account -- split into EFT / Cash / Cheque. Reuses downloadPagesAsPdf.
+  var payCompany = 'all';
+  function refreshPayReportPicker_() {
+    var pr = state.payrollRun; if (!pr) return;
+    var sub = document.getElementById('payreport-sub');
+    var sel = document.getElementById('payreport-company');
+    sub.textContent = monthLabel(state.selectedMonth) + (pr.hasRun ? ' — ' + pr.payslips.length + ' employee' + (pr.payslips.length === 1 ? '' : 's') + ' on the payroll run.' : ' — payroll has not been run for this month yet; run it first.');
+    var companies = pr.emp201ByCompany || [];
+    if (companies.length > 1) {
+      if (payCompany !== 'all' && !companies.some(function (c) { return (c.companyId || '__none') === payCompany; })) payCompany = 'all';
+      sel.innerHTML = '<option value="all">All companies (each on its own pages)</option>' + companies.map(function (c) {
+        return '<option value="' + esc(c.companyId || '__none') + '">' + esc(c.companyName || '(No company)') + '</option>';
+      }).join('');
+      sel.value = payCompany; sel.style.display = '';
+    } else { payCompany = 'all'; sel.style.display = 'none'; }
+  }
+  document.getElementById('payreport-company').addEventListener('change', function () { payCompany = this.value; });
+
+  function payMethodKind_(m) {
+    m = String(m || '').toLowerCase();
+    return m.indexOf('cash') !== -1 ? 'cash' : m.indexOf('cheque') !== -1 || m.indexOf('check') !== -1 ? 'cheque' : 'eft';
+  }
+
+  function buildPaymentsPdfHtml_(pr, companyEntry) {
+    var cid = companyEntry.companyId || '';
+    var coName = cid ? (companyEntry.companyName || '') : '';
+    var list = pr.payslips.filter(function (ps) { return (ps.companyId || '') === cid; });
+    var nothing = list.filter(function (ps) { return !(ps.net > 0); });
+    list = list.filter(function (ps) { return ps.net > 0; });
+    var sections = [
+      { kind: 'eft', label: 'EFT / Bank Transfer' },
+      { kind: 'cash', label: 'Cash' },
+      { kind: 'cheque', label: 'Cheque' }
+    ].map(function (sec) {
+      sec.rows = list.filter(function (ps) { return payMethodKind_(ps.payMethod) === sec.kind; })
+        .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+      sec.total = sec.rows.reduce(function (t, r) { return t + r.net; }, 0);
+      return sec;
+    }).filter(function (sec) { return sec.rows.length; });
+    var grand = sections.reduce(function (t, s) { return t + s.total; }, 0);
+
+    var th = 'padding:5px 6px; font-size:9px; font-weight:700; border-bottom:1px solid #999; background:#eee;';
+    var td = 'padding:4px 6px; font-size:9.5px; border-bottom:1px solid #ddd; text-align:right; white-space:nowrap;';
+    var tdL = 'padding:4px 6px; font-size:9.5px; border-bottom:1px solid #ddd; text-align:left;';
+    var tdSig = 'padding:4px 6px; font-size:9.5px; border-bottom:1px solid #999; width:34%;';
+    var BUDGET = 50, pages = [], cur = null;
+    var monthText = monthLabel(state.selectedMonth);
+    var heading =
+      '<div style="font-size:19px; font-weight:700; margin-bottom:4px;">Payments report</div>' +
+      '<div style="font-size:12px; font-style:italic; margin-bottom:4px;">Salaries for ' + esc(monthText) + '</div>' +
+      '<div style="font-size:12px; font-weight:700; margin-bottom:12px;">' + esc(coName) + '</div>';
+    function newPage() {
+      var first = !pages.length;
+      cur = { html: first ? heading : '<div style="font-size:11px; color:#666; margin-bottom:8px;">Payments report — ' + esc(coName) + ' · ' + esc(monthText) + ' (continued)</div>', used: first ? 5 : 2 };
+      pages.push(cur);
+    }
+    newPage();
+
+    function headCells(kind) {
+      return '<th style="' + th + ' text-align:left;">Emp No</th><th style="' + th + ' text-align:left;">Employee</th>' +
+        (kind === 'eft' ? '<th style="' + th + ' text-align:left;">Bank</th><th style="' + th + ' text-align:left;">Branch</th><th style="' + th + ' text-align:left;">Account no.</th>' : '') +
+        '<th style="' + th + '">Net pay</th>' +
+        (kind === 'eft' ? '' : '<th style="' + th + ' text-align:left;">Signature</th>');
+    }
+    function rowCells(kind, r) {
+      var warn = kind === 'eft' && (!r.bankName || !r.accountNumber)
+        ? ' <span style="color:#b00020; font-weight:700;">(bank details missing)</span>' : '';
+      return '<td style="' + tdL + '">' + esc(r.employeeNumber) + '</td><td style="' + tdL + '">' + esc(r.name) + warn + '</td>' +
+        (kind === 'eft' ? '<td style="' + tdL + '">' + esc(r.bankName) + '</td><td style="' + tdL + '">' + esc(r.branchCode) + '</td><td style="' + tdL + '">' + esc(r.accountNumber) + '</td>' : '') +
+        '<td style="' + td + '">' + emp201Money(r.net) + '</td>' +
+        (kind === 'eft' ? '' : '<td style="' + tdSig + '">&nbsp;</td>');
+    }
+    sections.forEach(function (sec) {
+      var rowCost = sec.kind === 'eft' ? 1 : 1.9;
+      var i = 0;
+      while (i < sec.rows.length) {
+        if (BUDGET - cur.used < 3 + rowCost * 2) newPage();
+        var room = Math.max(1, Math.floor((BUDGET - cur.used - 3 - 1.5) / rowCost));
+        var chunk = sec.rows.slice(i, i + room);
+        i += chunk.length;
+        var last = i >= sec.rows.length;
+        var colspan = sec.kind === 'eft' ? 5 : 2;
+        cur.html += '<div style="font-size:11px; font-weight:700; margin:12px 0 4px;">' + esc(sec.label) + (i - chunk.length > 0 ? ' (continued)' : '') + '</div>' +
+          '<table style="width:100%; border-collapse:collapse;"><thead><tr>' + headCells(sec.kind) + '</tr></thead><tbody>' +
+          chunk.map(function (r) { return '<tr>' + rowCells(sec.kind, r) + '</tr>'; }).join('') +
+          (last ? '<tr style="font-weight:700;"><td style="' + tdL + ' border-top:1px solid #999;" colspan="' + colspan + '">Total ' + esc(sec.label) + ' (' + sec.rows.length + ')</td><td style="' + td + ' border-top:1px solid #999;">' + emp201Money(sec.total) + '</td>' + (sec.kind === 'eft' ? '' : '<td style="' + tdL + ' border-top:1px solid #999;"></td>') + '</tr>' : '') +
+          '</tbody></table>';
+        cur.used += 3 + chunk.length * rowCost + (last ? 1.5 : 0);
+        if (!last) newPage();
+      }
+    });
+    if (!sections.length) cur.html += '<div style="font-size:11px; margin-top:10px;">Nobody has a net pay to pay out for this company this month.</div>';
+
+    var summary =
+      '<table style="width:60%; border-collapse:collapse; margin-top:18px;"><tbody>' +
+      sections.map(function (s) { return '<tr><td style="' + tdL + '">' + esc(s.label) + ' (' + s.rows.length + ')</td><td style="' + td + '">' + emp201Money(s.total) + '</td></tr>'; }).join('') +
+      '<tr style="font-weight:700;"><td style="' + tdL + ' border-top:1px solid #999;">Total to pay out (' + list.length + ')</td><td style="' + td + ' border-top:1px solid #999;">' + emp201Money(grand) + '</td></tr>' +
+      '</tbody></table>' +
+      (nothing.length ? '<div style="font-size:9px; color:#666; margin-top:10px;">Not listed (no net pay this month): ' + nothing.map(function (r) { return esc(r.name); }).join(', ') + '.</div>' : '') +
+      '<div style="font-size:9px; color:#888; margin-top:8px;">Figures from the payroll run for ' + esc(monthText) + '. Casuals are paid weekly by eWallet and are not included.</div>';
+    if (BUDGET - cur.used < 9) newPage();
+    cur.html += summary;
+
+    return pages.map(function (pg) {
+      return '<div class="ps-print-page" style="padding:10px 4px; color:#111; font-family:Arial,Helvetica,sans-serif;">' + pg.html + '</div>';
+    }).join('');
+  }
+
+  document.getElementById('payreport-pdf-btn').addEventListener('click', function () {
+    var btn = this, st = document.getElementById('payreport-status');
+    var pr = state.payrollRun;
+    if (!pr || !pr.hasRun) {
+      flashStatus(st, 'Payroll has not been run for this month yet — run it first.', 'save-status err', 5000);
+      return;
+    }
+    var original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating…';
+    var holder = document.getElementById('payreport-pdf-content');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.id = 'payreport-pdf-content';
+      holder.style.cssText = 'position:fixed; left:-10000px; top:0; width:' + PDF_CAPTURE_WIDTH_PX + 'px; background:#fff;';
+      document.body.appendChild(holder);
+    }
+    var companies = pr.emp201ByCompany || [];
+    var picked = (payCompany !== 'all' && companies.length > 1)
+      ? companies.filter(function (c) { return (c.companyId || '__none') === payCompany; }) : companies;
+    if (!picked.length) picked = [{ companyId: '', companyName: pr.companyName || '' }];
+    holder.innerHTML = picked.map(function (c) { return buildPaymentsPdfHtml_(pr, c); }).join('');
+    var fileCo = '';
+    if (picked.length === 1 && picked[0].companyName) fileCo = '_' + sanitizeFilenamePart_(picked[0].companyName);
+    downloadPagesAsPdf(holder, 'Payments' + fileCo + '_' + sanitizeFilenamePart_(state.selectedMonth) + '.pdf')
+      .catch(function (err) { window.alert('Could not generate the PDF: ' + (err && err.message ? err.message : 'unknown error')); })
+      .then(function () { holder.innerHTML = ''; btn.disabled = false; btn.textContent = original; });
   });
 
 
