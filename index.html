@@ -1124,6 +1124,7 @@
                 <option value="TravelAllowance">Travel Allowance</option>
                 <option value="OtherAllowance">Other Allowance (Non-taxable)</option>
                 <option value="Absent">Absent</option>
+                <option value="LateIn">Late in</option>
                 <option value="Deduction">Deduction</option>
                 <option value="AdvanceRepayment">Advance repayment</option>
               </select>
@@ -1138,6 +1139,11 @@
               <label>Days absent</label>
               <input type="number" step="0.5" min="0" id="adj-days">
               <div class="hint" id="adj-days-rate-hint"></div>
+            </div>
+            <div class="field" id="adj-late-field" style="display:none;">
+              <label>Minutes late</label>
+              <input type="number" step="1" min="0" id="adj-late-minutes">
+              <div class="hint" id="adj-late-rate-hint"></div>
             </div>
             <div class="field" id="adj-amount-field">
               <label>Amount (R)</label>
@@ -1724,7 +1730,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.108-payments-report';
+  var FRONTEND_BUILD = '2026-10-22.109-late-in';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2849,7 +2855,7 @@
     var defs = [
       ['overtime', 'Overtime', 1], ['commission', 'Commission', 1], ['bonus', 'Bonus', 1],
       ['travelAllowance', 'Travel allowance', 1], ['otherAllowance', 'Other allowance', 1], ['other', 'Other', 1],
-      ['absent', 'Absent', -1], ['deductions', 'Deductions', -1], ['advanceRepayment', 'Advance repaid', -1]
+      ['absent', 'Absent', -1], ['lateIn', 'Late in', -1], ['deductions', 'Deductions', -1], ['advanceRepayment', 'Advance repaid', -1]
     ];
     var rows = defs.filter(function (x) { return adj[x[0]]; }).map(function (x) {
       return '<div class="dept-row"><span>' + x[1] + '</span><span' + (x[2] < 0 ? ' class="dept-neg"' : '') + '>' +
@@ -3244,6 +3250,9 @@
       absentLabel = 'Absent (' + c.absentDays + (c.absentDays === 1 ? ' day' : ' days') + ')';
     }
     absentLabel = withNote(absentLabel, 'Absent', notesByType);
+    var lateLabel = 'Late in';
+    if (c.lateInMinutes) lateLabel = 'Late in (' + c.lateInMinutes + ' min)';
+    lateLabel = withNote(lateLabel, 'LateIn', notesByType);
 
     var earningsRows = [
       ['Basic Salary', c.baseAmount],
@@ -3252,7 +3261,8 @@
       c.adjustments.Overtime ? [overtimeLabel, c.adjustments.Overtime] : null,
       c.adjustments.Other ? [withNote('Other taxable addition', 'Other', notesByType), c.adjustments.Other] : null,
       c.adjustments.TravelAllowance ? [withNote('Travel Allowance', 'TravelAllowance', notesByType), c.adjustments.TravelAllowance] : null,
-      c.adjustments.Absent ? [absentLabel, -c.adjustments.Absent] : null
+      c.adjustments.Absent ? [absentLabel, -c.adjustments.Absent] : null,
+      c.adjustments.LateIn ? [lateLabel, -c.adjustments.LateIn] : null
     ].filter(Boolean);
 
     var deductionRows = [
@@ -3375,11 +3385,11 @@
   var ADJ_TYPE_LABELS = {
     Commission: 'Commission', Bonus: 'Bonus', Overtime: 'Overtime', Other: 'Other taxable addition',
     TravelAllowance: 'Travel Allowance', OtherAllowance: 'Other Allowance (Non-taxable)',
-    Absent: 'Absent', Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
+    Absent: 'Absent', LateIn: 'Late in', Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
   };
   var ADJ_TYPE_SIGN = {
     Commission: '+', Bonus: '+', Overtime: '+', Other: '+', TravelAllowance: '+', OtherAllowance: '+',
-    Absent: '−', Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
+    Absent: '−', LateIn: '−', Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
   };
 
   function loadAdjustments() {
@@ -3416,7 +3426,7 @@
     if (!state.payrollAdjustments) return;
     var pa = state.payrollAdjustments;
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
-      ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent comes off Gross before tax; deductions and advances only affect Net pay.';
+      ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent and Late in come off Gross before tax; deductions and advances only affect Net pay.';
     renderMonthLockedBadge_('adjustments-sub');
 
     // Department filter — lets Shane work through payroll one department at
@@ -3545,7 +3555,8 @@
         ? '<span class="hint" style="margin:0;">hidden</span>'
         : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
       var extra = (it.type === 'Overtime' && it.hours) ? ' (' + it.hours + 'h)'
-        : (it.type === 'Absent' && it.hours) ? ' (' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')' : '';
+        : (it.type === 'Absent' && it.hours) ? ' (' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')'
+        : (it.type === 'LateIn' && it.hours) ? ' (' + it.hours + ' min)' : '';
       return '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:2px 0;">' +
         '<span>' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + extra +
         (it.note ? ' <span class="hint" style="margin:0;">— ' + esc(it.note) + '</span>' : '') + '</span>' +
@@ -3967,10 +3978,12 @@
   // already-calculated; the backend never re-derives it (see
   // apiAddAdjustment_'s comment on why a stale/missing rate can't silently
   // block a payroll run).
+  var LATE_IN_MINUTES_PER_DAY = 8 * 60; // day rate / 8 hrs / 60 -- keep in step with Code.gs
   function updateAdjRateCalc() {
     var type = document.getElementById('adj-type').value;
     var isOvertime = type === 'Overtime';
     var isAbsent = type === 'Absent';
+    var isLate = type === 'LateIn';
 
     // Brief in-context reminder of the SARS 80/20 travel allowance rule —
     // see computeEmployeePayroll_/TravelAllowanceHighBusinessUse. Reuses the
@@ -3982,11 +3995,12 @@
 
     document.getElementById('adj-hours-field').style.display = isOvertime ? '' : 'none';
     document.getElementById('adj-days-field').style.display = isAbsent ? '' : 'none';
+    document.getElementById('adj-late-field').style.display = isLate ? '' : 'none';
     var amountInput = document.getElementById('adj-amount');
     var amountField = document.getElementById('adj-amount-field');
-    amountInput.readOnly = isOvertime || isAbsent;
-    amountInput.style.opacity = (isOvertime || isAbsent) ? '0.7' : '';
-    if (!isOvertime && !isAbsent) { amountField.style.display = ''; return; }
+    amountInput.readOnly = isOvertime || isAbsent || isLate;
+    amountInput.style.opacity = (isOvertime || isAbsent || isLate) ? '0.7' : '';
+    if (!isOvertime && !isAbsent && !isLate) { amountField.style.display = ''; return; }
 
     // HR accounts never see this employee's rate (it's Basic-Salary-derived,
     // same as dayRate/hourRate on the roster — see hrRedactEmployee_), so
@@ -3996,7 +4010,7 @@
     // back redacted on every subsequent read (hrFilterAdjustmentsData_).
     if (state.role === 'hr') {
       amountField.style.display = 'none';
-      var hrHint = document.getElementById(isOvertime ? 'adj-hours-rate-hint' : 'adj-days-rate-hint');
+      var hrHint = document.getElementById(isOvertime ? 'adj-hours-rate-hint' : isLate ? 'adj-late-rate-hint' : 'adj-days-rate-hint');
       hrHint.textContent = 'The Rand amount is calculated automatically from this employee\'s rate and isn\'t shown to HR accounts.';
       return;
     }
@@ -4023,6 +4037,21 @@
       return;
     }
 
+    if (isLate) {
+      var mins = Number(document.getElementById('adj-late-minutes').value) || 0;
+      var lhint = document.getElementById('adj-late-rate-hint');
+      if (!emp || emp.dayRate === null || emp.dayRate === undefined) {
+        lhint.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
+        amountInput.value = '';
+        return;
+      }
+      var perMin = emp.dayRate / LATE_IN_MINUTES_PER_DAY;
+      var lAmount = Math.round(mins * perMin * 100) / 100;
+      amountInput.value = lAmount ? lAmount.toFixed(2) : '';
+      lhint.textContent = mins + ' min × R ' + (Math.round(perMin * 10000) / 10000).toFixed(4) + '/min (day rate ÷ 8 hrs ÷ 60) = R ' + moneyExact(lAmount) + ' — comes off Gross before tax, same as Absent.';
+      return;
+    }
+
     // Absent — reduces Gross itself before tax (see computeEmployeePayroll_),
     // not a net-pay deduction like Deduction/AdvanceRepayment.
     var days = Number(document.getElementById('adj-days').value) || 0;
@@ -4040,6 +4069,7 @@
   document.getElementById('adj-type').addEventListener('change', updateAdjRateCalc);
   document.getElementById('adj-hours').addEventListener('input', updateAdjRateCalc);
   document.getElementById('adj-days').addEventListener('input', updateAdjRateCalc);
+  document.getElementById('adj-late-minutes').addEventListener('input', updateAdjRateCalc);
   document.getElementById('adj-employee').addEventListener('change', updateAdjRateCalc);
 
   document.getElementById('adj-add-btn').addEventListener('click', function () {
@@ -4057,7 +4087,7 @@
     // HR accounts never compute this amount client-side — they don't have
     // the rate to do it with (see hrRedactEmployee_) — hours/days alone are
     // sent, and apiAddAdjustment_ prices it server-side instead.
-    var isHrRateType = state.role === 'hr' && (type === 'Overtime' || type === 'Absent');
+    var isHrRateType = state.role === 'hr' && (type === 'Overtime' || type === 'Absent' || type === 'LateIn');
 
     if (type === 'Overtime') {
       hours = Number(document.getElementById('adj-hours').value);
@@ -4069,6 +4099,18 @@
           return;
         }
         amount = Math.round(hours * emp.hourRate * 100) / 100;
+      }
+    } else if (type === 'LateIn') {
+      // Minutes go under the same generic "hours" param (stored in the Hours column).
+      hours = Number(document.getElementById('adj-late-minutes').value);
+      if (!hours || hours <= 0) { errEl.textContent = 'Enter the number of minutes late.'; return; }
+      if (!isHrRateType) {
+        var lateEmp = selectedAdjEmployee();
+        if (!lateEmp || lateEmp.dayRate === null || lateEmp.dayRate === undefined) {
+          errEl.textContent = 'This employee has no day rate set — set Days/Week and Amount for them on the Payroll tab first.';
+          return;
+        }
+        amount = Math.round(hours * (lateEmp.dayRate / LATE_IN_MINUTES_PER_DAY) * 100) / 100;
       }
     } else if (type === 'Absent') {
       // Sent under the same "hours" param the backend already stores
@@ -4100,6 +4142,7 @@
         document.getElementById('adj-amount').value = '';
         document.getElementById('adj-hours').value = '';
         document.getElementById('adj-days').value = '';
+        document.getElementById('adj-late-minutes').value = '';
         document.getElementById('adj-note').value = '';
         flashStatus(status, 'Added', 'save-status ok', 3000);
       } else {
@@ -5408,6 +5451,7 @@
     if (ps.adjTravelAllowance) parts.push('+Travel Allowance ' + money(ps.adjTravelAllowance));
     if (ps.adjOtherAllowance) parts.push('+Other Allowance ' + money(ps.adjOtherAllowance));
     if (ps.adjAbsent) parts.push('−Absent ' + money(ps.adjAbsent));
+    if (ps.adjLateIn) parts.push('−Late in ' + money(ps.adjLateIn));
     if (ps.adjDeduction) parts.push('−Deduction ' + money(ps.adjDeduction));
     if (ps.adjAdvanceGiven) parts.push('+Advance ' + money(ps.adjAdvanceGiven));
     if (ps.adjAdvanceRepayment) parts.push('−Advance repay ' + money(ps.adjAdvanceRepayment));
