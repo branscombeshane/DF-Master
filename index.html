@@ -550,6 +550,21 @@
   .dept-card .dept-adj { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--gridline); }
   .dept-card .dept-adj-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 4px; }
   .dept-card .dept-neg { color: var(--critical); }
+  .ded-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .ded-card { text-align: left; font-family: inherit; color: inherit; cursor: pointer; background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 10px; padding: 12px 14px; width: 100%; transition: box-shadow .12s, transform .12s; }
+  .ded-card:hover, .ded-card:focus-visible { box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: translateY(-1px); outline: none; }
+  .ded-card.settled { border-left-color: var(--good); }
+  .ded-card.closed { border-left-color: var(--text-muted); opacity: .8; }
+  .ded-card .d-name { font-size: 12px; font-weight: 700; }
+  .ded-card .d-what { font-size: 12px; color: var(--text-secondary); margin: 1px 0 8px; }
+  .ded-card .d-bal { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ded-card .d-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .ded-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 12px 0 16px; }
+  .ded-stats > div { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .ded-stats .k { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700; color: var(--text-muted); }
+  .ded-stats .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ded-preview { font-size: 12px; color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+
 
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
   .toolbar input[type=text], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
@@ -774,6 +789,17 @@
     </div>
     <p class="sub" id="casual-weeks-sub" style="margin-bottom:12px;"></p>
     <div id="casual-weeks-body" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ded-modal">
+  <div class="modal-card wide" style="max-width:720px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:2px;">
+      <h2 id="ded-modal-title" style="margin:0;">Deduction account</h2>
+      <button class="btn secondary small" id="ded-modal-close">Close</button>
+    </div>
+    <p class="sub" id="ded-modal-sub" style="margin-bottom:0;"></p>
+    <div id="ded-modal-body"></div>
   </div>
 </div>
 
@@ -1076,6 +1102,7 @@
           <p class="panel-sub" id="adjustments-sub"></p>
 
           <div id="advance-balances-wrap"></div>
+          <div id="deduction-accounts-wrap"></div>
 
           <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
           <div class="form-grid">
@@ -1100,7 +1127,7 @@
                 <option value="Deduction">Deduction</option>
                 <option value="AdvanceRepayment">Advance repayment</option>
               </select>
-              <div class="hint" id="adj-type-hint">To record a new advance given, use the "Give advance" button next to the employee below — it's not tied to a specific month.</div>
+              <div class="hint" id="adj-type-hint">To record a new advance given, use the "Give advance" button next to the employee below — it's not tied to a specific month. For money an employee owes that is repaid monthly, use "Deduction account".</div>
             </div>
             <div class="field" id="adj-hours-field" style="display:none;">
               <label>Overtime hours</label>
@@ -1163,9 +1190,40 @@
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
               <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
                 <button class="btn secondary" id="adj-give-advance-btn">Give advance</button>
+                <button class="btn secondary" id="adj-ded-account-btn">Deduction account</button>
                 <button class="btn secondary" id="adj-save-status-btn">Save (in progress)</button>
                 <button class="btn" id="adj-finalize-status-btn">Finalize</button>
                 <span class="save-status" id="adj-status-save-status"></span>
+              </div>
+              <div id="adj-ded-form" style="display:none; margin-top:4px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--card); width:320px; max-width:100%;">
+                <div style="font-weight:700; font-size:13px; margin-bottom:4px;">New deduction account</div>
+                <div class="hint" style="margin:0 0 12px;">For money an employee owes the company (e.g. damaged equipment). The monthly amount comes off their net pay automatically until it is paid off.</div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>What is it for?</label>
+                  <input type="text" id="adj-ded-desc" maxlength="120" placeholder="e.g. Broken table">
+                </div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>Total owed (R)</label>
+                  <input type="number" step="0.01" min="0" id="adj-ded-total">
+                </div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>Deduct per month (R)</label>
+                  <input type="number" step="0.01" min="0" id="adj-ded-monthly">
+                </div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>First deduction in</label>
+                  <input type="month" id="adj-ded-start">
+                </div>
+                <div class="field" style="margin-bottom:12px;">
+                  <label>Note (optional)</label>
+                  <input type="text" id="adj-ded-note">
+                </div>
+                <div class="ded-preview" id="adj-ded-preview" style="display:none;"></div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <button class="btn" id="adj-ded-confirm-btn">Create account</button>
+                  <button class="btn secondary" id="adj-ded-cancel-btn">Cancel</button>
+                  <span class="save-status" id="adj-ded-status"></span>
+                </div>
               </div>
               <div id="adj-give-advance-form" style="display:none; margin-top:4px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--card); width:260px; max-width:100%;">
                 <div class="field" style="margin-bottom:12px;">
@@ -1184,7 +1242,7 @@
               </div>
             </div>
           </div>
-          <p class="panel-note">Save marks this employee as in progress; Finalize marks them done and complete for the month. Payroll can only be run once every active employee has been Finalized. Give advance records a cash advance whenever it's handed over — it's not tied to this month and doesn't affect Net pay; it only raises the balance shown in Outstanding advances above.</p>
+          <p class="panel-note">Save marks this employee as in progress; Finalize marks them done and complete for the month. Payroll can only be run once every active employee has been Finalized. Deduction account sets up money an employee owes (e.g. R2 000 for damage) that comes off their net pay each month until it is repaid — delete (Skip) a month's instalment to skip just that month. Give advance records a cash advance whenever it's handed over — it's not tied to this month and doesn't affect Net pay; it only raises the balance shown in Outstanding advances above.</p>
         </div>
       </div>
 
@@ -1645,7 +1703,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.105-recon-warnings-layout';
+  var FRONTEND_BUILD = '2026-10-22.106-deduction-accounts';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1662,7 +1720,7 @@
     getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
-    giveAdvance: true, setBaseAmountOverride: true,
+    giveAdvance: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
@@ -3382,6 +3440,7 @@
     } else {
       balWrap.innerHTML = '';
     }
+    renderDeductionAccounts_();
   }
 
   document.getElementById('adj-dept-filter').addEventListener('change', renderAdjustments);
@@ -3408,16 +3467,19 @@
     var saveBtn = document.getElementById('adj-save-status-btn');
     var finalizeBtn = document.getElementById('adj-finalize-status-btn');
     var advanceBtn = document.getElementById('adj-give-advance-btn');
+    var dedBtn = document.getElementById('adj-ded-account-btn');
     // Editing/giving an advance mid-flow for one employee shouldn't carry
     // over to whichever employee gets selected next.
     hideBasicSalaryEditForm();
     hideGiveAdvanceForm();
+    hideDedForm_();
     if (!emp) {
       nameEl.textContent = '—';
       badgeEl.innerHTML = '';
       saveBtn.disabled = true;
       finalizeBtn.disabled = true;
       advanceBtn.disabled = true;
+      dedBtn.disabled = true;
       renderBasicSalaryView(null);
       renderAdjEmpAdjustmentsSummary(null);
       return;
@@ -3427,6 +3489,7 @@
     saveBtn.disabled = false;
     finalizeBtn.disabled = false;
     advanceBtn.disabled = false;
+    dedBtn.disabled = false;
     renderBasicSalaryView(emp);
     renderAdjEmpAdjustmentsSummary(emp);
   }
@@ -3461,7 +3524,7 @@
         (it.note ? ' <span class="hint" style="margin:0;">— ' + esc(it.note) + '</span>' : '') + '</span>' +
         '<span style="white-space:nowrap; display:flex; align-items:center; gap:8px;">' +
           '<span style="font-weight:600;">' + amountText + '</span>' +
-          '<button class="btn secondary small" data-adj-summary-delete="' + esc(it.id) + '" style="padding:2px 8px;">Delete</button>' +
+          '<button class="btn secondary small" data-adj-summary-delete="' + esc(it.id) + '" style="padding:2px 8px;"' + (it.deductionAccountId ? ' title="Skips this month\'s instalment — the balance stays owed and next month deducts as normal"' : '') + '>' + (it.deductionAccountId ? 'Skip' : 'Delete') + '</button>' +
         '</span>' +
         '</div>';
     }).join('');
@@ -3594,6 +3657,187 @@
     }).catch(function () {
       flashStatus(statusEl, 'Network error — could not record advance.', 'save-status err', 5000);
     });
+  });
+
+  // ---- Deduction accounts (an employee repays money owed, in monthly instalments) ----
+  var dedShowAll = false;
+  var dedOpenId = null;
+  function dedMonthAdd_(ym, n) {
+    var p = String(ym).split('-'); var d = new Date(Number(p[0]), Number(p[1]) - 1 + n, 1);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+  function dedRand_(n) { return 'R ' + moneyExact(n); }
+  function dedAccounts_() { return (state.payrollAdjustments && state.payrollAdjustments.deductionAccounts) || []; }
+  function dedStatusLabel_(a) { return a.status === 'settled' ? 'Settled' : (a.status === 'closed' ? 'Stopped' : 'Active'); }
+
+  function renderDeductionAccounts_() {
+    var wrap = document.getElementById('deduction-accounts-wrap');
+    var all = dedAccounts_();
+    var active = all.filter(function (a) { return a.status === 'active'; });
+    var other = all.filter(function (a) { return a.status !== 'active'; });
+    if (!all.length) { wrap.innerHTML = ''; return; }
+    var card = function (a) {
+      return '<button type="button" class="ded-card ' + esc(a.status) + '" data-ded-open="' + esc(a.id) + '">' +
+        '<div class="d-name">' + esc(a.name) + (a.employeeActive ? '' : ' <span class="status-badge locked" style="margin-left:4px;">Left</span>') + '</div>' +
+        '<div class="d-what">' + esc(a.description) + '</div>' +
+        (a.status === 'active'
+          ? '<div class="d-bal">' + dedRand_(a.balance) + '</div><div class="d-sub">owed &middot; ' + dedRand_(a.monthly) + ' a month &middot; ' + a.instalmentsLeft + (a.instalmentsLeft === 1 ? ' payment' : ' payments') + ' left</div>'
+          : '<div class="d-bal">' + dedRand_(a.total) + '</div><div class="d-sub">' + esc(dedStatusLabel_(a)) + (a.status === 'closed' ? ' with ' + dedRand_(a.balance) + ' unpaid' : ' &mdash; fully repaid') + '</div>') +
+        '</button>';
+    };
+    wrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Deduction accounts</h3>' +
+      (active.length ? '<div class="ded-grid">' + active.map(card).join('') + '</div>' : '<p class="hint" style="margin:0 0 12px;">No active deduction accounts.</p>') +
+      (other.length ? '<p style="margin:-6px 0 12px;"><button type="button" class="btn secondary small" id="ded-toggle-all">' + (dedShowAll ? 'Hide' : 'Show') + ' settled &amp; stopped (' + other.length + ')</button></p>' +
+        (dedShowAll ? '<div class="ded-grid">' + other.map(card).join('') + '</div>' : '') : '');
+    Array.prototype.forEach.call(wrap.querySelectorAll('[data-ded-open]'), function (b) {
+      b.addEventListener('click', function () { openDedModal_(b.getAttribute('data-ded-open')); });
+    });
+    var tg = document.getElementById('ded-toggle-all');
+    if (tg) tg.addEventListener('click', function () { dedShowAll = !dedShowAll; renderDeductionAccounts_(); });
+    // keep an open detail window in step with fresh data
+    if (dedOpenId && document.getElementById('ded-modal').classList.contains('active')) openDedModal_(dedOpenId, true);
+  }
+
+  function openDedModal_(id, keepScroll) {
+    var a = dedAccounts_().filter(function (x) { return x.id === id; })[0];
+    var modal = document.getElementById('ded-modal');
+    if (!a) { modal.classList.remove('active'); dedOpenId = null; return; }
+    dedOpenId = id;
+    document.getElementById('ded-modal-title').textContent = a.name + ' — ' + a.description;
+    document.getElementById('ded-modal-sub').innerHTML = '<span class="status-badge ' + (a.status === 'active' ? 'in-progress' : (a.status === 'settled' ? 'finalized' : 'not-started')) + '">' + esc(dedStatusLabel_(a)) + '</span>' +
+      (a.startMonth ? ' &nbsp;First deduction ' + esc(monthLabel(a.startMonth)) : '') + (a.note ? ' &middot; ' + esc(a.note) : '') +
+      (a.status === 'closed' && a.closedNote ? ' &middot; Stopped: ' + esc(a.closedNote) : '') +
+      (!a.employeeActive && a.status === 'active' ? ' &middot; <strong>Employee has left</strong> — nothing is deducted any more; stop the account once it is dealt with.' : '');
+    var html = '<div class="ded-stats">' +
+      '<div><div class="k">Total owed</div><div class="v">' + dedRand_(a.total) + '</div></div>' +
+      '<div><div class="k">Repaid so far</div><div class="v">' + dedRand_(a.paid) + '</div></div>' +
+      '<div><div class="k">Balance</div><div class="v">' + dedRand_(a.balance) + '</div></div>' +
+      '<div><div class="k">Per month</div><div class="v">' + dedRand_(a.monthly) + '</div></div></div>';
+    if (a.status === 'active') {
+      var endMonth = dedMonthAdd_(a.history.length ? a.history[a.history.length - 1].month : a.startMonth, a.instalmentsLeft);
+      html += '<p class="hint" style="margin:0 0 12px; font-size:13px;">' + a.instalmentsLeft + (a.instalmentsLeft === 1 ? ' payment' : ' payments') + ' still to come after what has been deducted — about ' + esc(monthLabel(endMonth)) + '. The last one is whatever is left, so it never over-deducts.</p>';
+    }
+    html += '<h3 style="margin:0 0 6px; font-size:14px;">Deductions so far</h3>' + (a.history.length
+      ? '<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th style="text-align:left;">Month</th><th>Amount</th><th style="text-align:left;">Payslip note</th></tr></thead><tbody>' +
+        a.history.map(function (h) { return '<tr><td style="text-align:left;">' + esc(monthLabel(h.month)) + '</td><td>' + dedRand_(h.amount) + '</td><td style="text-align:left;">' + esc(h.note) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+      : '<p class="hint" style="margin:0;">Nothing deducted yet.</p>');
+    if (a.skipMonths.length) {
+      html += '<h3 style="margin:16px 0 6px; font-size:14px;">Skipped months</h3>' + a.skipMonths.map(function (m) {
+        return '<div style="display:flex; gap:10px; align-items:center; padding:3px 0;"><span>' + esc(monthLabel(m)) + '</span>' +
+          (a.status === 'active' ? '<button class="btn secondary small" data-ded-unskip="' + esc(m) + '">Deduct it after all</button>' : '') + '</div>';
+      }).join('');
+    }
+    if (a.status === 'active') {
+      html += '<h3 style="margin:18px 0 6px; font-size:14px;">Change or stop</h3>' +
+        '<div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px;">' +
+          '<div class="field" style="margin:0;"><label>New monthly amount (R)</label><input type="number" step="0.01" min="0" id="ded-new-monthly" value="' + esc(a.monthly) + '" style="width:160px;"></div>' +
+          '<button class="btn" id="ded-save-monthly">Save</button>' +
+        '</div>' +
+        '<div id="ded-stop-wrap"><button class="btn secondary" id="ded-stop-btn">Stop deducting…</button></div>' +
+        '<div class="hint" id="ded-modal-status" style="margin-top:10px;"></div>';
+    }
+    document.getElementById('ded-modal-body').innerHTML = html;
+    modal.classList.add('active');
+    wireDedModal_(a);
+  }
+
+  function dedCall_(params, okMsg) {
+    var st = document.getElementById('ded-modal-status');
+    params.month = state.selectedMonth;
+    return callApi('updateDeductionAccount', params).then(function (res) {
+      if (res.ok) {
+        state.payrollAdjustments = res.payrollAdjustments;
+        state.monthLocked = !!res.monthLocked;
+        renderAdjustments();
+        var still = dedAccounts_().filter(function (x) { return x.id === params.id; })[0];
+        if (still) openDedModal_(params.id);
+        else document.getElementById('ded-modal').classList.remove('active');
+        var st2 = document.getElementById('ded-modal-status'); if (st2 && okMsg) st2.textContent = okMsg;
+      } else if (st) { st.textContent = res.error || 'Could not save.'; st.style.color = 'var(--critical)'; }
+    }).catch(function () { if (st) { st.textContent = 'Network error — nothing was changed.'; st.style.color = 'var(--critical)'; } });
+  }
+
+  function wireDedModal_(a) {
+    var body = document.getElementById('ded-modal-body');
+    Array.prototype.forEach.call(body.querySelectorAll('[data-ded-unskip]'), function (b) {
+      b.addEventListener('click', function () { dedCall_({ id: a.id, op: 'unskip', skipMonth: b.getAttribute('data-ded-unskip') }, 'Month will be deducted again.'); });
+    });
+    var save = document.getElementById('ded-save-monthly');
+    if (save) save.addEventListener('click', function () {
+      var v = Number(document.getElementById('ded-new-monthly').value);
+      var st = document.getElementById('ded-modal-status');
+      if (!(v > 0)) { st.textContent = 'Enter an amount greater than 0.'; st.style.color = 'var(--critical)'; return; }
+      dedCall_({ id: a.id, op: 'update', monthly: v }, 'Monthly amount updated.');
+    });
+    var stop = document.getElementById('ded-stop-btn');
+    if (stop) stop.addEventListener('click', function () {
+      document.getElementById('ded-stop-wrap').innerHTML =
+        '<div class="field" style="margin:0 0 8px; max-width:380px;"><label>Why are you stopping it? (optional)</label><input type="text" id="ded-stop-note" placeholder="e.g. Employee paid cash"></div>' +
+        '<p class="hint" style="margin:0 0 8px;">Stops all further deductions. ' + dedRand_(a.balance) + ' stays recorded as unpaid. This month’s instalment is removed unless payroll has already been run.</p>' +
+        '<button class="btn" id="ded-stop-confirm">Stop deducting</button> <button class="btn secondary" id="ded-stop-cancel">Keep going</button>';
+      document.getElementById('ded-stop-cancel').addEventListener('click', function () { openDedModal_(a.id); });
+      document.getElementById('ded-stop-confirm').addEventListener('click', function () {
+        dedCall_({ id: a.id, op: 'close', note: document.getElementById('ded-stop-note').value.trim() });
+      });
+    });
+  }
+  document.getElementById('ded-modal-close').addEventListener('click', function () { dedOpenId = null; document.getElementById('ded-modal').classList.remove('active'); });
+  document.getElementById('ded-modal').addEventListener('click', function (e) { if (e.target === this) { dedOpenId = null; this.classList.remove('active'); } });
+
+  // ---- New deduction account form ----
+  function hideDedForm_() {
+    var f = document.getElementById('adj-ded-form'); if (!f) return;
+    f.style.display = 'none';
+    ['adj-ded-desc', 'adj-ded-total', 'adj-ded-monthly', 'adj-ded-note'].forEach(function (id) { document.getElementById(id).value = ''; });
+    document.getElementById('adj-ded-preview').style.display = 'none';
+    flashStatus(document.getElementById('adj-ded-status'), '', 'save-status', 0);
+  }
+  function dedPreview_() {
+    var total = Number(document.getElementById('adj-ded-total').value), monthly = Number(document.getElementById('adj-ded-monthly').value);
+    var start = document.getElementById('adj-ded-start').value || state.selectedMonth;
+    var box = document.getElementById('adj-ded-preview');
+    if (!(total > 0) || !(monthly > 0)) { box.style.display = 'none'; return; }
+    if (monthly > total) { box.style.display = 'block'; box.textContent = 'The monthly amount is more than the total owed.'; return; }
+    var n = Math.ceil(total / monthly - 1e-9), last = Math.round((total - monthly * (n - 1)) * 100) / 100;
+    var first = start;
+    if (start === state.selectedMonth && state.monthLocked) first = dedMonthAdd_(start, 1);
+    box.style.display = 'block';
+    box.textContent = dedRand_(monthly) + ' a month for ' + n + (n === 1 ? ' month' : ' months') + (n > 1 && last !== monthly ? ' (last one ' + dedRand_(last) + ')' : '') +
+      ', from ' + monthLabel(first) + ' to ' + monthLabel(dedMonthAdd_(first, n - 1)) + '.' +
+      (first !== start ? ' Payroll for ' + monthLabel(start) + ' has already been run, so it starts the following month.' : '');
+  }
+  ['adj-ded-total', 'adj-ded-monthly', 'adj-ded-start'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', dedPreview_);
+  });
+  document.getElementById('adj-ded-account-btn').addEventListener('click', function () {
+    document.getElementById('adj-ded-form').style.display = 'block';
+    document.getElementById('adj-ded-start').value = state.selectedMonth;
+    document.getElementById('adj-ded-desc').focus();
+  });
+  document.getElementById('adj-ded-cancel-btn').addEventListener('click', hideDedForm_);
+  document.getElementById('adj-ded-confirm-btn').addEventListener('click', function () {
+    var emp = selectedAdjEmployee();
+    if (!emp) return;
+    var st = document.getElementById('adj-ded-status');
+    var desc = document.getElementById('adj-ded-desc').value.trim();
+    var total = Number(document.getElementById('adj-ded-total').value), monthly = Number(document.getElementById('adj-ded-monthly').value);
+    var err = !desc ? 'Say what the deduction is for.' : !(total > 0) ? 'Enter the total owed.' : !(monthly > 0) ? 'Enter the monthly amount.' : monthly > total ? 'The monthly amount cannot be more than the total.' : '';
+    if (err) { flashStatus(st, err, 'save-status err', 4000); return; }
+    flashStatus(st, 'Creating…', 'save-status', 0);
+    callApi('addDeductionAccount', {
+      employeeId: emp.id, description: desc, total: total, monthly: monthly,
+      startMonth: document.getElementById('adj-ded-start').value || state.selectedMonth,
+      note: document.getElementById('adj-ded-note').value.trim(), month: state.selectedMonth
+    }).then(function (res) {
+      if (res.ok) {
+        state.payrollAdjustments = res.payrollAdjustments;
+        state.monthLocked = !!res.monthLocked;
+        renderAdjustments();
+        hideDedForm_();
+      } else {
+        flashStatus(st, res.error || 'Could not create the account.', 'save-status err', 5000);
+      }
+    }).catch(function () { flashStatus(st, 'Network error — nothing was saved.', 'save-status err', 5000); });
   });
 
   function setAdjEmployeeStatus_(status) {
