@@ -1051,6 +1051,7 @@
       <div id="payroll-month-row" style="display:flex; gap:10px; align-items:center; margin-bottom:14px;">
         <label for="month-picker" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Payroll month</label>
         <select id="month-picker"></select>
+        <span id="payroll-live-note" class="hint" style="margin:0 0 0 8px;"></span>
       </div>
 
       <nav class="subtabs" id="payroll-subtabs"></nav>
@@ -1730,7 +1731,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.109-late-in';
+  var FRONTEND_BUILD = '2026-10-22.110-auto-refresh';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1888,7 +1889,9 @@
     if (el) el.hidden = true;
     busy.active = false; busy.dismissed = false; busy.saving = false;
   }
+  var silentApi_ = false; // set while the Payroll auto-refresh fires its background reads
   function busyBegin_(action, params) {
+    if (silentApi_) return null;
     var now = Date.now();
     var chained = busy.active || (now - busy.lastEnd < CHAIN_GRACE_MS && busy.lastEnd > busy.lastInteraction);
     var clickDriven = (now - busy.lastInteraction < CLICK_WINDOW_MS) || chained;
@@ -2915,6 +2918,17 @@
     // same roster) in sync whenever the roster itself changes — e.g. right
     // after adding/editing/discharging an employee.
     renderReportsPayslipsTable();
+    // The Pay Adjustments employee list and status strip are built from this
+    // same roster. If the roster (or someone's status) changed -- another
+    // user added or finalized an employee, or the payroll answer simply
+    // landed after the adjustments one -- redraw them too, otherwise they
+    // would stay empty/out of date until the adjustments data itself changed.
+    if (state.payrollAdjustments && adjRosterSig_ !== rosterSig_()) renderAdjustments();
+  }
+
+  var adjRosterSig_ = '';
+  function rosterSig_() {
+    return state.payroll ? state.payroll.employees.map(function (e) { return [e.id, e.name, e.department, e.status, e.active].join('|'); }).join(',') : '';
   }
 
   // Employees ticked for a batch payslip download, in the Reports >
@@ -3424,6 +3438,7 @@
 
   function renderAdjustments() {
     if (!state.payrollAdjustments) return;
+    adjRosterSig_ = rosterSig_();
     var pa = state.payrollAdjustments;
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
       ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent and Late in come off Gross before tax; deductions and advances only affect Net pay.';
@@ -4411,6 +4426,99 @@
       });
   });
 
+
+  // ================= AUTO-REFRESH (Payroll tab) =================
+  // The app only ever loads data when a screen opens or you do something, so
+  // changes other users make would otherwise only appear after a manual
+  // refresh. While the Payroll tab is open this re-reads the month's data
+  // every 45 seconds (and when the browser tab regains focus) and redraws
+  // ONLY if something actually changed. It stays out of the way: no loading
+  // overlay, and it skips a round whenever you are mid-edit (a pop-up open,
+  // typing in a field, an Advance / Deduction / Salary form open, unsaved
+  // casual hours) or have just clicked something. A result that comes back
+  // after you've clicked, changed month, company or sub-tab is thrown away.
+  var AUTO_REFRESH_MS = window.__AUTO_REFRESH_MS || 45000; // the override is only for automated tests
+  var autoRefresh = { last: 0, inflight: false, lastChange: '' };
+
+  function payrollViewOpen_() {
+    var v = document.getElementById('view-payroll');
+    return !!(state.token && state.companyGroup && state.activeTab === 'payroll' && v && v.classList.contains('active') && hasSection('payroll'));
+  }
+  function userMidEdit_() {
+    if (document.querySelector('.modal-overlay.active')) return true;
+    var v = document.getElementById('view-payroll');
+    var ae = document.activeElement;
+    if (ae && v && v.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return true;
+    var openForms = ['adj-give-advance-form', 'adj-ded-form', 'adj-basic-salary-edit-form'];
+    for (var i = 0; i < openForms.length; i++) {
+      var f = document.getElementById(openForms[i]);
+      if (f && f.style.display !== 'none' && f.style.display !== '') return true;
+    }
+    var typed = ['adj-amount', 'adj-hours', 'adj-days', 'adj-late-minutes', 'adj-note'];
+    for (var j = 0; j < typed.length; j++) {
+      var el = document.getElementById(typed[j]);
+      if (el && String(el.value || '').trim() !== '') return true;
+    }
+    if (casualState && casualDirtyCount_() > 0) return true;
+    return false;
+  }
+
+  function payrollAutoRefresh_(force) {
+    if (autoRefresh.inflight || document.hidden || !payrollViewOpen_()) return;
+    if (busy.count > 0 || userMidEdit_()) return;
+    if (!force && Date.now() - busy.lastInteraction < 4000) return;
+    var started = Date.now(), month = state.selectedMonth, group = state.companyGroup, sub = state.payrollSubTab;
+    var jobs = [];
+    var changed = false;
+    // A late answer is dropped if the user has moved on in the meantime.
+    function stale_() {
+      return state.selectedMonth !== month || state.companyGroup !== group || state.payrollSubTab !== sub ||
+        busy.lastInteraction > started || busy.count > 0 || userMidEdit_();
+    }
+    autoRefresh.inflight = true;
+    silentApi_ = true; // no click-loading overlay for these background reads
+    try {
+      if (sub === 'casuals') {
+        if (casualState.week && casualState.weekStart && !casualState.loading) {
+          var wk = casualState.weekStart;
+          jobs.push(callApi('getCasualWeek', { weekStart: wk }).then(function (res) {
+            if (!res || !res.ok || stale_() || wk !== casualState.weekStart || casualDirtyCount_() > 0) return;
+            if (JSON.stringify(res) !== JSON.stringify(casualState.week)) { casualState.week = res; renderCasuals(); changed = true; }
+          }));
+        }
+        jobs.push(loadCasualPending_());
+      } else {
+        jobs.push(callApi('getPayroll', { month: month }).then(function (res) {
+          if (res && res.ok && !stale_() && JSON.stringify(res.payroll) !== JSON.stringify(state.payroll)) { state.payroll = res.payroll; state.monthLocked = !!res.monthLocked; renderPayroll(); changed = true; }
+        }));
+        jobs.push(callApi('getPayrollAdjustments', { month: month }).then(function (res) {
+          if (res && res.ok && !stale_() && JSON.stringify(res.payrollAdjustments) !== JSON.stringify(state.payrollAdjustments)) { state.payrollAdjustments = res.payrollAdjustments; state.monthLocked = !!res.monthLocked; renderAdjustments(); changed = true; }
+        }));
+        if (state.role !== 'hr') {
+          jobs.push(callApi('getPayrollRun', { month: month }).then(function (res) {
+            if (res && res.ok && !stale_() && JSON.stringify(res.payrollRun) !== JSON.stringify(state.payrollRun)) { state.payrollRun = res.payrollRun; renderPayrollRun(); changed = true; }
+          }));
+          if (sub === 'reports') {
+            jobs.push(callApi('getIrp5', { month: month }).then(function (res) {
+              if (res && res.ok && !stale_() && JSON.stringify(res) !== JSON.stringify(state.irp5)) { state.irp5 = res; renderIrp5(); changed = true; }
+            }));
+          }
+        }
+      }
+    } finally { silentApi_ = false; }
+    return Promise.all(jobs.map(function (p) { return Promise.resolve(p).then(null, function () {}); })).then(function () {
+      autoRefresh.inflight = false; autoRefresh.last = Date.now();
+      var note = document.getElementById('payroll-live-note');
+      if (note) {
+        var t = new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (changed) autoRefresh.lastChange = t;
+        note.textContent = 'Up to date as at ' + t + (autoRefresh.lastChange ? ' · new changes picked up at ' + autoRefresh.lastChange : '') + ' · refreshes automatically';
+      }
+    });
+  }
+  setInterval(function () { payrollAutoRefresh_(false); }, AUTO_REFRESH_MS);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - autoRefresh.last > 20000) payrollAutoRefresh_(true); });
+  window.addEventListener('focus', function () { if (Date.now() - autoRefresh.last > 20000) payrollAutoRefresh_(true); });
 
   // ================= PAYMENTS REPORT (PDF) =================
   // Who to pay, how much and where, for a month payroll has been run for.
