@@ -327,12 +327,12 @@
   .role-badge.staff { background: var(--series-jhb); color: #fff; }
   /* Dropdowns inside the Reports panels (EMP201 company picker, IRP5 employee,
      Recon tax year/period/mode) match the app's other selects and buttons. */
-  #reports-panel-emp201 select, #reports-panel-irp5 select, #reports-panel-recon select {
+  #reports-panel-emp201 select, #reports-panel-payments select, #reports-panel-irp5 select, #reports-panel-recon select {
     padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-primary);
     font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
   }
-  #reports-panel-emp201 select:focus, #reports-panel-irp5 select:focus, #reports-panel-recon select:focus {
+  #reports-panel-emp201 select:focus, #reports-panel-payments select:focus, #reports-panel-irp5 select:focus, #reports-panel-recon select:focus {
     outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent); outline-offset: 1px;
   }
   select#month-picker {
@@ -1320,7 +1320,7 @@
             <button class="btn secondary" id="payreport-pdf-btn">Download PDF</button>
             <span class="save-status" id="payreport-status"></span>
           </div>
-          <div class="hint" style="margin-top:10px;">Net pay for the month, split by how each person is paid (EFT with bank details, Cash and Cheque with a signature line). Casuals are paid weekly by eWallet and are not included.</div>
+          <div class="hint" style="margin-top:10px; font-size:12px; color:var(--text-muted);">Net pay for the month, split by how each person is paid (EFT with bank details, Cash and Cheque with a signature line). Casuals are paid weekly by eWallet and are not included.</div>
         </div>
 
         <!-- 2. Payslips -->
@@ -1758,7 +1758,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-23.114-prorata-start';
+  var FRONTEND_BUILD = '2026-10-23.115-select-theme';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
