@@ -872,6 +872,7 @@
       <div class="field">
         <label>Date employed</label>
         <input type="date" id="payroll-date">
+        <div class="hint" id="payroll-prorata-hint" style="display:none;"></div>
       </div>
     </div>
     <div class="form-grid">
@@ -1097,6 +1098,10 @@
           </div>
           <button class="btn" id="payroll-add-btn">+ Add employee</button>
         </div>
+        <div id="payroll-prorata-notice" style="display:none; margin:0 0 12px; padding:10px 14px; border:1px solid var(--border); border-left:4px solid var(--accent, #2f7d32); border-radius:8px; background:var(--card); font-size:13px;">
+          <span id="payroll-prorata-notice-text"></span>
+          <button class="btn secondary small" id="payroll-prorata-notice-close" style="margin-left:10px;">Dismiss</button>
+        </div>
 
         <div class="panel">
           <h2>Roster</h2>
@@ -1194,6 +1199,7 @@
                   <strong id="adj-basic-salary-amount">—</strong>
                   <span id="adj-basic-salary-overridden-note" class="hint" style="margin:0 0 0 6px; display:none;"></span>
                   <button class="btn secondary small" id="adj-basic-salary-edit-btn" style="margin-left:8px;">Edit</button>
+                  <button class="btn secondary small" id="adj-basic-salary-prorate-btn" style="margin-left:6px; display:none;">Pro-rate from start date</button>
                   <button class="btn secondary small" id="adj-basic-salary-revert-btn" style="margin-left:6px; display:none;">Revert to default</button>
                 </span>
                 <div id="adj-basic-salary-edit-form" style="display:none; margin-top:10px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--card); max-width:280px;">
@@ -1752,7 +1758,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-23.112-run-per-company';
+  var FRONTEND_BUILD = '2026-10-23.114-prorata-start';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2077,6 +2083,39 @@
     var parts = m.split('-');
     var d = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
     return d.toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' });
+  }
+  // Pro-rata of a monthly salary for a part-month starter. MUST match
+  // prorataForStart_ in Code.gs (the server does the real calculation; this is
+  // only for the preview). A pay month runs 25th of the previous month to the
+  // 24th of the month it is named after, so a start on/after the 25th belongs
+  // to next month's pay. Working days: Mon-Fri (Mon-Sat for 6, all for 7).
+  function prorataForStart(amount, daysPerWeek, dateEmployed) {
+    amount = Number(amount) || 0;
+    if (amount <= 0) return null;
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateEmployed || ''));
+    if (!m) return null;
+    var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > new Date(Date.UTC(y, mo, 0)).getUTCDate()) return null;
+    var DAY = 86400000, startT = Date.UTC(y, mo - 1, d);
+    var ly = y, lm = mo;
+    if (d >= 25) { lm++; if (lm > 12) { lm = 1; ly++; } }
+    var py = ly, pm = lm - 1;
+    if (pm < 1) { pm = 12; py--; }
+    var ps = Date.UTC(py, pm - 1, 25), pe = Date.UTC(ly, lm - 1, 24);
+    var dpw = Number(daysPerWeek) || 5, total = 0, worked = 0;
+    for (var t = ps; t <= pe; t += DAY) {
+      var dow = new Date(t).getUTCDay();
+      var ok = dpw >= 7 ? true : (dpw >= 6 ? dow !== 0 : (dow !== 0 && dow !== 6));
+      if (!ok) continue;
+      total++;
+      if (t >= startT) worked++;
+    }
+    if (!total || worked >= total) return null;
+    function iso(t) { var x = new Date(t); return x.getUTCFullYear() + '-' + ('0' + (x.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + x.getUTCDate()).slice(-2); }
+    return { month: ly + '-' + ('0' + lm).slice(-2), amount: Math.round(amount * worked / total * 100) / 100, workedDays: worked, monthDays: total, periodStart: iso(ps), periodEnd: iso(pe) };
+  }
+  function prorataSentence_(pr, full) {
+    return 'Pay month ' + monthLabel(pr.month) + ' runs ' + pr.periodStart + ' to ' + pr.periodEnd + '. First month is pro-rated: ' + pr.workedDays + ' of ' + pr.monthDays + ' working days = ' + moneyExact(pr.amount) + ' (instead of ' + moneyExact(full) + '). From the next pay month it is the full amount.';
   }
   function colorFor(key) {
     var varName = ENTITY_COLOR_VAR[key] || '--series-total';
@@ -2980,7 +3019,7 @@
   function renderPayroll() {
     if (!state.payroll) return;
     document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
-    renderMonthLockedBadge_('payroll-roster-sub');
+    renderMonthLockedBadge_('payroll-roster-sub', state.payroll && state.payroll.lockedEmployeeIds);
     // HR accounts have no Payroll Dashboard sub-tab at all (see
     // visiblePayrollSubtabs_) — it's pure Basic Salary cost aggregates
     // (totalMonthlyCost, per-department totals), which the backend doesn't
@@ -3537,7 +3576,7 @@
   // (see checkMonthLockOrOwnerPassword_ on the backend) — a heads-up that
   // further changes here will prompt for the Owner password, rather than
   // that coming as a surprise only once something is attempted.
-  function renderMonthLockedBadge_(subElId) {
+  function renderMonthLockedBadge_(subElId, lockedIds) {
     var subEl = document.getElementById(subElId);
     if (!subEl) return;
     var existing = subEl.querySelector('.status-badge.locked');
@@ -3548,9 +3587,16 @@
     badge.style.marginLeft = '8px';
     badge.textContent = 'Locked — payroll run';
     // Payroll can be run one company at a time: say so when only some people are locked.
-    var lockedIds = state.payrollAdjustments && state.payrollAdjustments.lockedEmployeeIds;
-    var activeN = state.payroll ? state.payroll.employees.filter(function (e) { return e.active; }).length : 0;
-    if (lockedIds && activeN && lockedIds.length < activeN) badge.textContent = 'Payroll run for ' + lockedIds.length + ' of ' + activeN + ' employees (locked)';
+    // Uses the locked list that arrived WITH the same data as this badge's own
+    // screen, so it can never mix a fresh "locked" flag with an older list.
+    if (lockedIds && state.payroll) {
+      var activeIds = state.payroll.employees.filter(function (e) { return e.active; }).map(function (e) { return e.id; });
+      var lockedActive = activeIds.filter(function (id) { return lockedIds.indexOf(id) !== -1; }).length;
+      if (lockedActive > 0 && lockedActive < activeIds.length) {
+        badge.textContent = 'Payroll run for ' + lockedActive + ' of ' + activeIds.length + ' employees (those are locked)';
+        badge.className = 'status-badge in-progress'; // amber, not the red "locked" style: the rest are still open
+      }
+    }
     subEl.appendChild(document.createTextNode(' '));
     subEl.appendChild(badge);
   }
@@ -3561,7 +3607,7 @@
     var pa = state.payrollAdjustments;
     document.getElementById('adjustments-sub').textContent = monthLabel(state.selectedMonth) +
       ' — commission, bonuses, overtime and other taxable additions flow into Gross and PAYE/UIF below; Absent and Late in come off Gross before tax; deductions and advances only affect Net pay.';
-    renderMonthLockedBadge_('adjustments-sub');
+    renderMonthLockedBadge_('adjustments-sub', state.payrollAdjustments && state.payrollAdjustments.lockedEmployeeIds);
 
     // Department filter — lets Shane work through payroll one department at
     // a time instead of hunting for each name in one long combined list.
@@ -3735,6 +3781,8 @@
     var amountEl = document.getElementById('adj-basic-salary-amount');
     var noteEl = document.getElementById('adj-basic-salary-overridden-note');
     var revertBtn = document.getElementById('adj-basic-salary-revert-btn');
+    var prorateBtn = document.getElementById('adj-basic-salary-prorate-btn');
+    prorateBtn.style.display = 'none';
     if (!emp) {
       amountEl.textContent = '—';
       noteEl.style.display = 'none';
@@ -3743,12 +3791,18 @@
     }
     amountEl.textContent = money(emp.amount);
     if (emp.amountOverridden) {
-      noteEl.textContent = '(overridden for ' + monthLabel(state.selectedMonth) + ' — normally ' + money(emp.defaultAmount) + ')';
+      noteEl.textContent = '(' + (emp.overrideNote ? emp.overrideNote.replace(/^Pro-rata: /, 'pro-rated: ') : 'overridden') + ' for ' + monthLabel(state.selectedMonth) + ' — normally ' + money(emp.defaultAmount) + ')';
       noteEl.style.display = '';
       revertBtn.style.display = '';
     } else {
       noteEl.style.display = 'none';
       revertBtn.style.display = 'none';
+    }
+    // Offer pro-rata when this employee starts part-way through the pay month shown.
+    var prNow = prorataForStart(emp.defaultAmount, emp.days, emp.dateEmployed);
+    if (prNow && prNow.month === state.selectedMonth && !(emp.amountOverridden && Math.abs(emp.amount - prNow.amount) < 0.005)) {
+      prorateBtn.style.display = '';
+      prorateBtn.title = prorataSentence_(prNow, emp.defaultAmount);
     }
   }
 
@@ -3794,6 +3848,24 @@
   });
   document.getElementById('adj-basic-salary-revert-btn').addEventListener('click', function () {
     saveBasicSalaryOverride_(null);
+  });
+  document.getElementById('adj-basic-salary-prorate-btn').addEventListener('click', function () {
+    var emp = selectedAdjEmployee();
+    if (!emp) return;
+    var statusEl = document.getElementById('adj-basic-salary-status');
+    flashStatus(statusEl, 'Saving…', 'save-status', 0);
+    callApiWithOwnerUnlock('setBaseAmountOverride', { employeeId: emp.id, month: state.selectedMonth, prorate: '1' }).then(function (res) {
+      if (res.ok) {
+        state.payroll = res.payroll;
+        renderPayroll();
+        renderAdjustments();
+        flashStatus(document.getElementById('adj-basic-salary-status'), 'Pro-rated', 'save-status ok', 4000);
+      } else {
+        flashStatus(statusEl, res.error || 'Could not pro-rate.', 'save-status err', 6000);
+      }
+    }).catch(function () {
+      flashStatus(statusEl, 'Network error — could not save.', 'save-status err', 5000);
+    });
   });
 
   // ---- Give advance ----
@@ -6041,6 +6113,7 @@
     document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
     if (state.role !== 'hr') document.getElementById('payroll-amount').value = e.amount;
     document.getElementById('payroll-date').value = e.dateEmployed || '';
+    updateProrataHint_();
     document.getElementById('payroll-address').value = e.address || '';
     document.getElementById('payroll-contact-number').value = e.contactNumber || '';
     document.getElementById('payroll-notes').value = e.notes || '';
@@ -6116,6 +6189,25 @@
     return y + '-' + m + '-' + d;
   }
 
+  // Live "this will be pro-rated" note under Date employed — NEW employees only
+  // (the server does the real pro-rating when the employee is saved).
+  function updateProrataHint_() {
+    var hint = document.getElementById('payroll-prorata-hint');
+    if (!hint) return;
+    var editing = document.getElementById('payroll-edit-id').value;
+    var pr = (!editing && state.role !== 'hr')
+      ? prorataForStart(document.getElementById('payroll-amount').value, document.getElementById('payroll-days').value, document.getElementById('payroll-date').value)
+      : null;
+    if (!pr) { hint.style.display = 'none'; hint.textContent = ''; return; }
+    hint.textContent = prorataSentence_(pr, Number(document.getElementById('payroll-amount').value) || 0);
+    hint.style.display = '';
+  }
+  ['payroll-amount', 'payroll-days', 'payroll-date'].forEach(function (fid) {
+    var el = document.getElementById(fid);
+    el.addEventListener('input', updateProrataHint_);
+    el.addEventListener('change', updateProrataHint_);
+  });
+
   function resetEmployeeForm() {
     document.getElementById('payroll-form-title').textContent = 'Add employee';
     document.getElementById('payroll-edit-id').value = '';
@@ -6128,6 +6220,7 @@
     document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
     document.getElementById('payroll-amount').value = '';
     document.getElementById('payroll-date').value = '';
+    updateProrataHint_();
     document.getElementById('payroll-address').value = '';
     document.getElementById('payroll-contact-number').value = '';
     document.getElementById('payroll-notes').value = '';
@@ -6157,6 +6250,9 @@
     document.getElementById('employee-modal').classList.remove('active');
   }
 
+  document.getElementById('payroll-prorata-notice-close').addEventListener('click', function () {
+    document.getElementById('payroll-prorata-notice').style.display = 'none';
+  });
   document.getElementById('payroll-add-btn').addEventListener('click', function () {
     resetEmployeeForm();
     document.getElementById('employee-modal').classList.add('active');
@@ -6269,6 +6365,14 @@
     callApi(action, Object.assign(payload, extra)).then(function (res) {
       if (res.ok) {
         flashStatus(status, 'Saved', 'save-status ok', 3000);
+        if (res.prorated) {
+          // The modal closes on save, so say it on the roster itself.
+          document.getElementById('payroll-prorata-notice-text').textContent =
+            payload.name + ' starts part-way through the pay month, so their first pay (' + monthLabel(res.prorated.month) + ') is pro-rated: ' +
+            res.prorated.workedDays + ' of ' + res.prorated.monthDays + ' working days = ' + moneyExact(res.prorated.amount) +
+            ' instead of ' + moneyExact(res.prorated.fullAmount) + '. Their normal monthly amount is unchanged. You can adjust it under Pay Adjustments → Basic salary → Edit.';
+          document.getElementById('payroll-prorata-notice').style.display = '';
+        }
         state.payroll = res.payroll;
         renderPayroll();
         // A new/edited employee needs to show up in the Pay Adjustments
