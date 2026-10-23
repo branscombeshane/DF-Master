@@ -550,6 +550,16 @@
   .dept-card .dept-adj { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--gridline); }
   .dept-card .dept-adj-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 4px; }
   .dept-card .dept-neg { color: var(--critical); }
+  .dept-card.payroll-dept { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+  .dept-card.payroll-dept:hover, .dept-card.payroll-dept:focus-visible { box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: translateY(-1px); outline: none; }
+  .dept-card .dept-vals { display: inline-flex; align-items: center; gap: 6px; }
+  .cmp { font-size: 10px; font-weight: 700; padding: 0 6px; border-radius: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cmp.hi { background: rgba(214,40,40,0.14); color: var(--critical); }
+  .cmp.mid { background: rgba(250,178,25,0.20); color: #9a6a00; }
+  .cmp.lo { background: rgba(12,163,12,0.14); color: var(--good); }
+  .cmp.eq { background: var(--surface-2, rgba(0,0,0,0.06)); color: var(--text-muted); }
+  .dept-high { margin: -2px 0 6px; font-size: 10.5px; font-weight: 700; color: var(--critical); }
+  table.cmp-table td.cmp-cur, table.cmp-table th.cmp-cur { background: rgba(0,0,0,0.04); font-weight: 700; }
   .ded-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
   .ded-card { text-align: left; font-family: inherit; color: inherit; cursor: pointer; background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 10px; padding: 12px 14px; width: 100%; transition: box-shadow .12s, transform .12s; }
   .ded-card:hover, .ded-card:focus-visible { box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: translateY(-1px); outline: none; }
@@ -789,6 +799,17 @@
     </div>
     <p class="sub" id="casual-weeks-sub" style="margin-bottom:12px;"></p>
     <div id="casual-weeks-body" style="overflow-x:auto;"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dept-cmp-modal">
+  <div class="modal-card wide" style="max-width:980px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:2px;">
+      <h2 id="dept-cmp-title" style="margin:0;">Department</h2>
+      <button class="btn secondary small" id="dept-cmp-close">Close</button>
+    </div>
+    <p class="sub" id="dept-cmp-sub" style="margin-bottom:10px;"></p>
+    <div id="dept-cmp-body" style="overflow-x:auto;"></div>
   </div>
 </div>
 
@@ -1731,7 +1752,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-22.110-auto-refresh';
+  var FRONTEND_BUILD = '2026-10-23.111-dept-average';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2853,21 +2874,108 @@
   // The month's Pay Adjustment totals shown inside each Payroll Dashboard
   // department tile — only the types that actually have an amount. Absent,
   // Deductions and Advance repaid come off pay, so they carry a minus sign.
-  function deptAdjustmentRows_(adj) {
+  // Measures compared on each department tile: key in the tile data / history,
+  // label, and the sign shown (money that comes off pay carries a minus).
+  var DEPT_MEASURES = [
+    ['total', 'Total', 1], ['overtime', 'Overtime', 1], ['commission', 'Commission', 1], ['bonus', 'Bonus', 1],
+    ['travelAllowance', 'Travel allowance', 1], ['otherAllowance', 'Other allowance', 1], ['other', 'Other', 1],
+    ['absent', 'Absent', -1], ['lateIn', 'Late in', -1], ['deductions', 'Deductions', -1], ['advanceRepayment', 'Advance repaid', -1]
+  ];
+  var DEPT_HIGH_PCT = 25, DEPT_HIGH_MIN_RAND = 250; // "high month" = at least +25% AND at least R250 above average
+
+  // Monthly average for one department over the earlier run months the
+  // backend sent (deptHistory); null when there is nothing to compare with.
+  function deptAverages_(deptName) {
+    var h = state.payroll && state.payroll.deptHistory;
+    if (!h || !h.months || !h.months.length) return null;
+    var d = h.byDept && h.byDept[deptName];
+    if (!d) return null;
+    var ms = h.months.filter(function (m) { return d[m]; });
+    if (!ms.length) return null;
+    var avg = { months: ms, n: ms.length };
+    DEPT_MEASURES.concat([['count', 'Headcount', 1]]).forEach(function (x) {
+      avg[x[0]] = ms.reduce(function (t, m) { return t + (d[m][x[0]] || 0); }, 0) / ms.length;
+    });
+    return avg;
+  }
+  function cmpPct_(cur, avg) { return avg > 0 ? Math.round((cur - avg) / avg * 100) : null; }
+  function cmpClass_(pct, cur, avg) {
+    if (pct === null) return cur > 0 ? 'mid' : 'eq';
+    if (pct >= DEPT_HIGH_PCT && cur - avg >= DEPT_HIGH_MIN_RAND) return 'hi';
+    if (pct >= 10) return 'mid';
+    if (pct <= -10) return 'lo';
+    return 'eq';
+  }
+  function cmpBadge_(cur, avgObj, key) {
+    if (!avgObj) return '';
+    var avg = avgObj[key] || 0;
+    var pct = cmpPct_(cur, avg);
+    var cls = cmpClass_(pct, cur, avg);
+    var txt = pct === null ? 'new' : (pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '') + Math.abs(pct) + '%';
+    return '<span class="cmp ' + cls + '" title="Average over the last ' + avgObj.n + ' month' + (avgObj.n === 1 ? '' : 's') + ' with a payroll run: ' + esc(money(avg)) + '">' + txt + '</span>';
+  }
+  // Names of the measures running well above average, shown on the tile header.
+  function deptHighList_(d, avgObj) {
+    if (!avgObj) return [];
+    var out = [];
+    DEPT_MEASURES.forEach(function (x) {
+      var cur = x[0] === 'total' ? d.total : ((d.adjustments || {})[x[0]] || 0);
+      var avg = avgObj[x[0]] || 0, pct = cmpPct_(cur, avg);
+      if (cur > 0 && avg > 0 && pct >= DEPT_HIGH_PCT && cur - avg >= DEPT_HIGH_MIN_RAND) out.push(x[1] + ' +' + pct + '%');
+    });
+    return out;
+  }
+
+  // The month's Pay Adjustment totals shown inside each Payroll Dashboard
+  // department tile — only the types that actually have an amount. Absent,
+  // Deductions and Advance repaid come off pay, so they carry a minus sign.
+  // Each value also carries a badge comparing it with the department's
+  // monthly average (see deptAverages_).
+  function deptAdjustmentRows_(adj, avgObj) {
     adj = adj || {};
-    var defs = [
-      ['overtime', 'Overtime', 1], ['commission', 'Commission', 1], ['bonus', 'Bonus', 1],
-      ['travelAllowance', 'Travel allowance', 1], ['otherAllowance', 'Other allowance', 1], ['other', 'Other', 1],
-      ['absent', 'Absent', -1], ['lateIn', 'Late in', -1], ['deductions', 'Deductions', -1], ['advanceRepayment', 'Advance repaid', -1]
-    ];
-    var rows = defs.filter(function (x) { return adj[x[0]]; }).map(function (x) {
-      return '<div class="dept-row"><span>' + x[1] + '</span><span' + (x[2] < 0 ? ' class="dept-neg"' : '') + '>' +
-        (x[2] < 0 ? '−' : '') + money(adj[x[0]]) + '</span></div>';
+    var rows = DEPT_MEASURES.filter(function (x) { return x[0] !== 'total' && adj[x[0]]; }).map(function (x) {
+      return '<div class="dept-row"><span>' + x[1] + '</span><span class="dept-vals">' + cmpBadge_(adj[x[0]], avgObj, x[0]) + '<span' + (x[2] < 0 ? ' class="dept-neg"' : '') + '>' +
+        (x[2] < 0 ? '−' : '') + money(adj[x[0]]) + '</span></span></div>';
     });
     return rows.length
       ? '<div class="dept-adj"><div class="dept-adj-title">This month</div>' + rows.join('') + '</div>'
       : '<div class="dept-adj"><div class="dept-adj-title">No adjustments</div></div>';
   }
+
+  // Click a department tile: this month next to each earlier run month and the average.
+  function openDeptCompareModal_(deptName) {
+    var d = (state.payroll.departments || []).filter(function (x) { return x.department === deptName; })[0];
+    if (!d) return;
+    var h = state.payroll.deptHistory || { months: [], byDept: {} };
+    var hist = (h.byDept && h.byDept[deptName]) || {};
+    var avgObj = deptAverages_(deptName);
+    var months = h.months || [];
+    document.getElementById('dept-cmp-title').textContent = deptName + ' — ' + monthLabel(state.selectedMonth) + ' vs monthly average';
+    document.getElementById('dept-cmp-sub').textContent = avgObj
+      ? 'Average of the ' + avgObj.n + ' earlier month' + (avgObj.n === 1 ? '' : 's') + ' payroll was run for (' + monthLabel(avgObj.months[0]) + (avgObj.n > 1 ? ' – ' + monthLabel(avgObj.months[avgObj.months.length - 1]) : '') + '). Red = at least ' + DEPT_HIGH_PCT + '% and ' + money(DEPT_HIGH_MIN_RAND) + ' above average.'
+      : 'No earlier payroll runs to compare with yet.';
+    var cur = function (k) { return k === 'total' ? d.total : (d.adjustments || {})[k] || 0; };
+    var measures = [['count', 'Headcount', 1]].concat(DEPT_MEASURES).filter(function (x) {
+      if (x[0] === 'count' || x[0] === 'total') return true;
+      return cur(x[0]) || months.some(function (m) { return hist[m] && hist[m][x[0]]; });
+    });
+    var th = '<th style="text-align:left;">&nbsp;</th>' + months.map(function (m) { return '<th>' + esc(monthLabel(m)) + '</th>'; }).join('') +
+      '<th>Average</th><th class="cmp-cur">' + esc(monthLabel(state.selectedMonth)) + '</th><th>vs average</th>';
+    var fmt = function (k, v) { return k === 'count' ? String(Math.round(v * 10) / 10) : money(v); };
+    var body = measures.map(function (x) {
+      var k = x[0], c = k === 'count' ? d.count : cur(k);
+      var cells = months.map(function (m) { return '<td>' + (hist[m] ? ((hist[m][k] || 0) ? fmt(k, hist[m][k]) : '–') : '–') + '</td>'; }).join('');
+      var avgTxt = (avgObj && avgObj[k]) ? fmt(k, avgObj[k]) : '–';
+      var badge = k === 'count' ? '' : cmpBadge_(c, avgObj, k);
+      var neg = x[2] < 0 && c ? ' class="dept-neg"' : '';
+      return '<tr><td style="text-align:left; font-weight:600;">' + x[1] + '</td>' + cells + '<td>' + avgTxt + '</td><td class="cmp-cur"' + (neg ? ' style="color:var(--critical);"' : '') + '>' + (c ? fmt(k, c) : '–') + '</td><td>' + badge + '</td></tr>';
+    }).join('');
+    document.getElementById('dept-cmp-body').innerHTML = '<table class="data-table cmp-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>' +
+      '<p class="hint" style="margin-top:10px; font-size:12px;">Figures for earlier months come from the payroll runs. People are counted under their current department, so a transfer moves that person\'s history with them. Absent, Late in, Deductions and Advance repaid come off pay.</p>';
+    document.getElementById('dept-cmp-modal').classList.add('active');
+  }
+  document.getElementById('dept-cmp-close').addEventListener('click', function () { document.getElementById('dept-cmp-modal').classList.remove('active'); });
+  document.getElementById('dept-cmp-modal').addEventListener('click', function (e) { if (e.target === this) this.classList.remove('active'); });
 
   function renderPayroll() {
     if (!state.payroll) return;
@@ -2892,11 +3000,18 @@
       deptGrid.innerHTML = '';
       state.payroll.departments.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (d) {
         var card = document.createElement('div');
-        card.className = 'dept-card';
+        card.className = 'dept-card payroll-dept';
+        card.setAttribute('role', 'button'); card.tabIndex = 0;
+        card.title = 'Click for ' + monthLabel(state.selectedMonth) + ' compared with earlier months';
+        var avgObj = deptAverages_(d.department);
+        var highs = deptHighList_(d, avgObj);
         card.innerHTML = '<div class="dept-name">' + esc(d.department) + '</div>' +
+          (highs.length ? '<div class="dept-high">▲ High: ' + esc(highs.join(' · ')) + '</div>' : '') +
           '<div class="dept-row"><span>Headcount</span><span>' + d.count + '</span></div>' +
-          '<div class="dept-row"><span>Total</span><span>' + money(d.total) + '</span></div>' +
-          deptAdjustmentRows_(d.adjustments);
+          '<div class="dept-row"><span>Total</span><span class="dept-vals">' + cmpBadge_(d.total, avgObj, 'total') + '<span>' + money(d.total) + '</span></span></div>' +
+          deptAdjustmentRows_(d.adjustments, avgObj);
+        card.addEventListener('click', function () { openDeptCompareModal_(d.department); });
+        card.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDeptCompareModal_(d.department); } });
         deptGrid.appendChild(card);
       });
     }
