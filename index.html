@@ -1752,7 +1752,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-23.111-dept-average';
+  var FRONTEND_BUILD = '2026-10-23.112-run-per-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3547,6 +3547,10 @@
     badge.className = 'status-badge locked';
     badge.style.marginLeft = '8px';
     badge.textContent = 'Locked — payroll run';
+    // Payroll can be run one company at a time: say so when only some people are locked.
+    var lockedIds = state.payrollAdjustments && state.payrollAdjustments.lockedEmployeeIds;
+    var activeN = state.payroll ? state.payroll.employees.filter(function (e) { return e.active; }).length : 0;
+    if (lockedIds && activeN && lockedIds.length < activeN) badge.textContent = 'Payroll run for ' + lockedIds.length + ' of ' + activeN + ' employees (locked)';
     subEl.appendChild(document.createTextNode(' '));
     subEl.appendChild(badge);
   }
@@ -3894,7 +3898,7 @@
     var upd = function () {
       var m = Number(document.getElementById('adv-sched-monthly').value), box = document.getElementById('adv-sched-preview');
       if (!(m > 0)) { box.style.display = 'none'; return; }
-      box.style.display = 'block'; box.textContent = m > b.balance ? 'More than the balance owed.' : dedSchedule_(b.balance, m, document.getElementById('adv-sched-start').value || state.selectedMonth);
+      box.style.display = 'block'; box.textContent = m > b.balance ? 'More than the balance owed.' : dedSchedule_(b.balance, m, document.getElementById('adv-sched-start').value || state.selectedMonth, b.employeeId);
     };
     document.getElementById('adv-sched-monthly').addEventListener('input', upd);
     document.getElementById('adv-sched-start').addEventListener('input', upd);
@@ -4004,10 +4008,17 @@
     document.getElementById('adj-ded-preview').style.display = 'none';
     flashStatus(document.getElementById('adj-ded-status'), '', 'save-status', 0);
   }
-  function dedSchedule_(total, monthly, start) {
+  // Is payroll already run for this person this month? (Payroll can be run per company.)
+  function empLockedNow_(employeeId) {
+    var ids = state.payrollAdjustments && state.payrollAdjustments.lockedEmployeeIds;
+    if (!ids) return !!state.monthLocked;
+    if (!employeeId) { var se = selectedAdjEmployee(); employeeId = se && se.id; }
+    return ids.indexOf(employeeId) !== -1;
+  }
+  function dedSchedule_(total, monthly, start, employeeId) {
     var n = Math.ceil(total / monthly - 1e-9), last = Math.round((total - monthly * (n - 1)) * 100) / 100;
     var first = start;
-    if (start === state.selectedMonth && state.monthLocked) first = dedMonthAdd_(start, 1);
+    if (start === state.selectedMonth && empLockedNow_(employeeId)) first = dedMonthAdd_(start, 1);
     return dedRand_(monthly) + ' a month for ' + n + (n === 1 ? ' month' : ' months') + (n > 1 && last !== monthly ? ' (last one ' + dedRand_(last) + ')' : '') +
       ', from ' + monthLabel(first) + ' to ' + monthLabel(dedMonthAdd_(first, n - 1)) + '.' +
       (first !== start ? ' Payroll for ' + monthLabel(start) + ' has already been run, so it starts the following month.' : '');
@@ -4020,7 +4031,7 @@
     if (monthly > total) { box.style.display = 'block'; box.textContent = 'The monthly amount is more than the total owed.'; return; }
     var n = Math.ceil(total / monthly - 1e-9), last = Math.round((total - monthly * (n - 1)) * 100) / 100;
     var first = start;
-    if (start === state.selectedMonth && state.monthLocked) first = dedMonthAdd_(start, 1);
+    if (start === state.selectedMonth && empLockedNow_()) first = dedMonthAdd_(start, 1);
     box.style.display = 'block';
     box.textContent = dedRand_(monthly) + ' a month for ' + n + (n === 1 ? ' month' : ' months') + (n > 1 && last !== monthly ? ' (last one ' + dedRand_(last) + ')' : '') +
       ', from ' + monthLabel(first) + ' to ' + monthLabel(dedMonthAdd_(first, n - 1)) + '.' +
@@ -4296,6 +4307,14 @@
     });
   }
 
+  // The company picked in the box next to Run payroll / Download PDF (null =
+  // all companies combined, or a group with a single company).
+  function pickedRunCompany_() {
+    var pr = state.payrollRun, companies = (pr && pr.emp201ByCompany) || [];
+    if (state.emp201Company === 'all' || companies.length < 2) return null;
+    return companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; })[0] || null;
+  }
+
   function renderPayrollRun() {
     if (!state.payrollRun) return;
     var pr = state.payrollRun;
@@ -4324,6 +4343,15 @@
     }
     var selectedCo = (state.emp201Company !== 'all' && companies.length > 1)
       ? companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; })[0] : null;
+    // Payroll is run one company at a time (or for all of them), so say which.
+    var coHasRun = selectedCo ? selectedCo.payslipCount > 0 : pr.hasRun;
+    var coLabel = selectedCo ? selectedCo.companyName : '';
+    var othersRun = selectedCo && !coHasRun && pr.hasRun;
+    document.getElementById('payrollrun-sub').textContent = monthLabel(state.selectedMonth) + (coHasRun
+      ? ' — figures below are as of the last time payroll was run for ' + (coLabel ? coLabel + ' this month.' : 'this month.')
+      : ' — payroll has not been run for ' + (coLabel ? coLabel : 'this month') + ' yet.' + (othersRun ? ' (It has been run for other companies.)' : '') +
+        (!selectedCo && companies.length > 1 ? ' Pick a company to run it on its own.' : ''));
+    document.getElementById('payrollrun-run-btn').textContent = selectedCo ? 'Run payroll for ' + coLabel : (companies.length > 1 ? 'Run payroll for all companies' : 'Run payroll for this month');
     var e = (selectedCo ? selectedCo.emp201 : pr.emp201) || {
       paye: 0, uifTotal: 0, sdl: 0, eti: 0, netToSars: 0, grossPayroll: 0,
       leviableAmount: 0, amountPayable: 0, controlTotal: 0,
@@ -4500,8 +4528,9 @@
   document.getElementById('emp201-pdf-btn').addEventListener('click', function () {
     var btn = this;
     var pr = state.payrollRun;
-    if (!pr || !pr.hasRun) {
-      window.alert('Payroll has not been run for this month yet — run it first, then download the EMP201.');
+    var coPicked = pickedRunCompany_();
+    if (!pr || !pr.hasRun || (coPicked && !coPicked.payslipCount)) {
+      window.alert('Payroll has not been run for ' + (coPicked ? coPicked.companyName : 'this month') + ' yet — run it first, then download the EMP201.');
       return;
     }
     var original = btn.textContent;
@@ -4520,6 +4549,11 @@
     var companies = pr.emp201ByCompany || [];
     var picked = (state.emp201Company !== 'all' && companies.length > 1)
       ? companies.filter(function (c) { return (c.companyId || '__none') === state.emp201Company; }) : companies;
+    // "All companies": only those payroll has been run for (a company not run yet has nothing to file).
+    if (state.emp201Company === 'all' && companies.length > 1) {
+      var ranOnly = picked.filter(function (c) { return c.payslipCount > 0; });
+      if (ranOnly.length) picked = ranOnly;
+    }
     if (!picked.length) picked = [{ companyName: pr.companyName || '', emp201: pr.emp201, emp201Rows: pr.emp201Rows }];
     holder.innerHTML = picked.map(function (c) { return buildEmp201PdfHtml(pr, c); }).join('');
     // File name always carries the company: its own name for a single return
@@ -4750,8 +4784,10 @@
   document.getElementById('payreport-pdf-btn').addEventListener('click', function () {
     var btn = this, st = document.getElementById('payreport-status');
     var pr = state.payrollRun;
-    if (!pr || !pr.hasRun) {
-      flashStatus(st, 'Payroll has not been run for this month yet — run it first.', 'save-status err', 5000);
+    var payCo = (payCompany !== 'all' && (pr && pr.emp201ByCompany || []).length > 1)
+      ? pr.emp201ByCompany.filter(function (c) { return (c.companyId || '__none') === payCompany; })[0] : null;
+    if (!pr || !pr.hasRun || (payCo && !payCo.payslipCount)) {
+      flashStatus(st, 'Payroll has not been run for ' + (payCo ? payCo.companyName : 'this month') + ' yet — run it first.', 'save-status err', 5000);
       return;
     }
     var original = btn.textContent;
@@ -4766,6 +4802,7 @@
     var companies = pr.emp201ByCompany || [];
     var picked = (payCompany !== 'all' && companies.length > 1)
       ? companies.filter(function (c) { return (c.companyId || '__none') === payCompany; }) : companies;
+    if (payCompany === 'all' && companies.length > 1) { var ranPay = picked.filter(function (c) { return c.payslipCount > 0; }); if (ranPay.length) picked = ranPay; }
     if (!picked.length) picked = [{ companyId: '', companyName: pr.companyName || '' }];
     holder.innerHTML = picked.map(function (c) { return buildPaymentsPdfHtml_(pr, c); }).join('');
     var fileCo = '';
@@ -5684,12 +5721,16 @@
   document.getElementById('payrollrun-run-btn').addEventListener('click', function () {
     var status = document.getElementById('payrollrun-status');
     flashStatus(status, 'Running…', 'save-status', 0);
-    callApiWithOwnerUnlock('runPayroll', { month: state.selectedMonth }).then(function (res) {
+    var runCo = pickedRunCompany_();
+    var runParams = { month: state.selectedMonth };
+    if (runCo) runParams.companyId = runCo.companyId || '__none';
+    callApiWithOwnerUnlock('runPayroll', runParams).then(function (res) {
       if (res.ok) {
         state.payrollRun = res.payrollRun;
         renderPayrollRun();
-        flashStatus(status, 'Done', 'save-status ok', 3000);
+        flashStatus(status, 'Done' + (runCo ? ' — ' + runCo.companyName : ''), 'save-status ok', 3000);
         loadIrp5();
+        loadPayroll(); loadAdjustments(); // lock badges / who is locked now
       } else {
         flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
       }
