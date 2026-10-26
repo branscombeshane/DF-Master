@@ -560,6 +560,10 @@
   .cmp.eq { background: var(--surface-2, rgba(0,0,0,0.06)); color: var(--text-muted); }
   .dept-high { margin: -2px 0 6px; font-size: 10.5px; font-weight: 700; color: var(--critical); }
   table.cmp-table td.cmp-cur, table.cmp-table th.cmp-cur { background: rgba(0,0,0,0.04); font-weight: 700; }
+  .cmp-toggle { background: none; border: none; padding: 2px 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; text-align: left; }
+  .cmp-toggle:hover, .cmp-toggle:focus-visible { color: var(--brand); outline: none; }
+  .cmp-caret { display: inline-block; width: 12px; color: var(--text-muted); }
+  tr.cmp-emp td { background: rgba(0,0,0,0.025); font-size: 12.5px; }
   .ded-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
   .ded-card { text-align: left; font-family: inherit; color: inherit; cursor: pointer; background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--warning); border-radius: 10px; padding: 12px 14px; width: 100%; transition: box-shadow .12s, transform .12s; }
   .ded-card:hover, .ded-card:focus-visible { box-shadow: 0 2px 10px rgba(0,0,0,0.12); transform: translateY(-1px); outline: none; }
@@ -1759,7 +1763,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-26.118-start-month';
+  var FRONTEND_BUILD = '2026-10-26.119-dept-drilldown';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3002,16 +3006,50 @@
     var th = '<th style="text-align:left;">&nbsp;</th>' + months.map(function (m) { return '<th>' + esc(monthLabel(m)) + '</th>'; }).join('') +
       '<th>Average</th><th class="cmp-cur">' + esc(monthLabel(state.selectedMonth)) + '</th><th>vs average</th>';
     var fmt = function (k, v) { return k === 'count' ? String(Math.round(v * 10) / 10) : money(v); };
-    var body = measures.map(function (x) {
-      var k = x[0], c = k === 'count' ? d.count : cur(k);
-      var cells = months.map(function (m) { return '<td>' + (hist[m] ? ((hist[m][k] || 0) ? fmt(k, hist[m][k]) : '–') : '–') + '</td>'; }).join('');
-      var avgTxt = (avgObj && avgObj[k]) ? fmt(k, avgObj[k]) : '–';
-      var badge = k === 'count' ? '' : cmpBadge_(c, avgObj, k);
-      var neg = x[2] < 0 && c ? ' class="dept-neg"' : '';
-      return '<tr><td style="text-align:left; font-weight:600;">' + x[1] + '</td>' + cells + '<td>' + avgTxt + '</td><td class="cmp-cur"' + (neg ? ' style="color:var(--critical);"' : '') + '>' + (c ? fmt(k, c) : '–') + '</td><td>' + badge + '</td></tr>';
-    }).join('');
-    document.getElementById('dept-cmp-body').innerHTML = '<table class="data-table cmp-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>' +
-      '<p class="hint" style="margin-top:10px; font-size:12px;">Figures for earlier months come from the payroll runs. People are counted under their current department, so a transfer moves that person\'s history with them. Absent, Late in, Deductions and Advance repaid come off pay.</p>';
+    // Everyone in this department (current or past) with their figures, for the expandable rows.
+    var emps = [];
+    var allEmps = state.payroll.deptEmployees || {};
+    Object.keys(allEmps).forEach(function (id) { if (allEmps[id].department === deptName) emps.push(allEmps[id]); });
+    var nAvg = avgObj ? avgObj.n : 0;
+    var avgMonths = avgObj ? avgObj.months : [];
+    var expanded = {};
+    function empVal_(e, k, m) { var c = m === 'cur' ? e.cur : e.hist[m]; return (c && c[k]) || 0; }
+    function empAvg_(e, k) { return nAvg ? avgMonths.reduce(function (t, m) { return t + empVal_(e, k, m); }, 0) / nAvg : 0; }
+    function detailRows_(x) {
+      var k = x[0];
+      var list = emps.map(function (e) {
+        var hv = months.map(function (m) { return empVal_(e, k, m); });
+        return { e: e, hv: hv, avg: empAvg_(e, k), cur: empVal_(e, k, 'cur') };
+      }).filter(function (r) { return r.cur || r.avg || r.hv.some(function (v) { return v; }); });
+      list.sort(function (a, b) { return (b.cur - a.cur) || (b.avg - a.avg) || (a.e.name < b.e.name ? -1 : 1); });
+      if (!list.length) return '<tr class="cmp-emp"><td colspan="' + (months.length + 4) + '" style="text-align:left; color:var(--text-muted);">Nobody.</td></tr>';
+      return list.map(function (r) {
+        var neg = x[2] < 0 && r.cur ? ' style="color:var(--critical);"' : '';
+        return '<tr class="cmp-emp"><td style="text-align:left; padding-left:28px;">' + esc(r.e.name) + (r.e.active ? '' : ' <span class="hint" style="margin:0;">(left)</span>') + '</td>' +
+          r.hv.map(function (v) { return '<td>' + (v ? fmt(k, v) : '–') + '</td>'; }).join('') +
+          '<td>' + (r.avg ? fmt(k, r.avg) : '–') + '</td><td class="cmp-cur"' + neg + '>' + (r.cur ? fmt(k, r.cur) : '–') + '</td>' +
+          '<td>' + (k === 'count' ? '' : (r.cur || r.avg ? cmpBadge_(r.cur, { n: nAvg, [k]: r.avg }, k) : '')) + '</td></tr>';
+      }).join('');
+    }
+    function paintBody_() {
+      var body = measures.map(function (x) {
+        var k = x[0], c = k === 'count' ? d.count : cur(k);
+        var cells = months.map(function (m) { return '<td>' + (hist[m] ? ((hist[m][k] || 0) ? fmt(k, hist[m][k]) : '–') : '–') + '</td>'; }).join('');
+        var avgTxt = (avgObj && avgObj[k]) ? fmt(k, avgObj[k]) : '–';
+        var badge = k === 'count' ? '' : cmpBadge_(c, avgObj, k);
+        var neg = x[2] < 0 && c ? ' class="dept-neg"' : '';
+        var open = !!expanded[k];
+        var row = '<tr><td style="text-align:left; font-weight:600;"><button type="button" class="cmp-toggle" data-k="' + k + '" aria-expanded="' + open + '" title="Click to ' + (open ? 'hide' : 'see') + ' the employees behind this row">' +
+          '<span class="cmp-caret">' + (open ? '▾' : '▸') + '</span> ' + x[1] + '</button></td>' + cells + '<td>' + avgTxt + '</td><td class="cmp-cur"' + (neg ? ' style="color:var(--critical);"' : '') + '>' + (c ? fmt(k, c) : '–') + '</td><td>' + badge + '</td></tr>';
+        return row + (open ? detailRows_(x) : '');
+      }).join('');
+      document.getElementById('dept-cmp-body').innerHTML = '<table class="data-table cmp-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>' +
+        '<p class="hint" style="margin-top:10px; font-size:12px;">Click a row heading to see which employees make up each figure. Figures for earlier months come from the payroll runs. People are counted under their current department, so a transfer moves that person\'s history with them. Absent, Late in, Deductions and Advance repaid come off pay.</p>';
+      document.getElementById('dept-cmp-body').querySelectorAll('.cmp-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () { var k = btn.getAttribute('data-k'); expanded[k] = !expanded[k]; paintBody_(); });
+      });
+    }
+    paintBody_();
     document.getElementById('dept-cmp-modal').classList.add('active');
   }
   document.getElementById('dept-cmp-close').addEventListener('click', function () { document.getElementById('dept-cmp-modal').classList.remove('active'); });
