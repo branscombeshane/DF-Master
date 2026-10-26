@@ -1106,6 +1106,7 @@
         <div class="panel">
           <h2>Roster</h2>
           <p class="panel-sub" id="payroll-roster-sub"></p>
+          <p class="panel-sub" id="payroll-startlater-note" style="display:none; margin-top:-6px;"></p>
           <div class="toolbar">
             <input type="text" id="payroll-search" placeholder="Search by name...">
             <select id="payroll-dept-filter"><option value="">All departments</option></select>
@@ -1758,7 +1759,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-26.117-followup-trend';
+  var FRONTEND_BUILD = '2026-10-26.118-start-month';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3020,6 +3021,17 @@
     if (!state.payroll) return;
     document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
     renderMonthLockedBadge_('payroll-roster-sub', state.payroll && state.payroll.lockedEmployeeIds);
+    // People who start AFTER this pay month are not part of it (a pay month runs 25th to 24th).
+    var laterEl = document.getElementById('payroll-startlater-note');
+    var later = (state.payroll && state.payroll.startingLater) || [];
+    if (later.length) {
+      laterEl.textContent = 'Not in ' + monthLabel(state.selectedMonth) + ' payroll — they start later: ' +
+        later.map(function (e) { return e.name + ' (' + e.dateEmployed + ', ' + monthLabel(e.startMonth) + ' pay)'; }).join('; ') + '. Switch the Payroll month to see them.';
+      laterEl.style.display = '';
+    } else {
+      laterEl.style.display = 'none';
+      laterEl.textContent = '';
+    }
     // HR accounts have no Payroll Dashboard sub-tab at all (see
     // visiblePayrollSubtabs_) — it's pure Basic Salary cost aggregates
     // (totalMonthlyCost, per-department totals), which the backend doesn't
@@ -6374,6 +6386,16 @@
           document.getElementById('payroll-prorata-notice').style.display = '';
         }
         state.payroll = res.payroll;
+        // A new starter whose start date is in a LATER pay month isn't in the month on screen.
+        if (!id) {
+          const laterHit = ((res.payroll && res.payroll.startingLater) || []).filter(e => e.name === payload.name && e.dateEmployed === payload.dateEmployed)[0];
+          if (laterHit) {
+            const noticeEl = document.getElementById('payroll-prorata-notice');
+            const txtEl = document.getElementById('payroll-prorata-notice-text');
+            txtEl.textContent = (res.prorated ? txtEl.textContent + ' ' : '') + payload.name + ' starts on ' + laterHit.dateEmployed + ', which is in ' + monthLabel(laterHit.startMonth) + ' pay, so they will not appear in ' + monthLabel(state.selectedMonth) + ' payroll. Switch the Payroll month to ' + monthLabel(laterHit.startMonth) + ' to see them.';
+            noticeEl.style.display = '';
+          }
+        }
         renderPayroll();
         // A new/edited employee needs to show up in the Pay Adjustments
         // employee dropdown immediately too, not just the roster table —
