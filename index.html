@@ -475,6 +475,11 @@
   table.casual-grid input.hrs.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid input.hrs.dirty { border-color: var(--brand); }
   table.casual-grid th .dnum { display: block; font-size: 10px; font-weight: 400; text-transform: none; color: var(--text-muted); }
+  .salary-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: #e08a00; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
+  .salary-banner { margin: 0 0 14px; padding: 12px 16px; border: 1px solid #e0a64a; border-left: 5px solid #e08a00; border-radius: 10px; background: color-mix(in srgb, #e08a00 10%, var(--card)); font-size: 13.5px; }
+  .salary-banner .link-btn { font-weight: 700; margin-right: 4px; }
+  .salary-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid #e0a64a; background: color-mix(in srgb, #e08a00 14%, transparent); color: #9a5a00; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+  .salary-pill:hover, .salary-pill:focus-visible { background: #e08a00; color: #fff; outline: none; }
   .pending-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
   .link-btn { background: none; border: none; padding: 0; font: inherit; color: var(--text-primary); font-weight: 600; text-decoration: underline; text-decoration-color: var(--brand); text-underline-offset: 3px; cursor: pointer; }
   .wk-chip { display:inline-block; white-space:nowrap; margin-top:3px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; border:0; cursor:pointer; background:var(--gridline); color:var(--text-secondary); font-family:inherit; }
@@ -1080,6 +1085,7 @@
         <span id="payroll-live-note" class="hint" style="margin:0 0 0 8px;"></span>
       </div>
 
+      <div class="salary-banner" id="salary-needed-banner" style="display:none;" role="status"></div>
       <nav class="subtabs" id="payroll-subtabs"></nav>
       <div class="payroll-loading" id="payroll-loading" hidden role="status" aria-live="polite">
         <div class="payroll-loading-inner"><div class="payroll-loading-spinner"></div><div id="payroll-loading-text">Loading month…</div></div>
@@ -1763,7 +1769,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-26.120-keep-leading-zeros';
+  var FRONTEND_BUILD = '2026-10-26.121-salary-needed';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1782,7 +1788,7 @@
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
-    getCasualWeek: true, getCasualPending: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
+    getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
 
   // ================= STATE =================
@@ -2375,6 +2381,7 @@
     if (hasSection('payroll')) renderPayrollSubNav();
     populateMonthPicker();
     loadCasualPending_();
+    loadSalaryNeeded_();
 
     // Every tab's own data now loads independently and in parallel. This used
     // to be one long chain -- dashboard, THEN history, THEN (only once BOTH
@@ -3215,7 +3222,7 @@
     var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
     var body = '<tbody>' + activeRows.map(function (e) {
       var salaryCells = isHr ? '' :
-        '<td>' + money(e.amount) + '</td>' +
+        '<td>' + (e.salaryNeeded ? '<button type="button" class="salary-pill" data-setsalary-id="' + esc(e.id) + '" title="No Basic Salary yet — click to set it">Set salary</button>' : money(e.amount)) + '</td>' +
         '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
         '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
       return '<tr>' +
@@ -3254,6 +3261,9 @@
     }
 
     [table, dischargedTable].forEach(function (t) {
+      Array.prototype.forEach.call(t.querySelectorAll('[data-setsalary-id]'), function (btn) {
+        btn.addEventListener('click', function () { openSetSalary_(btn.getAttribute('data-setsalary-id')); });
+      });
       Array.prototype.forEach.call(t.querySelectorAll('[data-edit-id]'), function (btn) {
         btn.addEventListener('click', function () {
           startEditEmployee(btn.getAttribute('data-edit-id'));
@@ -4759,6 +4769,7 @@
         }
         jobs.push(loadCasualPending_());
       } else {
+        jobs.push(loadSalaryNeeded_());
         jobs.push(callApi('getPayroll', { month: month }).then(function (res) {
           if (res && res.ok && !stale_() && JSON.stringify(res.payroll) !== JSON.stringify(state.payroll)) { state.payroll = res.payroll; state.monthLocked = !!res.monthLocked; renderPayroll(); changed = true; }
         }));
@@ -4956,6 +4967,55 @@
         b.appendChild(s);
       }
     });
+  }
+  // Owner/Staff: new employees (typically added by HR, who can't set pay) whose Basic Salary is still R0.
+  var salaryNeeded = { people: [] };
+  function paintSalaryNeeded_() {
+    var n = salaryNeeded.people.length;
+    var targets = [document.querySelector('nav#nav-tabs button[data-view="payroll"]'), document.querySelector('#payroll-subtabs button[data-subview="roster"]')];
+    targets.forEach(function (b) {
+      if (!b) return;
+      var old = b.querySelector('.salary-count'); if (old) old.remove();
+      if (n > 0 && state.role !== 'hr') {
+        var sp = document.createElement('span'); sp.className = 'salary-count'; sp.textContent = String(n);
+        sp.title = n + (n === 1 ? ' employee needs' : ' employees need') + ' a Basic Salary';
+        b.appendChild(sp);
+      }
+    });
+    var banner = document.getElementById('salary-needed-banner');
+    if (!banner) return;
+    if (!n || state.role === 'hr') { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    banner.innerHTML = '<strong>' + n + (n === 1 ? ' employee needs' : ' employees need') + ' a Basic Salary</strong> — they are on R0 until you set it: ' +
+      salaryNeeded.people.map(function (e) {
+        return '<button type="button" class="link-btn" data-salary-emp="' + esc(e.id) + '" title="Open this employee to set the salary">' + esc(e.name) + '</button><span class="hint" style="margin:0 10px 0 0;">' + esc(e.department) + (e.dateEmployed ? ', starts ' + esc(e.dateEmployed) : '') + '</span>';
+      }).join('');
+    banner.style.display = '';
+    Array.prototype.forEach.call(banner.querySelectorAll('[data-salary-emp]'), function (b) {
+      b.addEventListener('click', function () { openSetSalary_(b.getAttribute('data-salary-emp')); });
+    });
+  }
+  function openSetSalary_(id) {
+    var emp = state.payroll && state.payroll.employees.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!emp) {
+      var later = (state.payroll && state.payroll.startingLater || []).filter(function (x) { return String(x.id) === String(id); })[0];
+      window.alert(later ? later.name + ' starts on ' + later.dateEmployed + ' (' + monthLabel(later.startMonth) + ' pay). Switch the Payroll month to ' + monthLabel(later.startMonth) + ' to open them.' : 'Switch the Payroll month to the month they start in to open them.');
+      return;
+    }
+    startEditEmployee(id);
+    var amt = document.getElementById('payroll-amount');
+    if (amt) { amt.focus(); amt.select(); }
+  }
+  function loadSalaryNeeded_() {
+    if (state.role === 'hr' || !hasSection('payroll')) { salaryNeeded = { people: [] }; paintSalaryNeeded_(); return Promise.resolve(); }
+    var grp = state.companyGroup;
+    var was = silentApi_; silentApi_ = true;
+    var p = callApi('getSalaryNeeded', {});
+    silentApi_ = was;
+    return p.then(function (res) {
+      if (grp !== state.companyGroup) return;
+      salaryNeeded = (res && res.ok) ? { people: res.people || [] } : { people: [] };
+      paintSalaryNeeded_();
+    }).catch(function () { /* a convenience; ignore errors */ });
   }
   function loadCasualPending_() {
     if (state.role !== 'owner' || !hasSection('payroll')) { casualState.pending = { people: 0, weeks: [] }; paintCasualBadges_(); return Promise.resolve(); }
@@ -5847,6 +5907,18 @@
     var runParams = { month: state.selectedMonth };
     if (runCo) runParams.companyId = runCo.companyId || '__none';
     callApiWithOwnerUnlock('runPayroll', runParams).then(function (res) {
+      if (res && res.zeroSalary) {
+        // Someone would be paid R0: make the owner say so explicitly.
+        if (window.confirm(res.error + '\n\nRun payroll anyway?')) {
+          flashStatus(status, 'Running…', 'save-status', 0);
+          return callApiWithOwnerUnlock('runPayroll', Object.assign({ confirmZeroSalary: '1' }, runParams));
+        }
+        flashStatus(status, 'Not run — set their Basic Salary first.', 'save-status err', 6000);
+        return null;
+      }
+      return res;
+    }).then(function (res) {
+      if (!res) return;
       if (res.ok) {
         state.payrollRun = res.payrollRun;
         renderPayrollRun();
@@ -6424,6 +6496,7 @@
           document.getElementById('payroll-prorata-notice').style.display = '';
         }
         state.payroll = res.payroll;
+        loadSalaryNeeded_();
         // A new starter whose start date is in a LATER pay month isn't in the month on screen.
         if (!id) {
           const laterHit = ((res.payroll && res.payroll.startingLater) || []).filter(e => e.name === payload.name && e.dateEmployed === payload.dateEmployed)[0];
