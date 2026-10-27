@@ -1685,7 +1685,7 @@
           <label>Account type</label>
           <select id="user-role">
             <option value="staff">Staff — pick sections and entities below</option>
-            <option value="hr">HR — Payroll only, scoped to one or more companies and their departments, Basic Salary hidden</option>
+            <option value="hr">HR — Payroll scoped to one or more companies and their departments, Basic Salary hidden (Sales access optional)</option>
             <option value="sales">Sales — Sales tab only, scoped to the companies you tick</option>
             <option value="owner">Owner — full access to everything, including Settings, Users and Sales admin</option>
           </select>
@@ -1699,27 +1699,31 @@
             <label id="user-entities-label">Entities this account can access</label>
             <div class="checkbox-grid" id="user-entities-grid"></div>
           </div>
-          <div class="field" id="user-sales-fields" style="display:none;">
-            <label>Sales access</label>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <select id="user-sales-role" style="width:auto;">
-                <option value="rep">Sales rep — own deals &amp; clients</option>
-                <option value="admin">Sales admin — sees everyone, edits targets</option>
-              </select>
-              <select id="user-sales-division" style="width:auto;">
-                <option value="both">Both divisions</option>
-                <option value="trays">Trays only</option>
-                <option value="wholesale">Wholesale only</option>
-              </select>
-            </div>
-            <div class="hint">Applies because the Sales section is ticked above. Owner accounts are always Sales admins with both divisions.</div>
+        </div>
+        <div class="field" id="user-sales-fields" style="display:none;">
+          <label>Sales access</label>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <select id="user-sales-role" style="width:auto;">
+              <option value="rep">Sales rep — own deals &amp; clients</option>
+              <option value="admin">Sales admin — sees everyone, edits targets</option>
+            </select>
+            <select id="user-sales-division" style="width:auto;">
+              <option value="both">Both divisions</option>
+              <option value="trays">Trays only</option>
+              <option value="wholesale">Wholesale only</option>
+            </select>
           </div>
+          <div class="hint">Applies because Sales access is switched on for this account. Owner accounts are always Sales admins with both divisions.</div>
         </div>
         <div id="user-hr-fields" style="display:none;">
           <div class="field">
             <label>Companies</label>
             <div class="checkbox-grid" id="user-companies-grid"></div>
             <div class="hint">Tick every company this HR account should see — they must all belong to the same company group. Its Payroll view is scoped to just these companies' departments.</div>
+          </div>
+          <div class="field">
+            <label><input type="checkbox" id="user-hr-sales" style="width:auto; margin-right:6px;">Also give this account Sales access</label>
+            <div class="hint">Adds the Sales tab next to Payroll, for the same company group as the companies ticked above (e.g. Daily Fruit Cpt's manager sees only Cpt's sales). Payroll stays restricted exactly as an HR account; choose the Sales role below.</div>
           </div>
           <div class="field">
             <label>Departments within those companies</label>
@@ -1769,7 +1773,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-27.122-sales-per-company';
+  var FRONTEND_BUILD = '2026-10-27.123-hr-plus-sales';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7496,9 +7500,13 @@
   // The Sales role/division pickers only matter while the Sales section is ticked.
   function syncUserSalesFieldsVisibility() {
     // A Sales-type account always has Sales access; for Staff it depends on the tick.
-    var on = document.getElementById('user-role').value === 'sales' || Array.prototype.some.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.value === 'sales' && cb.checked; });
+    var roleNow = document.getElementById('user-role').value;
+    var on = roleNow === 'sales'
+      || (roleNow === 'hr' && document.getElementById('user-hr-sales').checked)
+      || (roleNow === 'staff' && Array.prototype.some.call(document.querySelectorAll('.user-section-cb'), function (cb) { return cb.value === 'sales' && cb.checked; }));
     document.getElementById('user-sales-fields').style.display = on ? '' : 'none';
   }
+  document.getElementById('user-hr-sales').addEventListener('change', syncUserSalesFieldsVisibility);
   document.getElementById('user-sections-grid').addEventListener('change', function (e) {
     if (e.target.classList.contains('user-section-cb')) syncUserSalesFieldsVisibility();
   });
@@ -7540,7 +7548,7 @@
         '<td style="text-align:left;">' + esc(u.name) + '</td>' +
         '<td style="text-align:left; text-transform:capitalize;">' + esc(u.role) + '</td>' +
         '<td>' + chips(u.sections.map(function (sec) {
-          return (sec === 'sales' && u.role !== 'hr') ? 'sales · ' + (u.salesRole || 'rep') + ' · ' + (u.salesDivision || 'both') : sec;
+          return (sec === 'sales') ? 'sales · ' + (u.salesRole || 'rep') + ' · ' + (u.salesDivision || 'both') : sec;
         })) + '</td>' +
         '<td>' + scopeHtml + '</td>' +
         '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
@@ -7575,6 +7583,7 @@
     });
     document.getElementById('user-sales-role').value = u.salesRole || 'rep';
     document.getElementById('user-sales-division').value = u.salesDivision || 'both';
+    document.getElementById('user-hr-sales').checked = (u.role === 'hr' && u.sections.indexOf('sales') !== -1);
     syncUserSalesFieldsVisibility();
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) {
       cb.checked = u.entities.indexOf(cb.value) !== -1;
@@ -7607,6 +7616,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.user-section-cb'), function (cb) { cb.checked = false; });
     document.getElementById('user-sales-role').value = 'rep';
     document.getElementById('user-sales-division').value = 'both';
+    document.getElementById('user-hr-sales').checked = false;
     syncUserSalesFieldsVisibility();
     Array.prototype.forEach.call(document.querySelectorAll('.user-entity-cb'), function (cb) { cb.checked = false; });
     Array.prototype.forEach.call(document.querySelectorAll('.user-company-cb'), function (cb) { cb.checked = false; });
@@ -7651,6 +7661,9 @@
         if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
         updateParams.company = companyIds.join(',');
         updateParams.departments = departments.join(',');
+        updateParams.salesAccess = document.getElementById('user-hr-sales').checked ? 'true' : 'false';
+        updateParams.salesRole = document.getElementById('user-sales-role').value;
+        updateParams.salesDivision = document.getElementById('user-sales-division').value;
       } else {
         updateParams.sections = sections.join(',');
         updateParams.entities = entities.join(',');
@@ -7681,6 +7694,9 @@
         if (!departments.length) { errEl.textContent = 'Pick at least one department within the selected company/companies.'; return; }
         addParams.company = companyIds.join(',');
         addParams.departments = departments.join(',');
+        addParams.salesAccess = document.getElementById('user-hr-sales').checked ? 'true' : 'false';
+        addParams.salesRole = document.getElementById('user-sales-role').value;
+        addParams.salesDivision = document.getElementById('user-sales-division').value;
       } else {
         addParams.sections = sections.join(',');
         addParams.entities = entities.join(',');
