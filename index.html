@@ -1773,7 +1773,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-27.123-hr-plus-sales';
+  var FRONTEND_BUILD = '2026-10-27.124-payslip-selection-reset';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2351,6 +2351,9 @@
   // the same load-and-render chain enterApp used to run unconditionally.
   function enterGroup() {
     applyCompanyGroupFilter();
+    // A different company starts with nothing ticked in Reports > Payslips (and no department filter).
+    selectedPayslipIds.clear();
+    var slipDept = document.getElementById('reports-payslips-dept-filter'); if (slipDept) slipDept.value = '';
     // Sales data is per company: drop whatever the previous company's Sales tab had loaded.
     try { if (typeof salesModule !== 'undefined' && salesModule && salesModule.reset) salesModule.reset(); } catch (e) {}
 
@@ -5724,7 +5727,12 @@
     updatePrintSelectedButton();
   }
 
-  document.getElementById('reports-payslips-dept-filter').addEventListener('change', renderReportsPayslipsTable);
+  // Changing the department starts a fresh selection: ticks made under the previous
+  // department must not silently ride along into the next batch download / WhatsApp send.
+  document.getElementById('reports-payslips-dept-filter').addEventListener('change', function () {
+    selectedPayslipIds.clear();
+    renderReportsPayslipsTable();
+  });
 
   document.getElementById('reports-print-selected-btn').addEventListener('click', function () {
     if (selectedPayslipIds.size === 0) {
