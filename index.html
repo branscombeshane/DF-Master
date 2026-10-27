@@ -1769,7 +1769,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-26.121-salary-needed';
+  var FRONTEND_BUILD = '2026-10-27.122-sales-per-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2347,6 +2347,8 @@
   // the same load-and-render chain enterApp used to run unconditionally.
   function enterGroup() {
     applyCompanyGroupFilter();
+    // Sales data is per company: drop whatever the previous company's Sales tab had loaded.
+    try { if (typeof salesModule !== 'undefined' && salesModule && salesModule.reset) salesModule.reset(); } catch (e) {}
 
     state.financialYear = null;
     state.dashboardEntity = 'total';
@@ -7709,6 +7711,7 @@
   //  rest of this app, while inheriting this app's colour tokens (light + dark).
   //  Everything it does goes through ONE backend action, 'salesApi'.
   // ==========================================================================
+  var appState_ = state;   // the app's state (holds the chosen company group); the module below has its own `state`
   var salesModule = (function () {
     var SR = null;            // the shadow root everything below renders into
     var initialised = false;
@@ -7718,6 +7721,9 @@
     const api = (function () {
       function call(method, url, body) {
         var params = { m: method, u: url };
+        // Each company has its own sales team and data: say which company this is for
+        // (the server checks the person really belongs to it).
+        if (appState_.companyGroup) params.g = appState_.companyGroup;
         if (body !== undefined) params.b = JSON.stringify(body);
         return callApi('salesApi', params).then(function (res) {
           if (res && res.ok) return res.data;
