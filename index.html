@@ -478,6 +478,14 @@
   .salary-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: #e08a00; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
   .salary-banner { margin: 0 0 14px; padding: 12px 16px; border: 1px solid #e0a64a; border-left: 5px solid #e08a00; border-radius: 10px; background: color-mix(in srgb, #e08a00 10%, var(--card)); font-size: 13.5px; }
   .salary-banner .link-btn { font-weight: 700; margin-right: 4px; }
+  .rerun-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
+  .rerun-banner { margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--critical); border-left: 5px solid var(--critical); border-radius: 10px; background: color-mix(in srgb, var(--critical) 9%, var(--card)); font-size: 13.5px; }
+  .rerun-banner ul { margin: 8px 0 10px; padding-left: 18px; }
+  .rerun-banner li { margin: 3px 0; }
+  .rerun-banner .hint { margin: 0; }
+  .rerun-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 400; max-width: min(560px, calc(100vw - 32px)); padding: 14px 18px; border-radius: 12px; background: var(--critical); color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.3); font-size: 13.5px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .rerun-toast button { border: 1px solid rgba(255,255,255,0.7); background: transparent; color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .rerun-toast button:hover { background: rgba(255,255,255,0.18); }
   .salary-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid #e0a64a; background: color-mix(in srgb, #e08a00 14%, transparent); color: #9a5a00; font-size: 11.5px; font-weight: 700; cursor: pointer; }
   .salary-pill:hover, .salary-pill:focus-visible { background: #e08a00; color: #fff; outline: none; }
   .pending-count { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; vertical-align: middle; }
@@ -1085,6 +1093,7 @@
         <span id="payroll-live-note" class="hint" style="margin:0 0 0 8px;"></span>
       </div>
 
+      <div class="rerun-banner" id="rerun-needed-banner" style="display:none;" role="alert"></div>
       <div class="salary-banner" id="salary-needed-banner" style="display:none;" role="status"></div>
       <nav class="subtabs" id="payroll-subtabs"></nav>
       <div class="payroll-loading" id="payroll-loading" hidden role="status" aria-live="polite">
@@ -1773,7 +1782,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-27.124-payslip-selection-reset';
+  var FRONTEND_BUILD = '2026-10-29.125-rerun-notice';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1792,7 +1801,7 @@
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
-    getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
+    getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
   };
 
   // ================= STATE =================
@@ -1991,6 +2000,7 @@
         if (res && res.ok === false && /session expired/i.test(res.error || '')) {
           forceLogout();
         }
+        if (res && res.ok && res.rerunNeeded && res.rerunNeeded.month) { showRerunToast_(res.rerunNeeded); loadRerunNeeded_(); }
         return res;
       })
       .finally(function () {
@@ -2391,6 +2401,7 @@
     populateMonthPicker();
     loadCasualPending_();
     loadSalaryNeeded_();
+    loadRerunNeeded_();
 
     // Every tab's own data now loads independently and in parallel. This used
     // to be one long chain -- dashboard, THEN history, THEN (only once BOTH
@@ -4779,6 +4790,7 @@
         jobs.push(loadCasualPending_());
       } else {
         jobs.push(loadSalaryNeeded_());
+        jobs.push(loadRerunNeeded_());
         jobs.push(callApi('getPayroll', { month: month }).then(function (res) {
           if (res && res.ok && !stale_() && JSON.stringify(res.payroll) !== JSON.stringify(state.payroll)) { state.payroll = res.payroll; state.monthLocked = !!res.monthLocked; renderPayroll(); changed = true; }
         }));
@@ -4977,6 +4989,79 @@
       }
     });
   }
+  // Owner/Staff: people whose figures were CHANGED after payroll had already been run for their month
+  // (adjustment added/removed, Basic Salary changed, status changed). Payslips, the Payments report, EMP201 and
+  // IRP5 read the frozen run, so payroll has to be run again for the change to count.
+  var rerunNeeded = { people: [] };
+  function paintRerunNeeded_() {
+    var list = rerunNeeded.people || [], n = list.length;
+    var targets = [document.querySelector('nav#nav-tabs button[data-view="payroll"]'), document.querySelector('#payroll-subtabs button[data-subview="reports"]')];
+    targets.forEach(function (b) {
+      if (!b) return;
+      var old = b.querySelector('.rerun-count'); if (old) old.remove();
+      if (n > 0 && state.role !== 'hr') {
+        var sp = document.createElement('span'); sp.className = 'rerun-count'; sp.textContent = String(n);
+        sp.title = n + (n === 1 ? ' person changed' : ' people changed') + ' after payroll was run — run payroll again';
+        b.appendChild(sp);
+      }
+    });
+    var banner = document.getElementById('rerun-needed-banner');
+    if (!banner) return;
+    if (!n || state.role === 'hr') { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    var byMonth = {}, order = [];
+    list.forEach(function (e) { if (!byMonth[e.month]) { byMonth[e.month] = []; order.push(e.month); } byMonth[e.month].push(e); });
+    banner.innerHTML = '<strong>Run payroll again — ' + n + (n === 1 ? ' person was' : ' people were') + ' changed after payroll was run.</strong> ' +
+      'Their payslips, the Payments report and the SARS figures still show the OLD amounts until you run payroll again for that month.' +
+      order.map(function (mo) {
+        return '<div style="margin-top:8px;"><strong>' + esc(monthLabel(mo)) + '</strong></div><ul>' + byMonth[mo].map(function (e) {
+          return '<li><strong>' + esc(e.name) + '</strong> <span class="hint">' + esc(e.department) + '</span> — ' + esc(e.change) +
+            ' <span class="hint">(' + esc(e.changedBy) + ', ' + esc(e.changedAt) + ')</span></li>';
+        }).join('') + '</ul><button type="button" class="btn small" data-rerun-month="' + esc(mo) + '">Go to Run payroll for ' + esc(monthLabel(mo)) + '</button>';
+      }).join('');
+    banner.style.display = '';
+    Array.prototype.forEach.call(banner.querySelectorAll('[data-rerun-month]'), function (b) {
+      b.addEventListener('click', function () { goToRunPayroll_(b.getAttribute('data-rerun-month')); });
+    });
+  }
+  function goToRunPayroll_(month) {
+    var sel = document.getElementById('month-picker');
+    var toast = document.getElementById('rerun-toast'); if (toast) toast.remove();
+    if (month && sel && state.selectedMonth !== month) {
+      var has = Array.prototype.some.call(sel.options, function (o) { return o.value === month; });
+      if (!has) { window.alert('Pick ' + monthLabel(month) + ' in the Payroll month box first — it is older than the months listed.'); return; }
+      sel.value = month;
+      if (sel.onchange) sel.onchange();
+    }
+    showTab('payroll');
+    showPayrollSubTab('reports');
+    var btn = document.getElementById('payrollrun-run-btn');
+    if (btn && btn.scrollIntoView) btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function loadRerunNeeded_() {
+    if (state.role === 'hr' || !hasSection('payroll')) { rerunNeeded = { people: [] }; paintRerunNeeded_(); return Promise.resolve(); }
+    var grp = state.companyGroup;
+    var was = silentApi_; silentApi_ = true;
+    var p = callApi('getRerunNeeded', {});
+    silentApi_ = was;
+    return p.then(function (res) {
+      if (grp !== state.companyGroup) return;
+      rerunNeeded = (res && res.ok) ? { people: res.people || [] } : { people: [] };
+      paintRerunNeeded_();
+    }).catch(function () { /* a notice only; ignore errors */ });
+  }
+  // Shown the moment a change that needs a re-run is saved (the server flags it in its response).
+  function showRerunToast_(info) {
+    if (state.role === 'hr') return;
+    var old = document.getElementById('rerun-toast'); if (old) old.remove();
+    var t = document.createElement('div'); t.id = 'rerun-toast'; t.className = 'rerun-toast'; t.setAttribute('role', 'alert');
+    t.innerHTML = '<span><strong>Saved — but payroll for ' + esc(monthLabel(info.month)) + ' was already run.</strong> This change is not in the payslip or SARS figures until you run payroll again.</span>' +
+      '<button type="button" data-go>Run payroll again</button><button type="button" data-close>Later</button>';
+    document.body.appendChild(t);
+    t.querySelector('[data-go]').addEventListener('click', function () { goToRunPayroll_(info.month); });
+    t.querySelector('[data-close]').addEventListener('click', function () { t.remove(); });
+    setTimeout(function () { if (t.parentNode) t.remove(); }, 20000);
+  }
+
   // Owner/Staff: new employees (typically added by HR, who can't set pay) whose Basic Salary is still R0.
   var salaryNeeded = { people: [] };
   function paintSalaryNeeded_() {
@@ -5939,6 +6024,7 @@
         flashStatus(status, 'Done' + (runCo ? ' — ' + runCo.companyName : ''), 'save-status ok', 3000);
         loadIrp5();
         loadPayroll(); loadAdjustments(); // lock badges / who is locked now
+        loadRerunNeeded_(); // the re-run notice clears for the people just run
       } else {
         flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
       }
