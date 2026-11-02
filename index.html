@@ -925,6 +925,7 @@
             <input type="text" id="payroll-discharge-reason">
           </div>
         </div>
+        <div class="hint" style="margin:0 0 10px;">Their pay for the pay month that includes this date (25th to 24th) is worked out up to and including the discharge date, by working days. They are then taken off payroll from the next pay month. Their payslip, Payments report and SARS figures follow that amount automatically.</div>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn danger small" id="payroll-discharge-confirm-btn">Confirm discharge</button>
           <button type="button" class="btn secondary small" id="payroll-discharge-cancel-btn">Cancel</button>
@@ -1782,7 +1783,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-10-29.125-rerun-notice';
+  var FRONTEND_BUILD = '2026-11-02.126-discharge-final-pay';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3245,8 +3246,9 @@
         '<td>' + (e.salaryNeeded ? '<button type="button" class="salary-pill" data-setsalary-id="' + esc(e.id) + '" title="No Basic Salary yet — click to set it">Set salary</button>' : money(e.amount)) + '</td>' +
         '<td>' + (e.dayRate === null ? '—' : 'R ' + moneyExact(e.dayRate)) + '</td>' +
         '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
+      var leavingChip = e.discharged ? ' <span class="chip" title="Discharged — paid up to this date, then off payroll from the next pay month" style="background:color-mix(in srgb, var(--critical) 14%, transparent); color:var(--critical); font-weight:700;">Discharged ' + esc(e.dateDischarged) + ' — final pay</span>' : '';
       return '<tr>' +
-        '<td style="text-align:left;">' + esc(e.name) + '</td>' +
+        '<td style="text-align:left;">' + esc(e.name) + leavingChip + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
@@ -6365,8 +6367,9 @@
     // record of exactly when each transition happened is never lost.
     document.getElementById('payroll-status-field').style.display = '';
     document.getElementById('payroll-status-display').innerHTML = employmentStatusLine_(e);
-    document.getElementById('payroll-discharge-btn').style.display = e.active ? '' : 'none';
-    document.getElementById('payroll-rehire-btn').style.display = e.active ? 'none' : '';
+    var isDischarged = (e.discharged !== undefined) ? !!e.discharged : !e.active;
+    document.getElementById('payroll-discharge-btn').style.display = isDischarged ? 'none' : '';
+    document.getElementById('payroll-rehire-btn').style.display = isDischarged ? '' : 'none';
     document.getElementById('payroll-discharge-fields').style.display = 'none';
     document.getElementById('payroll-rehire-fields').style.display = 'none';
     document.getElementById('payroll-employment-history').textContent = 'Loading…';
@@ -6380,11 +6383,13 @@
   // "Employed since <date>" / "Discharged on <date> — Reason: <text>" — the
   // read-only status line shown at the top of the Employment status block.
   function employmentStatusLine_(e) {
-    if (e.active) {
+    var isDischarged = (e.discharged !== undefined) ? !!e.discharged : !e.active;
+    if (!isDischarged) {
       return 'Employed' + (e.dateEmployed ? ' since ' + esc(e.dateEmployed) : '') + '.';
     }
     var line = 'Discharged' + (e.dateDischarged ? ' on ' + esc(e.dateDischarged) : '') + '.';
-    if (e.dischargeReason) line += ' Reason: ' + esc(e.dischargeReason);
+    if (e.dischargeReason) line += ' Reason: ' + esc(e.dischargeReason) + '.';
+    if (e.active) line += ' Still on ' + esc(monthLabel(state.selectedMonth)) + ' payroll for their final pay (up to the discharge date); off payroll from the next pay month.';
     return line;
   }
 
@@ -6650,6 +6655,23 @@
     document.getElementById('payroll-rehire-fields').style.display = 'none';
   });
 
+  // Persistent note on the roster after a discharge: says how their final month's pay was worked out.
+  function showLeaverNotice_(lv, date) {
+    var box = document.getElementById('payroll-prorata-notice'), txt = document.getElementById('payroll-prorata-notice-text');
+    if (!box || !txt || !lv) return;
+    var name = (document.getElementById('payroll-name') || {}).value || 'This employee';
+    var pm = esc(monthLabel(lv.payMonth));
+    var msg;
+    if (lv.manualOverride) msg = esc(name) + ' was discharged on ' + esc(date) + '. Their ' + pm + ' Basic Salary was already set by hand, so it was left as it is — check it under Pay Adjustments.';
+    else if (lv.noSalary) msg = esc(name) + ' was discharged on ' + esc(date) + ' but has no Basic Salary set yet, so nothing could be pro-rated. Set their salary, then pro-rate ' + pm + ' under Pay Adjustments → Basic salary.';
+    else if (lv.fullMonth) msg = esc(name) + ' was discharged on ' + esc(date) + ', the last working day of the ' + pm + ' pay month, so they are paid the full month and come off payroll from the next pay month.';
+    else msg = esc(name) + ' was discharged on ' + esc(date) + '. Their final pay (' + pm + ') is for ' + lv.workedDays + ' of ' + lv.monthDays + ' working days' +
+      (lv.amount !== null && lv.amount !== undefined ? ' = ' + moneyExact(lv.amount) + ' instead of ' + moneyExact(lv.fullAmount) : '') +
+      ', and they come off payroll from the next pay month.' + (state.role === 'hr' ? '' : ' You can adjust it under Pay Adjustments → Basic salary → Edit.');
+    txt.innerHTML = msg;
+    box.style.display = '';
+  }
+
   document.getElementById('payroll-discharge-confirm-btn').addEventListener('click', function () {
     var id = document.getElementById('payroll-edit-id').value;
     if (!id) return;
@@ -6660,13 +6682,17 @@
     var reason = document.getElementById('payroll-discharge-reason').value.trim();
     var status = document.getElementById('payroll-save-status');
     flashStatus(status, 'Saving…', 'save-status', 0);
-    callApi('dischargeEmployee', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
+    callApiWithOwnerUnlock('dischargeEmployee', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
       if (res.ok) {
         flashStatus(status, 'Saved', 'save-status ok', 3000);
+        showLeaverNotice_(res.leaver, date);
+        loadRerunNeeded_();
         state.payroll = res.payroll;
         renderPayroll();
         if (state.payrollAdjustments) renderAdjustments();
         startEditEmployee(id); // refresh the modal in place with the new status + history
+        var noticeTxt = document.getElementById('payroll-prorata-notice-text');
+        if (noticeTxt) document.getElementById('payroll-status-display').insertAdjacentHTML('beforeend', '<div style="margin-top:6px; padding:8px 10px; border-left:4px solid var(--accent, #2f7d32); background:var(--surface-1); border-radius:6px; font-size:13px;">' + noticeTxt.innerHTML + '</div>');
       } else {
         flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to discharge employee.';
       }
