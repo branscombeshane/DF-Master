@@ -1655,6 +1655,11 @@
         </div>
         <div id="import-monthly-data-result" style="margin-top:12px; font-size:12px;"></div>
       </div>
+      <div class="panel" id="sage-panel">
+        <h2>Sage — monthly figures for Veg &amp; Pyroca</h2>
+        <p class="panel-sub">The Packing app already has the live Sage connection. Each night it sends last month's Sage Profit &amp; Loss for Daily Fruit Veg and Pyroca 79 to this app. Here you see it next to what is already saved, and save it (or let it save itself). Nothing is ever pasted or exported by hand, and this app never holds a Sage login.</p>
+        <div id="sage-body"><p class="panel-note">Loading…</p></div>
+      </div>
       <div class="panel">
         <h2>Import payroll history</h2>
         <p class="panel-sub">Backfill past months from a previous payroll system so Payroll History/IRP5 reflects what was actually paid, rather than today's rates recalculated backwards. Drag and drop (or paste) the payroll-history CSV for a month — matched to each person by their Emp No.; anyone not already in Employees gets added automatically, flagged below for you to double-check. This never changes a current employee's pay rate or department — it only records what that month actually paid, and quietly fills in ID number/date of birth/tax number/job title/address ONLY where those are still blank.</p>
@@ -1783,7 +1788,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-02.126-discharge-final-pay';
+  var FRONTEND_BUILD = '2026-11-04.128-sage-via-packing';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6974,8 +6979,158 @@
   });
 
   // ================= SETTINGS (Owner only) =================
+
+  // ================= SAGE MONTHLY FIGURES (Settings) =================
+  var sageState_ = null;
+
+  function sagePrevMonth_() {
+    var d = new Date(); var y = d.getFullYear(), m = d.getMonth();
+    if (m === 0) { y -= 1; m = 12; }
+    return y + '-' + (m < 10 ? '0' + m : m);
+  }
+  function sageEntityName_(k) { return k === 'veg' ? 'Daily Fruit Veg' : k === 'pyroca' ? 'Pyroca 79' : k; }
+
+  function loadSagePanel_() {
+    var body = document.getElementById('sage-body');
+    if (!body) return;
+    callApi('sageStatus', {}).then(function (res) {
+      if (!res.ok) { body.innerHTML = '<p class="error-text">' + esc(res.error || 'Could not load Sage status.') + '</p>'; return; }
+      sageState_ = res;
+      paintSage_();
+    }).catch(function () { body.innerHTML = '<p class="error-text">Could not reach the server.</p>'; });
+  }
+
+  function paintSage_() {
+    var st = sageState_, body = document.getElementById('sage-body');
+    if (!st || !body) return;
+    var h = '';
+    if (!st.keySet) {
+      h += '<p><strong>One-time set-up</strong> (two Apps Script projects share one password):</p><ol style="margin:4px 0 8px 18px;line-height:1.5;">' +
+        '<li>Make up a long random password. In <em>this</em> project (Financials) add the Script property <code>SAGE_INGEST_KEY</code> with it.</li>' +
+        '<li>In the <em>Packing</em> project add <code>FINANCIALS_INGEST_KEY</code> (the same password) and <code>FINANCIALS_URL</code> = <code style="word-break:break-all;">' + esc(st.webAppUrl) + '</code></li>' +
+        '<li>In Packing, run <code>sagePushPnlNow</code> once, then <code>sageInstallPnlTrigger</code> once.</li></ol>' +
+        '<button class="btn secondary" id="sage-refresh-btn">Refresh</button>';
+      body.innerHTML = h; wireSage_(); return;
+    }
+    var months = [];
+    (st.staged || []).forEach(function (s) { if (months.indexOf(s.month) < 0) months.push(s.month); });
+    var changedMonths = {};
+    (st.changes || []).forEach(function (c) { changedMonths[c.month] = true; });
+    if (st.lastIngest) h += '<p class="panel-note" style="font-style:normal;">Last received from Sage: <strong>' + esc(sageEntityName_(st.lastIngest.entity)) + ' ' + esc(monthLabel(st.lastIngest.month)) + '</strong> at ' + esc(String(st.lastIngest.at).replace('T', ' ')) + '.</p>';
+    else h += '<p class="panel-note">Nothing received from Sage yet. In the Packing project run <code>sagePushPnlNow</code>.</p>';
+    if ((st.changes || []).length) {
+      h += '<p class="error-text"><strong>Sage now differs from what is saved</strong> for ' + st.changes.map(function (c) { return esc(sageEntityName_(c.entity)) + ' ' + esc(monthLabel(c.month)); }).join(', ') + ' (for example the accountant corrected something). Click the month below to review and save.</p>';
+    }
+    if (months.length) {
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">' + months.map(function (m) {
+        return '<button class="btn secondary sage-month-chip" data-month="' + esc(m) + '">' + esc(monthLabel(m)) + (changedMonths[m] ? ' — changed' : '') + '</button>';
+      }).join('') + '</div>';
+    }
+    h += '<div class="form-grid"><div class="field"><label>Month</label><input type="month" id="sage-month" value="' + esc(months[0] || sagePrevMonth_()) + '"></div></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;"><button class="btn" id="sage-preview-btn">Preview this month</button><button class="btn secondary" id="sage-refresh-btn">Refresh</button></div>' +
+      '<span class="save-status" id="sage-status-text"></span><div id="sage-result" style="margin-top:12px;"></div>' +
+      '<hr style="margin:18px 0;border:0;border-top:1px solid var(--border);">' +
+      '<h3 style="margin:0 0 6px;">Automatic</h3>' +
+      '<p>' + (st.autoOn ? '<strong>On</strong> — when last month arrives from Sage on or after day ' + st.pullDay + ' it is saved for you, unless that month is already saved.' : '<strong>Off</strong> — months arrive here but you press Save yourself.') + ' A month already saved is never overwritten automatically.</p>' +
+      '<button class="btn ' + (st.autoOn ? 'secondary' : '') + '" id="sage-auto-btn">' + (st.autoOn ? 'Turn automatic off' : 'Turn automatic on') + '</button>' +
+      '<div class="form-grid" style="margin-top:12px;"><div class="field"><label>Save last month from day (1–28)</label><input type="number" min="1" max="28" id="sage-pullday" value="' + esc(st.pullDay) + '"></div>' +
+      '<div class="field"><label>Leave these accounts out (one name per line)</label><textarea id="sage-exclude" rows="3" style="width:100%;font-size:13px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);">' + esc((st.exclude || []).join('\n')) + '</textarea></div></div>' +
+      '<div style="margin-top:8px;"><button class="btn secondary" id="sage-save-settings-btn">Save these two settings</button> <span class="save-status" id="sage-settings-status"></span></div>';
+    if (st.lastAutoSave) h += '<p class="panel-note">Last automatic save: ' + esc(sageEntityName_(st.lastAutoSave.entity)) + ' ' + esc(monthLabel(st.lastAutoSave.month)) + ' (turnover ' + sageMoney_(st.lastAutoSave.turnover) + ').</p>';
+    body.innerHTML = h;
+    wireSage_();
+  }
+
+  function sageMoney_(n) { return n === null || n === undefined ? '—' : 'R ' + Math.round(n).toLocaleString('en-ZA'); }
+
+  function paintSageResult_(res) {
+    var el = document.getElementById('sage-result');
+    if (!el) return;
+    var h = '';
+    res.results.forEach(function (r) {
+      h += '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><strong>' + esc(sageEntityName_(r.entity)) + ' — ' + esc(monthLabel(res.month)) + '</strong>' +
+        (r.receivedAt ? ' <span class="panel-note" style="font-style:normal;">(from Sage, received ' + esc(String(r.receivedAt).replace('T', ' ')) + ')</span>' : '');
+      if (r.error && !r.pnl) { h += '<p class="error-text">' + esc(r.error) + '</p></div>'; return; }
+      var p = r.pnl, ex = r.existing || {};
+      h += '<table class="data-table" style="margin-top:6px;"><tr><th></th><th style="text-align:right;">From Sage</th><th style="text-align:right;">Saved in the app</th></tr>' +
+        '<tr><td>Turnover</td><td style="text-align:right;">' + sageMoney_(p.turnover) + '</td><td style="text-align:right;">' + (ex.exists ? sageMoney_(ex.turnover) : '—') + '</td></tr>' +
+        '<tr><td>Cost of sales</td><td style="text-align:right;">' + sageMoney_(p.cos) + '</td><td style="text-align:right;">' + (ex.exists ? sageMoney_(ex.cos) : '—') + '</td></tr>' +
+        '<tr><td>Gross profit</td><td style="text-align:right;">' + sageMoney_(p.gross) + '</td><td style="text-align:right;">' + (ex.exists && ex.turnover !== null ? sageMoney_(ex.turnover - ex.cos) : '—') + '</td></tr>' +
+        '<tr><td>Expenses (net of other income)</td><td style="text-align:right;">' + sageMoney_(p.totalExpenses) + '</td><td style="text-align:right;">' + (ex.exists ? sageMoney_(ex.totalExpenses) : '—') + '</td></tr>' +
+        '<tr><td><strong>Net profit</strong></td><td style="text-align:right;"><strong>' + sageMoney_(p.net) + '</strong></td><td style="text-align:right;">' + (ex.exists && ex.turnover !== null ? sageMoney_(ex.turnover - ex.cos - ex.totalExpenses) : '—') + '</td></tr></table>';
+      if (p.excluded && p.excluded.length) h += '<p class="panel-note">Left out as instructed: ' + p.excluded.map(function (x) { return esc(x.name) + ' (' + sageMoney_(x.amount) + ')'; }).join(', ') + '.</p>';
+      h += '<details style="margin-top:6px;"><summary>' + p.expenses.length + ' expense lines</summary><table class="data-table">' +
+        p.expenses.map(function (l) { return '<tr><td>' + esc(l.category) + '</td><td style="text-align:right;">' + moneyExact(l.amount) + '</td></tr>'; }).join('') + '</table></details>';
+      if (r.differs) h += '<p class="error-text">Differs from what is saved.</p>';
+      if (r.saved) h += '<p style="color:var(--green,#1a7f37);"><strong>Saved.</strong></p>';
+      if (r.error) h += '<p class="error-text">' + esc(r.error) + '</p>';
+      h += '</div>';
+    });
+    var anyOk = !res.preview ? false : res.results.some(function (r) { return r.pnl && (r.pnl.turnover || r.pnl.cos || r.pnl.expenses.length); });
+    var anyExisting = res.results.some(function (r) { return r.existing && r.existing.exists; });
+    if (anyOk) {
+      h += '<p>Check these against the Sage report. ' + (anyExisting ? '<strong>Saving replaces the figures already saved for this month.</strong>' : 'Nothing is saved until you press the button.') + '</p>' +
+        '<button class="btn" id="sage-save-btn">Save ' + esc(monthLabel(res.month)) + ' to the app</button>';
+    }
+    el.innerHTML = h;
+    var sb = document.getElementById('sage-save-btn');
+    if (sb) sb.addEventListener('click', function () {
+      var status = document.getElementById('sage-status-text');
+      sb.disabled = true;
+      flashStatus(status, 'Saving…', 'save-status', 0);
+      callApi('sageSave', { month: res.month }).then(function (r2) {
+        sb.disabled = false;
+        if (!r2.ok) { flashStatus(status, r2.error || 'Failed', 'save-status err', 8000); return; }
+        var bad = r2.results.filter(function (x) { return !x.saved; });
+        flashStatus(status, bad.length ? 'Some failed' : 'Saved', bad.length ? 'save-status err' : 'save-status ok', 6000);
+        paintSageResult_(r2);
+        if (state.financialYear) { try { loadFinancialYear(); } catch (e) {} }
+        loadSagePanelQuiet_();
+      }).catch(function () { sb.disabled = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
+    });
+  }
+
+  // Refreshes the status numbers (changed-months banner etc.) without wiping the result on screen.
+  function loadSagePanelQuiet_() {
+    callApi('sageStatus', {}).then(function (res) { if (res.ok) sageState_ = res; }).catch(function () {});
+  }
+
+  function sagePreviewMonth_(month) {
+    var status = document.getElementById('sage-status-text'), el = document.getElementById('sage-result');
+    if (!/^\d{4}-\d{2}$/.test(month)) { flashStatus(status, 'Pick a month first', 'save-status err', 4000); return; }
+    var inp = document.getElementById('sage-month'); if (inp) inp.value = month;
+    el.innerHTML = '';
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    callApi('sagePreview', { month: month }).then(function (res) {
+      if (!res.ok) { flashStatus(status, res.error || 'Failed', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 1);
+      paintSageResult_(res);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+
+  function wireSage_() {
+    function on(id, fn) { var b = document.getElementById(id); if (b) b.addEventListener('click', fn); }
+    on('sage-refresh-btn', loadSagePanel_);
+    Array.prototype.forEach.call(document.querySelectorAll('.sage-month-chip'), function (b) {
+      b.addEventListener('click', function () { sagePreviewMonth_(b.getAttribute('data-month')); });
+    });
+    on('sage-auto-btn', function () {
+      callApi('sageAuto', { on: sageState_.autoOn ? '0' : '1' }).then(function (res) { if (res.ok) { sageState_ = res; paintSage_(); } else alert(res.error || 'Failed'); });
+    });
+    on('sage-save-settings-btn', function () {
+      var status = document.getElementById('sage-settings-status');
+      flashStatus(status, 'Saving…', 'save-status', 0);
+      callApi('sageSaveSettings', { pullDay: document.getElementById('sage-pullday').value, exclude: document.getElementById('sage-exclude').value }).then(function (res) {
+        if (!res.ok) { flashStatus(status, res.error || 'Failed', 'save-status err', 8000); return; }
+        sageState_ = res; flashStatus(status, 'Saved', 'save-status ok', 4000);
+      });
+    });
+    on('sage-preview-btn', function () { sagePreviewMonth_(document.getElementById('sage-month').value); });
+  }
+
   function renderSettings() {
     renderCompanySettings();
+    loadSagePanel_();
     renderDepartmentSettings();
     renderCategoryAliasSettings();
     renderImportPayrollHistoryGroupNote();
