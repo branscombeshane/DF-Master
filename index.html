@@ -370,6 +370,25 @@
     gap: 14px;
     margin-bottom: 22px;
   }
+  /* Dashboard insights */
+  .ins-chips { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
+  .ins-chip { font:inherit; font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); cursor:pointer; }
+  .ins-chip .n { font-weight:800; margin-right:2px; }
+  .ins-chip.active { background:var(--text-primary); color:var(--surface-1); border-color:var(--text-primary); }
+  .ins-chip.concern .n { color:var(--critical); } .ins-chip.check .n { color:#b07800; } .ins-chip.positive .n { color:var(--good); }
+  .ins-chip.active .n { color:inherit; }
+  .ins-card { --ic: var(--text-muted); border-left:4px solid var(--ic); background:color-mix(in srgb, var(--ic) 7%, transparent); border-radius:8px; padding:0; margin:0 0 8px; }
+  .ins-card.concern { --ic: var(--critical); } .ins-card.check { --ic: var(--warning); } .ins-card.positive { --ic: var(--good); }
+  .ins-card summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:10px 12px; font-weight:600; font-size:14px; }
+  .ins-card summary::-webkit-details-marker { display:none; }
+  .ins-card summary::after { content:'▸'; margin-left:auto; color:var(--text-muted); font-size:12px; }
+  .ins-card[open] summary::after { content:'▾'; }
+  .ins-icon { flex:0 0 22px; height:22px; border-radius:50%; background:var(--ic); color:#fff; font-size:13px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+  .ins-card.check .ins-icon { color:#2a1f00; }
+  .ins-body { padding:0 14px 12px 44px; font-size:13px; color:var(--text-secondary); }
+  .ins-body p { margin:0 0 8px; line-height:1.45; }
+  table.ins-ev { margin-top:4px; font-size:12.5px; }
+  @media (max-width:600px){ .ins-body { padding-left:14px; } }
   .kpi-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -1054,6 +1073,12 @@
     <!-- ---------- Dashboard ---------- -->
     <section class="view" id="view-dashboard">
       <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="panel" id="insights-panel">
+        <h2>Insights</h2>
+        <p class="panel-sub" id="insights-sub"></p>
+        <div id="insights-body"></div>
+      </div>
 
       <div class="panel">
         <h2 id="fy-table-title">Financial year to date</h2>
@@ -1788,7 +1813,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.130-dashboard-refresh';
+  var FRONTEND_BUILD = '2026-11-04.131-dashboard-insights';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2846,8 +2871,289 @@
       renderDashboard();
     });
 
+    renderInsights_(data, state.dashboardEntity);
     renderFyTable('fy-table', data, state.dashboardEntity);
     renderExpenseBreakdown(data, state.dashboardEntity);
+  }
+
+  // ================= DASHBOARD INSIGHTS =================
+  // Worked out in the browser from the saved figures (nothing is sent anywhere):
+  // the latest reported month is compared with the earlier months of the same
+  // financial year, for whichever company tab is selected. Every insight can be
+  // opened to show the numbers behind it.
+  var INS = {
+    MIN_PRIOR: 2,          // earlier months needed before anything is compared with "usual"
+    MIN_PRIOR_LINES: 3,    // earlier months with itemised expenses needed for line-by-line checks
+    TURNOVER_PCT: 0.10,    // turnover this far from usual is worth a mention
+    GP_PTS: 0.03,          // GP% moving this many points (3.0) is worth a mention
+    EXP_PCT: 0.10, EXP_MIN: 10000,
+    NET_PCT: 0.25, NET_MIN: 20000,
+    LINE_PCT: 0.5, LINE_MIN: 5000,            // an expense line 50% and R5,000 above its usual
+    LINE_GOOD_PCT: 0.3, LINE_GOOD_MIN: 10000, // ...or 30% and R10,000 below it
+    SAL_PTS: 0.03,         // salaries up 3 points of turnover
+    UNALLOC_MIN: 1000,
+    OTHER_INC_PCT: 0.10    // other income worth a look above 10% of gross profit
+  };
+  var insightFilter_ = 'all';
+  var insightLast_ = null;
+
+  function insChange_(cur, avg) {
+    if (!avg) return '';
+    var p = Math.round((cur - avg) / Math.abs(avg) * 100);
+    return (p > 0 ? '+' : '') + p + '%';
+  }
+  function insPts_(n) { return (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + ' pts'; }
+
+  function insCategoryMap_(monthObj, entityKey) {
+    var aliasMap = entityKey === 'total' ? categoryAliasLookup() : null;
+    var keys = entityKey === 'total' ? state.entities.map(function (e) { return e.key; }) : [entityKey];
+    var amt = {}, label = {};
+    keys.forEach(function (k) {
+      var e = monthObj.entities[k];
+      if (!e) return;
+      Object.keys(e.expenses || {}).forEach(function (cat) {
+        var g = cat.trim().toLowerCase(), lab = cat;
+        if (aliasMap && aliasMap[g]) { lab = aliasMap[g]; g = lab.trim().toLowerCase(); }
+        if (!label[g]) label[g] = lab;
+        amt[g] = (amt[g] || 0) + e.expenses[cat];
+      });
+    });
+    return { amt: amt, label: label };
+  }
+
+  function computeInsights_(data, entityKey) {
+    var items = [];
+    function add(level, prio, title, text, ev) { items.push({ level: level, prio: prio, title: title, text: text, ev: ev || null, seq: items.length }); }
+    var rows = data.months.filter(function (m) { return fyRowFor(m, entityKey).hasData; });
+    if (!rows.length) return { rows: 0, items: [] };
+    var cur = rows[rows.length - 1], c = fyRowFor(cur, entityKey);
+    var prior = rows.slice(0, -1), P = prior.map(function (m) { return fyRowFor(m, entityKey); });
+    var havePrior = P.length >= INS.MIN_PRIOR;
+    var L = monthLabel(cur.month);
+    function sum(arr, f) { return arr.reduce(function (t, r) { return t + r[f]; }, 0); }
+    function avgOf(f) { return P.length ? sum(P, f) / P.length : 0; }
+    function evMonths(head, fn) {
+      return { head: ['Month', head], rows: rows.map(function (m) { return [monthLabel(m.month) + (m === cur ? ' (latest)' : ''), fn(fyRowFor(m, entityKey), m)]; }) };
+    }
+    // Combined with a company missing in the latest month: every comparison would be wrong, so say so and stop.
+    if (entityKey === 'total' && state.entities.length > 1) {
+      var missingNowList = state.entities.filter(function (e) {
+        var here = cur.entities[e.key] && cur.entities[e.key].hasData;
+        var before = prior.some(function (m) { return m.entities[e.key] && m.entities[e.key].hasData; });
+        return !here && before;
+      });
+      if (missingNowList.length) {
+        add('concern', 1, 'Combined is missing ' + missingNowList.map(function (e) { return e.name; }).join(' and ') + ' for ' + L,
+          'The other companies have ' + L + ' figures but ' + missingNowList.map(function (e) { return e.name; }).join(' and ') + ' does not yet, so the Combined month is understated and any comparison with earlier months would mislead. Load the missing month (Settings), or look at each company on its own tab. Combined insights resume once every company is loaded.', null);
+        return { rows: rows.length, latest: cur.month, items: items, paused: true };
+      }
+    }
+    var cats = {};
+    rows.forEach(function (m) { cats[m.month] = insCategoryMap_(m, entityKey); });
+    var curOtherTotal = 0;
+    Object.keys(cats[cur.month].amt).forEach(function (k) { if (/^other income:/i.test(cats[cur.month].label[k]) && cats[cur.month].amt[k] < 0) curOtherTotal += -cats[cur.month].amt[k]; });
+    var otherNote = curOtherTotal > 0 ? ' Note: ' + money(curOtherTotal) + ' of other income is netted off this month\'s expenses.' : '';
+
+    // --- Where the year stands
+    var fy = fyTotals(data, entityKey);
+    var margin = fy.turnover > 0 ? fy.nettProfit / fy.turnover : 0;
+    add(fy.nettProfit >= 0 ? 'positive' : 'concern', fy.nettProfit >= 0 ? 8 : 2,
+      'Year to date: ' + (fy.nettProfit >= 0 ? 'net profit of ' : 'net loss of ') + money(Math.abs(fy.nettProfit)),
+      money(fy.turnover) + ' turnover at ' + pct(fy.gpPercent) + ' gross profit, less ' + money(fy.totalExpenses) + ' of expenses, over ' + rows.length + ' reported month' + (rows.length === 1 ? '' : 's') + ' (net margin ' + pct(margin) + ').',
+      { head: ['', 'Financial year to date'], rows: [['Turnover', money(fy.turnover)], ['Cost of sales', money(fy.cos)], ['Gross profit', money(fy.gp) + ' (' + pct(fy.gpPercent) + ')'], ['Expenses', money(fy.totalExpenses)], ['Net profit', money(fy.nettProfit) + ' (' + pct(margin) + ')']] });
+
+    // --- Net profit
+    if (c.nettProfit < 0) {
+      add('concern', 1, L + ' made a loss of ' + money(-c.nettProfit), 'Gross profit of ' + money(c.gp) + ' did not cover expenses of ' + money(c.totalExpenses) + '.', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+    } else if (havePrior) {
+      var aN = avgOf('nettProfit'), dN = c.nettProfit - aN;
+      if (aN > 0 && dN <= -Math.max(INS.NET_MIN, aN * INS.NET_PCT)) {
+        add('concern', 2, 'Net profit is ' + Math.abs(Math.round(dN / aN * 100)) + '% below usual', L + ': ' + money(c.nettProfit) + ' against a usual ' + money(aN) + ' (average of the ' + P.length + ' earlier months).', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+      } else if (aN <= 0 && c.nettProfit > 0) {
+        add('positive', 3, L + ' is back in profit', money(c.nettProfit) + ' net profit; the earlier months averaged ' + money(aN) + '.', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+      } else if (aN > 0 && dN >= Math.max(INS.NET_MIN, aN * INS.NET_PCT)) {
+        add('positive', 3, 'Net profit is ' + Math.round(dN / aN * 100) + '% above usual', L + ': ' + money(c.nettProfit) + ' against a usual ' + money(aN) + '.', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+      }
+    }
+    if (rows.length >= 3 && P.every(function (r) { return r.nettProfit > 0; }) && c.nettProfit > 0) {
+      add('positive', 7, 'Profitable in every reported month', 'All ' + rows.length + ' reported months made a net profit.', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+    }
+    if (rows.length >= 4 && c.nettProfit > 0 && P.every(function (r) { return c.nettProfit > r.nettProfit; })) {
+      add('positive', 4, L + ' is the best net profit month this year', money(c.nettProfit) + ' is higher than every earlier month.', evMonths('Net profit', function (r) { return money(r.nettProfit); }));
+    }
+
+    // --- Turnover
+    if (havePrior) {
+      var aT = avgOf('turnover');
+      if (aT > 0) {
+        var tp = (c.turnover - aT) / aT;
+        if (tp <= -INS.TURNOVER_PCT) add('concern', 3, 'Turnover is ' + Math.abs(Math.round(tp * 100)) + '% below usual', L + ': ' + money(c.turnover) + ' against a usual ' + money(aT) + ' (' + money(aT - c.turnover) + ' less).', evMonths('Turnover', function (r) { return money(r.turnover); }));
+        else if (tp >= INS.TURNOVER_PCT) add('positive', 5, 'Turnover is ' + Math.round(tp * 100) + '% above usual', L + ': ' + money(c.turnover) + ' against a usual ' + money(aT) + ' (' + money(c.turnover - aT) + ' more).', evMonths('Turnover', function (r) { return money(r.turnover); }));
+      }
+    }
+    if (rows.length >= 3) {
+      var t3 = rows.slice(-3).map(function (m) { return fyRowFor(m, entityKey).turnover; });
+      if (t3[0] > t3[1] && t3[1] > t3[2]) add('check', 3, 'Turnover has fallen three months in a row', rows.slice(-3).map(function (m, i) { return monthLabel(m.month) + ' ' + money(t3[i]); }).join(' → ') + '.', evMonths('Turnover', function (r) { return money(r.turnover); }));
+      else if (t3[0] < t3[1] && t3[1] < t3[2]) add('positive', 6, 'Turnover has grown three months in a row', rows.slice(-3).map(function (m, i) { return monthLabel(m.month) + ' ' + money(t3[i]); }).join(' → ') + '.', evMonths('Turnover', function (r) { return money(r.turnover); }));
+    }
+
+    // --- Gross profit %
+    var gpFlagged = false;
+    if (c.turnover > 0) {
+      if (c.gp < 0) {
+        gpFlagged = true;
+        add('concern', 1, L + ': selling below cost', 'Cost of sales (' + money(c.cos) + ') is more than turnover (' + money(c.turnover) + ').', evMonths('GP%', function (r) { return r.turnover > 0 ? pct(r.gpPercent) : '—'; }));
+      } else if (havePrior && sum(P, 'turnover') > 0) {
+        var prevGp = sum(P, 'gp') / sum(P, 'turnover'), dg = c.gpPercent - prevGp;
+        if (dg <= -INS.GP_PTS) { gpFlagged = true; add('concern', 2, 'Gross profit % fell to ' + pct(c.gpPercent), L + ' is ' + insPts_(dg) + ' against ' + pct(prevGp) + ' for the earlier months. That is about ' + money(-dg * c.turnover) + ' of gross profit lost this month. Look at purchase prices, wastage and stock write-offs.', evMonths('GP%', function (r) { return r.turnover > 0 ? pct(r.gpPercent) : '—'; })); }
+        else if (dg >= INS.GP_PTS) add('positive', 4, 'Gross profit % improved to ' + pct(c.gpPercent), L + ' is ' + insPts_(dg) + ' against ' + pct(prevGp) + ' for the earlier months (about ' + money(dg * c.turnover) + ' extra gross profit).', evMonths('GP%', function (r) { return r.turnover > 0 ? pct(r.gpPercent) : '—'; }));
+      }
+      if (!gpFlagged && rows.length >= 4) {
+        var gps = rows.map(function (m) { return fyRowFor(m, entityKey); }).filter(function (r) { return r.turnover > 0; }).map(function (r) { return r.gpPercent; });
+        var minPrevGp = Math.min.apply(null, gps.slice(0, -1));
+        if (gps.length >= 4 && c.gpPercent < minPrevGp - 0.005) add('check', 4, 'Lowest gross profit % of the year', L + ' at ' + pct(c.gpPercent) + ' is the lowest of the ' + gps.length + ' reported months.', evMonths('GP%', function (r) { return r.turnover > 0 ? pct(r.gpPercent) : '—'; }));
+      }
+    }
+    if (c.turnover > 0 && c.cos === 0) add('check', 2, 'No cost of sales for ' + L, 'Turnover is ' + money(c.turnover) + ' but cost of sales is nil, so gross profit shows 100%. Is the cost of sales missing from the report?', null);
+    if (c.turnover === 0 && (c.cos > 0 || c.totalExpenses > 0)) add('check', 2, 'No turnover recorded for ' + L, 'There are costs of ' + money(c.cos + c.totalExpenses) + ' but no turnover. Has the sales figure been left out?', null);
+
+    // --- Expenses
+    if (c.turnover > 0 && c.totalExpenses === 0) add('check', 2, 'No expenses recorded for ' + L, 'Net profit of ' + money(c.nettProfit) + ' is only as good as the expenses loaded. Check the expenses import for this month.', null);
+    if (havePrior) {
+      var aE = avgOf('totalExpenses'), dE = c.totalExpenses - aE;
+      if (aE > 0 && dE >= Math.max(INS.EXP_MIN, aE * INS.EXP_PCT)) add('concern', 3, 'Expenses are ' + Math.round(dE / aE * 100) + '% above usual', L + ': ' + money(c.totalExpenses) + ' against a usual ' + money(aE) + ' (' + money(dE) + ' more). See the expense lines below for what moved.' + otherNote, evMonths('Total expenses', function (r) { return money(r.totalExpenses); }));
+      else if (aE > 0 && -dE >= Math.max(INS.EXP_MIN, aE * INS.EXP_PCT)) add('positive', 5, 'Expenses are ' + Math.round(-dE / aE * 100) + '% below usual', L + ': ' + money(c.totalExpenses) + ' against a usual ' + money(aE) + '. Check nothing has been left out before celebrating.' + otherNote, evMonths('Total expenses', function (r) { return money(r.totalExpenses); }));
+    }
+    if (c.gp > 0 && c.totalExpenses / c.gp >= 0.85 && c.nettProfit >= 0) {
+      add('check', 3, 'Expenses take ' + Math.round(c.totalExpenses / c.gp * 100) + '% of gross profit', 'Only ' + money(c.nettProfit) + ' is left of ' + money(c.gp) + ' gross profit in ' + L + ', so a small dip in sales or margin tips the month into a loss.', evMonths('Expenses as % of gross profit', function (r) { return r.gp > 0 ? Math.round(r.totalExpenses / r.gp * 100) + '%' : '—'; }));
+    }
+
+    // --- Salaries and wages
+    var salRe = /salar|wages|payroll/i;
+    function salOf(m) { var s = 0, mp = cats[m.month]; Object.keys(mp.amt).forEach(function (k) { if (salRe.test(mp.label[k])) s += mp.amt[k]; }); return s; }
+    var salCur = salOf(cur);
+    if (salCur > 0 && c.turnover > 0) {
+      var salRatio = salCur / c.turnover;
+      var priorSalRows = prior.filter(function (m) { var r = fyRowFor(m, entityKey); return r.turnover > 0 && salOf(m) > 0; });
+      var evSal = { head: ['Month', 'Salaries & wages', '% of turnover'], rows: rows.map(function (m) { var r = fyRowFor(m, entityKey), s = salOf(m); return [monthLabel(m.month) + (m === cur ? ' (latest)' : ''), s > 0 ? money(s) : '—', s > 0 && r.turnover > 0 ? pct(s / r.turnover) : '—']; }) };
+      var usualRatio = priorSalRows.length >= INS.MIN_PRIOR ? priorSalRows.reduce(function (t, m) { return t + salOf(m) / fyRowFor(m, entityKey).turnover; }, 0) / priorSalRows.length : null;
+      if (usualRatio !== null && salRatio - usualRatio >= INS.SAL_PTS) add('check', 3, 'Salaries are a bigger share of turnover', L + ': salaries and wages are ' + pct(salRatio) + ' of turnover against a usual ' + pct(usualRatio) + ' (' + money(salCur) + ' in total). Either sales were soft or payroll grew.', evSal);
+      else add('info', 9, 'Salaries and wages are ' + pct(salRatio) + ' of turnover', money(salCur) + ' in ' + L + (c.totalExpenses > 0 ? ', which is ' + Math.round(salCur / c.totalExpenses * 100) + '% of all expenses.' : '.'), evSal);
+    }
+
+    // --- Expense lines against their own usual
+    var curCats = cats[cur.month];
+    var itemisedPrior = prior.filter(function (m) { return Object.keys(cats[m.month].amt).length > 0; });
+    if (Object.keys(curCats.amt).length && itemisedPrior.length >= INS.MIN_PRIOR_LINES) {
+      var allKeys = {};
+      Object.keys(curCats.amt).forEach(function (k) { allKeys[k] = curCats.label[k]; });
+      itemisedPrior.forEach(function (m) { Object.keys(cats[m.month].amt).forEach(function (k) { if (!allKeys[k]) allKeys[k] = cats[m.month].label[k]; }); });
+      var up = [], down = [], fresh = [], gone = [];
+      Object.keys(allKeys).forEach(function (k) {
+        var now = curCats.amt[k] || 0;
+        var usual = itemisedPrior.reduce(function (t, m) { return t + (cats[m.month].amt[k] || 0); }, 0) / itemisedPrior.length;
+        var everBefore = itemisedPrior.some(function (m) { return Math.abs(cats[m.month].amt[k] || 0) > 0.5; });
+        var line = { name: allKeys[k], now: now, usual: usual, diff: now - usual };
+        if (now >= INS.LINE_MIN && !everBefore) fresh.push(line);
+        else if (usual >= INS.LINE_MIN && now < usual * 0.1) gone.push(line);
+        else if (usual > 0 && now - usual >= INS.LINE_MIN && now >= usual * (1 + INS.LINE_PCT)) up.push(line);
+        else if (usual > 0 && usual - now >= INS.LINE_GOOD_MIN && now <= usual * (1 - INS.LINE_GOOD_PCT)) down.push(line);
+      });
+      function evLines(list) { return { head: ['Expense line', L, 'Usual', 'Difference'], rows: list.map(function (x) { return [x.name, money(x.now), money(x.usual), (x.diff > 0 ? '+' : '') + money(x.diff)]; }) }; }
+      var byDiff = function (a, b) { return Math.abs(b.diff) - Math.abs(a.diff); };
+      up.sort(byDiff); down.sort(byDiff); fresh.sort(byDiff); gone.sort(byDiff);
+      var names = function (list) { return list.slice(0, 3).map(function (x) { return x.name + ' ' + (x.diff > 0 ? '+' : '') + money(x.diff); }).join(', ') + (list.length > 3 ? ' and ' + (list.length - 3) + ' more' : ''); };
+      if (up.length) add('concern', 3, up.length + ' expense line' + (up.length === 1 ? ' is' : 's are') + ' well above usual', names(up) + '. "Usual" is the average of the ' + itemisedPrior.length + ' earlier months with itemised expenses.', evLines(up));
+      if (fresh.length) add('check', 3, fresh.length + ' new expense line' + (fresh.length === 1 ? '' : 's') + ' this month', names(fresh) + ' did not appear in any earlier month this year. Confirm they are real and coded correctly.', evLines(fresh));
+      if (gone.length) add('check', 4, gone.length + ' usual expense line' + (gone.length === 1 ? ' has' : 's have') + ' (almost) disappeared', names(gone) + '. Either a genuine saving or the cost has not been posted yet, which would overstate profit.', evLines(gone));
+      if (down.length) add('positive', 6, down.length + ' expense line' + (down.length === 1 ? ' is' : 's are') + ' well below usual', names(down) + '.', evLines(down));
+    }
+
+    // --- Entries that deserve a second look
+    var unalloc = [];
+    Object.keys(curCats.amt).forEach(function (k) { if (/unallocated|suspense|uncategori[sz]ed|ask my accountant/i.test(curCats.label[k]) && Math.abs(curCats.amt[k]) >= INS.UNALLOC_MIN) unalloc.push([curCats.label[k], money(curCats.amt[k])]); });
+    if (unalloc.length) add('check', 2, 'Unallocated entries in ' + L, 'Money sitting in an "unallocated" line has not been coded to a proper account, so profit can be misstated until it is. Ask the bookkeeper to allocate it.', { head: ['Line', L], rows: unalloc });
+    var otherInc = [], otherTotal = 0;
+    Object.keys(curCats.amt).forEach(function (k) { if (/^other income:/i.test(curCats.label[k]) && curCats.amt[k] < 0) { otherInc.push([curCats.label[k].replace(/^other income:\s*/i, ''), money(-curCats.amt[k])]); otherTotal += -curCats.amt[k]; } });
+    if (otherTotal > 0 && c.gp > 0 && otherTotal / c.gp >= INS.OTHER_INC_PCT) add('check', 4, 'Other income of ' + money(otherTotal) + ' is lifting the bottom line', 'That is ' + Math.round(otherTotal / c.gp * 100) + '% of ' + L + ' gross profit and it is netted off the expenses. Make sure it is genuine and not simply sales that were posted to the wrong account.', { head: ['Other income', L], rows: otherInc });
+    var biggest = Object.keys(curCats.amt).filter(function (k) { return curCats.amt[k] > 0; }).sort(function (a, b) { return curCats.amt[b] - curCats.amt[a]; })[0];
+    if (biggest && c.totalExpenses > 0) {
+      var topFive = Object.keys(curCats.amt).filter(function (k) { return curCats.amt[k] > 0; }).sort(function (a, b) { return curCats.amt[b] - curCats.amt[a]; }).slice(0, 5);
+      add('info', 10, 'Biggest expense: ' + curCats.label[biggest], money(curCats.amt[biggest]) + ' is ' + Math.round(curCats.amt[biggest] / c.totalExpenses * 100) + '% of ' + L + ' expenses.', { head: ['Top expense lines', L, '% of expenses'], rows: topFive.map(function (k) { return [curCats.label[k], money(curCats.amt[k]), Math.round(curCats.amt[k] / c.totalExpenses * 100) + '%']; }) });
+    }
+
+    // --- Is the data complete?
+    var gaps = data.months.filter(function (m) { return !fyRowFor(m, entityKey).hasData && m.month < cur.month; });
+    if (gaps.length) add('check', 5, 'No figures for ' + gaps.map(function (m) { return monthLabel(m.month); }).join(', '), 'These months before ' + L + ' are empty, so averages and "usual" only use the months that were loaded. Ignore this if the company was not trading then; otherwise load them in Settings.', null);
+    var now = new Date(), py = now.getFullYear(), pm = now.getMonth();
+    if (pm === 0) { py -= 1; pm = 12; }
+    var prevKey = py + '-' + (pm < 10 ? '0' + pm : pm);
+    if (cur.month < prevKey && now.getDate() >= 10) add('check', 1, 'Figures for ' + monthLabel(prevKey) + ' have not been loaded', 'The latest month in the app is ' + L + '. Pull or import ' + monthLabel(prevKey) + ' in Settings so the Dashboard is current.', null);
+    if (entityKey === 'total' && state.entities.length > 1) {
+      var incomplete = [];
+      state.entities.forEach(function (e) {
+        var miss = rows.filter(function (m) { return !(m.entities[e.key] && m.entities[e.key].hasData); });
+        if (miss.length && miss.length < rows.length) incomplete.push({ e: e, miss: miss });
+        else if (miss.length === rows.length) incomplete.push({ e: e, miss: miss });
+      });
+      if (incomplete.length) {
+        add('check', 4, 'Some earlier months are missing a company in Combined', incomplete.map(function (x) { return x.e.name + ': no figures for ' + x.miss.map(function (m) { return monthLabel(m.month); }).join(', '); }).join('. ') + '. Combined totals and comparisons leave those out, which can make the month look better or worse than it was.', null);
+      }
+      // who moved the combined result
+      if (havePrior) {
+        var movers = [];
+        state.entities.forEach(function (e) {
+          var cE = cur.entities[e.key];
+          if (!cE || !cE.hasData) return;
+          var pr = prior.map(function (m) { return m.entities[e.key]; }).filter(function (r) { return r && r.hasData; });
+          if (pr.length < 1) return;
+          var usual = pr.reduce(function (t, r) { return t + r.nettProfit; }, 0) / pr.length;
+          movers.push({ name: e.name, now: cE.nettProfit, usual: usual, diff: cE.nettProfit - usual });
+        });
+        if (movers.length >= 2) {
+          movers.sort(function (a, b) { return Math.abs(b.diff) - Math.abs(a.diff); });
+          var m0 = movers[0];
+          add('info', 5, 'Biggest mover in net profit: ' + m0.name + ' (' + (m0.diff > 0 ? '+' : '') + money(m0.diff) + ')', 'Compared with each company\'s own usual month. This is where to look first for the reason Combined moved.', { head: ['Company', L, 'Usual', 'Change'], rows: movers.map(function (x) { return [x.name, money(x.now), money(x.usual), (x.diff > 0 ? '+' : '') + money(x.diff)]; }) });
+        }
+      }
+    }
+
+    var order = { concern: 0, check: 1, positive: 2, info: 3 };
+    items.sort(function (a, b) { return (order[a.level] - order[b.level]) || (a.prio - b.prio) || (a.seq - b.seq); });
+    return { rows: rows.length, latest: cur.month, items: items };
+  }
+
+  function renderInsights_(data, entityKey) {
+    var body = document.getElementById('insights-body'), sub = document.getElementById('insights-sub');
+    if (!body) return;
+    insightLast_ = { data: data, entityKey: entityKey };
+    var res = computeInsights_(data, entityKey);
+    var name = entityKey === 'total' ? (isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined') : ((state.entities.filter(function (e) { return e.key === entityKey; })[0] || {}).name || entityKey);
+    if (!res.rows) { sub.textContent = name; body.innerHTML = '<p class="panel-note">No figures have been loaded for ' + esc(name) + ' this financial year yet.</p>'; return; }
+    sub.textContent = name + ' — ' + monthLabel(res.latest) + ' compared with the earlier months of this financial year. Click an insight to see the numbers behind it.';
+    var counts = { concern: 0, check: 0, positive: 0, info: 0 };
+    res.items.forEach(function (i) { counts[i.level] += 1; });
+    var labels = { all: 'All', concern: 'Concerns', check: 'To check', positive: 'Positive', info: 'For information' };
+    if (insightFilter_ !== 'all' && !counts[insightFilter_]) insightFilter_ = 'all';
+    var h = '<div class="ins-chips">' + ['all', 'concern', 'check', 'positive', 'info'].map(function (k) {
+      var n = k === 'all' ? res.items.length : counts[k];
+      return '<button type="button" class="ins-chip ' + k + (insightFilter_ === k ? ' active' : '') + '" data-ins="' + k + '"><span class="n">' + n + '</span> ' + labels[k] + '</button>';
+    }).join('') + '</div>';
+    if (res.rows < 3) h += '<p class="panel-note">Only ' + res.rows + ' month' + (res.rows === 1 ? ' is' : 's are') + ' loaded, so comparisons with "usual" are limited. More insights appear as months are added.</p>';
+    var shown = res.items.filter(function (i) { return insightFilter_ === 'all' || i.level === insightFilter_; });
+    if (!shown.length) h += '<p class="panel-note">Nothing to show here.</p>';
+    var icon = { concern: '!', check: '?', positive: '✓', info: 'i' };
+    h += shown.map(function (i) {
+      var ev = '';
+      if (i.ev) ev = '<table class="data-table ins-ev"><thead><tr>' + i.ev.head.map(function (x, ix) { return '<th' + (ix ? ' style="text-align:right;"' : ' style="text-align:left;"') + '>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        i.ev.rows.map(function (r) { return '<tr>' + r.map(function (x, ix) { return '<td' + (ix ? ' style="text-align:right;"' : ' style="text-align:left;"') + '>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>';
+      return '<details class="ins-card ' + i.level + '"><summary><span class="ins-icon">' + icon[i.level] + '</span><span class="ins-title">' + esc(i.title) + '</span></summary>' +
+        '<div class="ins-body"><p>' + esc(i.text) + '</p>' + ev + '</div></details>';
+    }).join('');
+    body.innerHTML = h;
+    Array.prototype.forEach.call(body.querySelectorAll('.ins-chip'), function (b) {
+      b.addEventListener('click', function () { insightFilter_ = b.getAttribute('data-ins'); renderInsights_(insightLast_.data, insightLast_.entityKey); });
+    });
   }
 
   function renderKpiGrid(data) {
