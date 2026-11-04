@@ -1813,7 +1813,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.132-blendid-sage';
+  var FRONTEND_BUILD = '2026-11-04.134-backfill-per-company';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7321,8 +7321,10 @@
     }
     var months = [];
     (st.staged || []).forEach(function (s) { if (months.indexOf(s.month) < 0) months.push(s.month); });
-    var changedMonths = {};
+    var changedMonths = {}, unsavedMonths = {};
     (st.changes || []).forEach(function (c) { changedMonths[c.month] = true; });
+    (st.unsaved || []).forEach(function (c) { unsavedMonths[c.month] = true; });
+    months.sort().reverse();
     if (!st.keySet) h += '<p class="panel-note">Sage (Veg, Pyroca &amp; Blendid) is not connected yet. In the Packing project run <code>sagePushPnlNow</code> after adding the shared password (steps in SETUP).</p>';
     else if (st.lastIngest) h += '<p class="panel-note" style="font-style:normal;">Last received from Sage: <strong>' + esc(sageEntityName_(st.lastIngest.entity)) + ' ' + esc(monthLabel(st.lastIngest.month)) + '</strong> at ' + esc(String(st.lastIngest.at).replace('T', ' ')) + '.</p>';
     else h += '<p class="panel-note">Nothing received from Sage yet. In the Packing project run <code>sagePushPnlNow</code>.</p>';
@@ -7332,17 +7334,27 @@
       h += zBad.length
         ? '<p class="error-text"><strong>Zoho pull failed</strong> at ' + esc(String(st.zohoLast.at)) + ': ' + zBad.map(function (r) { return esc(sageEntityName_(r.entity)) + ' ' + esc(monthLabel(r.month)) + ' — ' + esc(r.error); }).join('; ') + '</p>'
         : '<p class="panel-note" style="font-style:normal;">Last pulled from Zoho: <strong>' + esc(String(st.zohoLast.at)) + '</strong> (' + (st.zohoLast.results || []).map(function (r) { return esc(sageEntityName_(r.entity)) + ' ' + esc(monthLabel(r.month)); }).join(', ') + ').</p>';
-    } else h += '<p class="panel-note">Nothing pulled from Zoho yet. Press "Pull from Zoho now" below, or run <code>zohoPullNow</code> in the Apps Script editor.</p>';
+    } else h += '<p class="panel-note">Nothing pulled from Zoho yet. Press "Pull Jhb & Cpt from Zoho now" below, or run <code>zohoPullNow</code> in the Apps Script editor.</p>';
     if ((st.changes || []).length) {
       h += '<p class="error-text"><strong>The source now differs from what is saved</strong> for ' + st.changes.map(function (c) { return esc(sageEntityName_(c.entity)) + ' ' + esc(monthLabel(c.month)); }).join(', ') + ' (for example the accountant corrected something). Click the month below to review and save.</p>';
     }
+    if ((st.unsaved || []).length) {
+      var byEnt = {};
+      st.unsaved.forEach(function (u) { (byEnt[u.entity] = byEnt[u.entity] || []).push(u.month); });
+      h += '<div class="wa-box" style="margin:6px 0 10px;"><strong>Pulled months that are not saved in the app yet</strong> (months that already have saved figures are never changed). Save one company at a time:';
+      Object.keys(byEnt).forEach(function (ent) {
+        var ms = byEnt[ent].slice().sort();
+        h += '<div style="margin-top:8px;"><button class="btn sage-save-missing-btn" data-entity="' + esc(ent) + '">Save ' + esc(sageEntityName_(ent)) + ' (' + ms.length + ' month' + (ms.length === 1 ? '' : 's') + ')</button> <span class="panel-note" style="font-style:normal;">' + ms.map(function (m) { return esc(monthLabel(m)); }).join(', ') + '</span></div>';
+      });
+      h += '</div>';
+    }
     if (months.length) {
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">' + months.map(function (m) {
-        return '<button class="btn secondary sage-month-chip" data-month="' + esc(m) + '">' + esc(monthLabel(m)) + (changedMonths[m] ? ' — changed' : '') + '</button>';
+        return '<button class="btn secondary sage-month-chip" data-month="' + esc(m) + '">' + esc(monthLabel(m)) + (changedMonths[m] ? ' — changed' : unsavedMonths[m] ? ' — not saved yet' : '') + '</button>';
       }).join('') + '</div>';
     }
     h += '<div class="form-grid"><div class="field"><label>Month</label><input type="month" id="sage-month" value="' + esc(months[0] || sagePrevMonth_()) + '"></div></div>' +
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;"><button class="btn" id="sage-preview-btn">Preview this month</button>' + (st.zohoReady ? '<button class="btn secondary" id="zoho-pull-btn" title="Fetch this month\'s Profit &amp; Loss for Jhb and Cpt from Zoho Books now">Pull from Zoho now</button>' : '') + '<button class="btn secondary" id="sage-refresh-btn">Refresh</button></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;"><button class="btn" id="sage-preview-btn">Preview this month</button>' + (st.zohoReady ? '<button class="btn secondary" id="zoho-pull-btn" title="Fetch this month\'s Profit &amp; Loss for Jhb and Cpt from Zoho Books now">Pull Jhb &amp; Cpt from Zoho now</button>' : '') + '<button class="btn secondary" id="sage-refresh-btn">Refresh</button></div>' +
       '<span class="save-status" id="sage-status-text"></span><div id="sage-result" style="margin-top:12px;"></div>' +
       '<hr style="margin:18px 0;border:0;border-top:1px solid var(--border);">' +
       '<h3 style="margin:0 0 6px;">Automatic</h3>' +
@@ -7447,6 +7459,30 @@
       });
     });
     on('sage-preview-btn', function () { sagePreviewMonth_(document.getElementById('sage-month').value); });
+    Array.prototype.forEach.call(document.querySelectorAll('.sage-save-missing-btn'), function (btn) {
+      btn.addEventListener('click', function () {
+        var ent = btn.getAttribute('data-entity'), status = document.getElementById('sage-status-text');
+        var n = (sageState_.unsaved || []).filter(function (u) { return u.entity === ent; }).length;
+        if (!window.confirm('Save ' + n + ' pulled month' + (n === 1 ? '' : 's') + ' for ' + sageEntityName_(ent) + ' that have nothing saved yet?\n\nMonths that already have saved figures, and every other company, will NOT be changed.')) return;
+        btn.disabled = true;
+        if (status) flashStatus(status, 'Saving ' + sageEntityName_(ent) + '…', 'save-status', 0);
+        callApi('sageSaveMissing', { entity: ent }).then(function (res) {
+          btn.disabled = false;
+          if (!res.ok) { if (status) flashStatus(status, res.error || 'Failed', 'save-status err', 10000); return; }
+          if (res.status && res.status.ok) sageState_ = res.status;
+          paintSage_();
+          var el = document.getElementById('sage-result');
+          var h = '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><strong>Saved ' + res.saved.length + ' month' + (res.saved.length === 1 ? '' : 's') + ' for ' + esc(sageEntityName_(ent)) + '.</strong>';
+          if (res.saved.length) h += '<table class="data-table" style="margin-top:6px;"><tr><th style="text-align:left;">Company</th><th style="text-align:left;">Month</th><th style="text-align:right;">Turnover</th><th style="text-align:right;">Net profit</th></tr>' +
+            res.saved.map(function (x) { return '<tr><td>' + esc(sageEntityName_(x.entity)) + '</td><td>' + esc(monthLabel(x.month)) + '</td><td style="text-align:right;">' + sageMoney_(x.turnover) + '</td><td style="text-align:right;">' + sageMoney_(x.net) + '</td></tr>'; }).join('') + '</table>';
+          if (res.failed.length) h += '<p class="error-text">Failed: ' + res.failed.map(function (x) { return esc(sageEntityName_(x.entity)) + ' ' + esc(monthLabel(x.month)) + ' — ' + esc(x.error); }).join('; ') + '</p>';
+          if (res.keptDiffering.length) h += '<p class="panel-note" style="font-style:normal;">Already saved and <strong>different from what was pulled</strong> (left alone): ' + res.keptDiffering.map(function (x) { return esc(sageEntityName_(x.entity)) + ' ' + esc(monthLabel(x.month)); }).join(', ') + '. Click that month to compare and decide.</p>';
+          h += '</div>';
+          if (el) el.innerHTML = h;
+          if (state.financialYear) loadFinancialYear().then(function () { renderDashboard(); renderExpenseBreakdown(state.financialYear, state.dashboardEntity); }).catch(function () {});
+        }).catch(function () { btn.disabled = false; if (status) flashStatus(status, 'Network error', 'save-status err', 6000); });
+      });
+    });
     on('zoho-pull-btn', function () {
       var btn = document.getElementById('zoho-pull-btn'), status = document.getElementById('sage-status-text');
       var month = document.getElementById('sage-month').value;
