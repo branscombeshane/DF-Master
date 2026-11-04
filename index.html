@@ -371,6 +371,12 @@
     margin-bottom: 22px;
   }
   /* Dashboard insights */
+  .ins-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; width:100%; background:none; border:0; padding:0; margin:0; font:inherit; color:inherit; text-align:left; cursor:pointer; }
+  .ins-h { font-size:14px; font-weight:700; }
+  .ins-summary { font-size:13px; color:var(--text-secondary); display:flex; gap:12px; flex-wrap:wrap; }
+  .ins-summary .c { color:var(--critical); font-weight:700; } .ins-summary .k { color:#b07800; font-weight:700; } .ins-summary .p { color:var(--good); font-weight:700; }
+  .ins-caret { margin-left:auto; font-size:12.5px; font-weight:600; color:var(--text-muted); }
+  .ins-head:hover .ins-caret, .ins-head:focus-visible .ins-caret { color:var(--brand); }
   .ins-chips { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
   .ins-chip { font:inherit; font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-secondary); cursor:pointer; }
   .ins-chip .n { font-weight:800; margin-right:2px; }
@@ -1075,9 +1081,15 @@
       <div class="kpi-grid" id="kpi-grid"></div>
 
       <div class="panel" id="insights-panel">
-        <h2>Insights</h2>
-        <p class="panel-sub" id="insights-sub"></p>
-        <div id="insights-body"></div>
+        <button type="button" class="ins-head" id="insights-toggle" aria-expanded="false" aria-controls="insights-body">
+          <span class="ins-h">Insights</span>
+          <span class="ins-summary" id="insights-summary"></span>
+          <span class="ins-caret" id="insights-caret">Show ▸</span>
+        </button>
+        <div id="insights-wrap" hidden>
+          <p class="panel-sub" id="insights-sub" style="margin-top:12px;"></p>
+          <div id="insights-body"></div>
+        </div>
       </div>
 
       <div class="panel">
@@ -1813,7 +1825,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.134-backfill-per-company';
+  var FRONTEND_BUILD = '2026-11-04.135-insights-collapsed';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2896,6 +2908,15 @@
   };
   var insightFilter_ = 'all';
   var insightLast_ = null;
+  var insightsOpen_ = false;   // collapsed by default; the choice is kept while the page stays open
+  function setInsightsOpen_(open) {
+    insightsOpen_ = !!open;
+    var wrap = document.getElementById('insights-wrap'), btn = document.getElementById('insights-toggle'), caret = document.getElementById('insights-caret');
+    if (wrap) wrap.hidden = !insightsOpen_;
+    if (btn) btn.setAttribute('aria-expanded', insightsOpen_ ? 'true' : 'false');
+    if (caret) caret.textContent = insightsOpen_ ? 'Hide ▾' : 'Show ▸';
+  }
+  (function () { var b = document.getElementById('insights-toggle'); if (b) b.addEventListener('click', function () { setInsightsOpen_(!insightsOpen_); }); })();
 
   function insChange_(cur, avg) {
     if (!avg) return '';
@@ -3129,10 +3150,15 @@
     insightLast_ = { data: data, entityKey: entityKey };
     var res = computeInsights_(data, entityKey);
     var name = entityKey === 'total' ? (isPartialEntitySet() ? 'Your Entities (Combined)' : 'Combined') : ((state.entities.filter(function (e) { return e.key === entityKey; })[0] || {}).name || entityKey);
-    if (!res.rows) { sub.textContent = name; body.innerHTML = '<p class="panel-note">No figures have been loaded for ' + esc(name) + ' this financial year yet.</p>'; return; }
+    var summaryEl = document.getElementById('insights-summary');
+    if (!res.rows) { sub.textContent = name; if (summaryEl) summaryEl.textContent = 'No figures yet'; body.innerHTML = '<p class="panel-note">No figures have been loaded for ' + esc(name) + ' this financial year yet.</p>'; return; }
     sub.textContent = name + ' — ' + monthLabel(res.latest) + ' compared with the earlier months of this financial year. Click an insight to see the numbers behind it.';
     var counts = { concern: 0, check: 0, positive: 0, info: 0 };
     res.items.forEach(function (i) { counts[i.level] += 1; });
+    if (summaryEl) summaryEl.innerHTML = '<span>' + esc(name) + ' · ' + esc(monthLabel(res.latest)) + '</span>' +
+      (counts.concern ? '<span class="c">' + counts.concern + ' concern' + (counts.concern === 1 ? '' : 's') + '</span>' : '<span class="p">No concerns</span>') +
+      (counts.check ? '<span class="k">' + counts.check + ' to check</span>' : '') +
+      (counts.positive ? '<span class="p">' + counts.positive + ' positive</span>' : '');
     var labels = { all: 'All', concern: 'Concerns', check: 'To check', positive: 'Positive', info: 'For information' };
     if (insightFilter_ !== 'all' && !counts[insightFilter_]) insightFilter_ = 'all';
     var h = '<div class="ins-chips">' + ['all', 'concern', 'check', 'positive', 'info'].map(function (k) {
