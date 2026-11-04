@@ -1681,8 +1681,8 @@
         <div id="import-monthly-data-result" style="margin-top:12px; font-size:12px;"></div>
       </div>
       <div class="panel" id="sage-panel">
-        <h2>Sage &amp; Zoho — monthly figures for all four companies</h2>
-        <p class="panel-sub">Daily Fruit Veg and Pyroca 79 come from Sage: the Packing app, which already has the live Sage connection, sends last month's Profit &amp; Loss here each night. Daily Fruit Jhb and Daily Fruit Cpt come from Zoho Books, which this app reads itself each night. Here you see each month next to what is already saved, and save it (or let it save itself). Nothing is ever pasted or exported by hand.</p>
+        <h2>Sage &amp; Zoho — monthly figures for all five companies</h2>
+        <p class="panel-sub">Daily Fruit Veg, Pyroca 79 and Blendid come from Sage: the Packing app, which already has the live Sage connection, sends last month's Profit &amp; Loss here each night. Daily Fruit Jhb and Daily Fruit Cpt come from Zoho Books, which this app reads itself each night. Here you see each month next to what is already saved, and save it (or let it save itself). Nothing is ever pasted or exported by hand.</p>
         <div id="sage-body"><p class="panel-note">Loading…</p></div>
       </div>
       <div class="panel">
@@ -1813,7 +1813,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.131-dashboard-insights';
+  var FRONTEND_BUILD = '2026-11-04.132-blendid-sage';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7294,7 +7294,7 @@
     if (m === 0) { y -= 1; m = 12; }
     return y + '-' + (m < 10 ? '0' + m : m);
   }
-  function sageEntityName_(k) { return k === 'veg' ? 'Daily Fruit Veg' : k === 'pyroca' ? 'Pyroca 79' : k === 'jhb' ? 'Daily Fruit Jhb' : k === 'cpt' ? 'Daily Fruit Cpt' : k; }
+  function sageEntityName_(k) { return k === 'veg' ? 'Daily Fruit Veg' : k === 'pyroca' ? 'Pyroca 79' : k === 'jhb' ? 'Daily Fruit Jhb' : k === 'cpt' ? 'Daily Fruit Cpt' : k === 'blendid' ? 'Blendid' : k; }
   function sageSourceName_(k) { return (k === 'jhb' || k === 'cpt') ? 'Zoho' : 'Sage'; }
 
   function loadSagePanel_() {
@@ -7312,7 +7312,7 @@
     if (!st || !body) return;
     var h = '';
     if (!st.keySet && !st.zohoReady) {
-      h += '<p><strong>One-time set-up for Sage</strong> (Veg &amp; Pyroca; two Apps Script projects share one password). Zoho (Jhb &amp; Cpt) is connected inside this project: run <code>zohoExchangeGrantCode</code>, then <code>zohoTestConnection</code>, then <code>zohoPullNow</code> in the Apps Script editor.</p><ol style="margin:4px 0 8px 18px;line-height:1.5;">' +
+      h += '<p><strong>One-time set-up for Sage</strong> (Veg, Pyroca &amp; Blendid; two Apps Script projects share one password). Zoho (Jhb &amp; Cpt) is connected inside this project: run <code>zohoExchangeGrantCode</code>, then <code>zohoTestConnection</code>, then <code>zohoPullNow</code> in the Apps Script editor.</p><ol style="margin:4px 0 8px 18px;line-height:1.5;">' +
         '<li>Make up a long random password. In <em>this</em> project (Financials) add the Script property <code>SAGE_INGEST_KEY</code> with it.</li>' +
         '<li>In the <em>Packing</em> project add <code>FINANCIALS_INGEST_KEY</code> (the same password) and <code>FINANCIALS_URL</code> = <code style="word-break:break-all;">' + esc(st.webAppUrl) + '</code></li>' +
         '<li>In Packing, run <code>sagePushPnlNow</code> once, then <code>sageInstallPnlTrigger</code> once.</li></ol>' +
@@ -7323,7 +7323,7 @@
     (st.staged || []).forEach(function (s) { if (months.indexOf(s.month) < 0) months.push(s.month); });
     var changedMonths = {};
     (st.changes || []).forEach(function (c) { changedMonths[c.month] = true; });
-    if (!st.keySet) h += '<p class="panel-note">Sage (Veg &amp; Pyroca) is not connected yet. In the Packing project run <code>sagePushPnlNow</code> after adding the shared password (steps in SETUP).</p>';
+    if (!st.keySet) h += '<p class="panel-note">Sage (Veg, Pyroca &amp; Blendid) is not connected yet. In the Packing project run <code>sagePushPnlNow</code> after adding the shared password (steps in SETUP).</p>';
     else if (st.lastIngest) h += '<p class="panel-note" style="font-style:normal;">Last received from Sage: <strong>' + esc(sageEntityName_(st.lastIngest.entity)) + ' ' + esc(monthLabel(st.lastIngest.month)) + '</strong> at ' + esc(String(st.lastIngest.at).replace('T', ' ')) + '.</p>';
     else h += '<p class="panel-note">Nothing received from Sage yet. In the Packing project run <code>sagePushPnlNow</code>.</p>';
     if (!st.zohoReady) h += '<p class="panel-note">Zoho (Jhb &amp; Cpt) is not connected yet. In the Apps Script editor run <code>zohoExchangeGrantCode</code>, then <code>zohoTestConnection</code>.</p>';
