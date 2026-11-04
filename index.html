@@ -1788,7 +1788,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.129-zoho-jhb-cpt';
+  var FRONTEND_BUILD = '2026-11-04.130-dashboard-refresh';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7093,7 +7093,13 @@
         var bad = r2.results.filter(function (x) { return !x.saved && x.pnl; }); // companies with nothing received yet are not failures
         flashStatus(status, bad.length ? 'Some failed' : 'Saved', bad.length ? 'save-status err' : 'save-status ok', 6000);
         paintSageResult_(r2);
-        if (state.financialYear) { try { loadFinancialYear(); } catch (e) {} }
+        // Reload AND redraw the Dashboard (it used to reload the numbers but never redraw the table).
+        if (state.financialYear) {
+          loadFinancialYear().then(function () {
+            renderDashboard();
+            renderExpenseBreakdown(state.financialYear, state.dashboardEntity);
+          }).catch(function () {});
+        }
         loadSagePanelQuiet_();
       }).catch(function () { sb.disabled = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
     });
