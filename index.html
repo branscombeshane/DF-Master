@@ -938,6 +938,24 @@
       <div style="display:flex; gap:8px;">
         <button type="button" class="btn secondary small" id="payroll-discharge-btn" style="display:none;">Discharge employee</button>
         <button type="button" class="btn secondary small" id="payroll-rehire-btn" style="display:none;">Rehire employee</button>
+        <button type="button" class="btn secondary small" id="payroll-editdischarge-btn" style="display:none;">Edit discharge date</button>
+      </div>
+      <div id="payroll-editdischarge-fields" style="display:none; margin-top:10px; padding:10px; border:1px solid var(--border); border-radius:6px;">
+        <div class="form-grid">
+          <div class="field">
+            <label>Correct discharge date</label>
+            <input type="date" id="payroll-editdischarge-date">
+          </div>
+          <div class="field">
+            <label>Reason (optional)</label>
+            <input type="text" id="payroll-editdischarge-reason">
+          </div>
+        </div>
+        <div class="hint" style="margin:0 0 10px;">Owner only. Their final pay is worked out again up to the new date (a Basic Salary you typed in by hand is left alone), and the history line is corrected with a note of the old date. If payroll was already run for the month, you will be asked for the Owner password and will need to re-run payroll for them.</div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn small" id="payroll-editdischarge-confirm-btn">Save new date</button>
+          <button type="button" class="btn secondary small" id="payroll-editdischarge-cancel-btn">Cancel</button>
+        </div>
       </div>
       <div id="payroll-discharge-fields" style="display:none; margin-top:10px; padding:10px; border:1px solid var(--border); border-radius:6px;">
         <div class="form-grid">
@@ -1825,7 +1843,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-04.135-insights-collapsed';
+  var FRONTEND_BUILD = '2026-11-05.136-edit-discharge-date';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1839,7 +1857,7 @@
   // before a group is even chosen.
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
-    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
@@ -6672,7 +6690,7 @@
     // hrRedactEmployee_) — the field is hidden for them (toggled below), so
     // there's nothing to fill in here.
     document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
-    if (state.role !== 'hr') document.getElementById('payroll-amount').value = e.amount;
+    if (state.role !== 'hr') document.getElementById('payroll-amount').value = (e.defaultAmount !== undefined && e.defaultAmount !== null) ? e.defaultAmount : e.amount;   // the standing salary, never this month's pro-rata/override figure
     document.getElementById('payroll-date').value = e.dateEmployed || '';
     updateProrataHint_();
     document.getElementById('payroll-address').value = e.address || '';
@@ -6707,8 +6725,11 @@
     var isDischarged = (e.discharged !== undefined) ? !!e.discharged : !e.active;
     document.getElementById('payroll-discharge-btn').style.display = isDischarged ? 'none' : '';
     document.getElementById('payroll-rehire-btn').style.display = isDischarged ? '' : 'none';
+    document.getElementById('payroll-editdischarge-btn').style.display = (isDischarged && state.role === 'owner') ? '' : 'none';
+    state.editDischargeCurrent = { date: e.dateDischarged || '', reason: e.dischargeReason || '' };
     document.getElementById('payroll-discharge-fields').style.display = 'none';
     document.getElementById('payroll-rehire-fields').style.display = 'none';
+    document.getElementById('payroll-editdischarge-fields').style.display = 'none';
     document.getElementById('payroll-employment-history').textContent = 'Loading…';
     callApi('getEmploymentHistory', { id: e.id }).then(function (res) {
       if (res.ok && document.getElementById('payroll-edit-id').value === String(e.id)) renderEmploymentHistory_(res.events);
@@ -6810,6 +6831,7 @@
     document.getElementById('payroll-status-field').style.display = 'none';
     document.getElementById('payroll-discharge-fields').style.display = 'none';
     document.getElementById('payroll-rehire-fields').style.display = 'none';
+    document.getElementById('payroll-editdischarge-fields').style.display = 'none';
     document.getElementById('payroll-employment-history').innerHTML = '';
     document.getElementById('employee-modal').classList.remove('active');
   }
@@ -6990,6 +7012,51 @@
 
   document.getElementById('payroll-rehire-cancel-btn').addEventListener('click', function () {
     document.getElementById('payroll-rehire-fields').style.display = 'none';
+  });
+
+  // Owner-only: correct a discharge date that was entered by mistake.
+  document.getElementById('payroll-editdischarge-btn').addEventListener('click', function () {
+    var cur = state.editDischargeCurrent || {};
+    document.getElementById('payroll-editdischarge-date').value = cur.date || '';
+    document.getElementById('payroll-editdischarge-reason').value = cur.reason || '';
+    document.getElementById('payroll-editdischarge-fields').style.display = '';
+    document.getElementById('payroll-discharge-fields').style.display = 'none';
+    document.getElementById('payroll-rehire-fields').style.display = 'none';
+  });
+  document.getElementById('payroll-editdischarge-cancel-btn').addEventListener('click', function () {
+    document.getElementById('payroll-editdischarge-fields').style.display = 'none';
+  });
+  document.getElementById('payroll-editdischarge-confirm-btn').addEventListener('click', function () {
+    var id = document.getElementById('payroll-edit-id').value;
+    if (!id) return;
+    var date = document.getElementById('payroll-editdischarge-date').value.trim();
+    var errEl = document.getElementById('payroll-error');
+    if (!date) { errEl.textContent = 'Discharge date is required.'; return; }
+    errEl.textContent = '';
+    var reason = document.getElementById('payroll-editdischarge-reason').value.trim();
+    var status = document.getElementById('payroll-save-status');
+    var btn = document.getElementById('payroll-editdischarge-confirm-btn');
+    btn.disabled = true;
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    callApiWithOwnerUnlock('editDischargeDate', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
+      btn.disabled = false;
+      if (res.ok) {
+        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        showLeaverNotice_(res.leaver, date);
+        loadRerunNeeded_();
+        state.payroll = res.payroll;
+        renderPayroll();
+        if (state.payrollAdjustments) renderAdjustments();
+        startEditEmployee(id);
+        var noticeTxt = document.getElementById('payroll-prorata-notice-text');
+        if (noticeTxt) document.getElementById('payroll-status-display').insertAdjacentHTML('beforeend', '<div style="margin-top:6px; padding:8px 10px; border-left:4px solid var(--accent, #2f7d32); background:var(--surface-1); border-radius:6px; font-size:13px;">' + noticeTxt.innerHTML + '</div>');
+      } else {
+        flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to change the discharge date.';
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
+    });
   });
 
   // Persistent note on the roster after a discharge: says how their final month's pay was worked out.
