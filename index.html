@@ -539,6 +539,15 @@
   table.casual-grid .cmeta.bad { border-color: var(--critical); outline: 1px solid var(--critical); }
   table.casual-grid tfoot td { font-weight: 700; border-top: 2px solid var(--border); }
   table.casual-grid td.weekend, table.casual-grid th.weekend { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+  .cins-bars { display:flex; align-items:flex-end; gap:6px; height:120px; margin:4px 0 2px; }
+  .cins-bar { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; background:none; border:0; padding:0; cursor:pointer; font:inherit; color:inherit; min-width:0; }
+  .cins-bar .fill { width:100%; background:color-mix(in srgb, var(--brand) 45%, transparent); border-radius:4px 4px 0 0; min-height:2px; }
+  .cins-bar.sel .fill { background:var(--brand); }
+  .cins-bar:hover .fill, .cins-bar:focus-visible .fill { background:var(--brand); }
+  .cins-bar .v { font-size:10.5px; color:var(--text-secondary); font-variant-numeric:tabular-nums; margin-bottom:2px; }
+  .cins-labels { display:flex; gap:6px; }
+  .cins-labels span { flex:1; text-align:center; font-size:10.5px; color:var(--text-muted); min-width:0; overflow:hidden; text-overflow:clip; white-space:nowrap; }
+  .cins-mgr-btn { background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--brand); cursor:pointer; text-align:left; }
   .casual-note { font-size: 12px; color: var(--text-secondary); margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warning) 14%, transparent); }
   .casual-note.err { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical); }
 
@@ -1477,6 +1486,25 @@
       </div>
 
       <div class="payroll-subview" id="payroll-sub-casuals">
+        <div class="panel" id="casual-ins-panel" style="display:none;">
+          <button type="button" class="ins-head" id="casual-ins-toggle" aria-expanded="false" aria-controls="casual-ins-wrap">
+            <span class="ins-h">Casual insights</span>
+            <span class="ins-summary" id="casual-ins-summary"></span>
+            <span class="ins-caret" id="casual-ins-caret">Show ▸</span>
+          </button>
+          <div id="casual-ins-wrap" hidden>
+            <p class="panel-sub" id="casual-ins-sub" style="margin-top:12px;"></p>
+            <div id="casual-ins-tiles"></div>
+            <div id="casual-ins-trend" style="margin-bottom:14px;"></div>
+            <div id="casual-ins-body"></div>
+            <h3 style="font-size:14px; margin:18px 0 6px;">Approving managers — last 12 weeks</h3>
+            <div style="overflow-x:auto;"><table class="data-table" id="casual-ins-mgrs"></table></div>
+            <div style="display:flex; gap:10px; align-items:center; margin-top:12px;">
+              <button class="btn secondary small" id="casual-ins-refresh">Refresh insights</button>
+              <span class="save-status" id="casual-ins-status"></span>
+            </div>
+          </div>
+        </div>
         <div class="panel">
           <h2>Casuals — weekly hours</h2>
           <p class="panel-sub" id="casuals-sub">Casuals are paid weekly (Monday to Sunday) by eWallet to their cell number. Capture the hours worked each day, then submit the week.</p>
@@ -1843,7 +1871,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-05.137-hr-no-payments-report';
+  var FRONTEND_BUILD = '2026-11-05.138-casual-insights';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1857,7 +1885,7 @@
   // before a group is even chosen.
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
-    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getCasualInsights: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
@@ -5589,7 +5617,8 @@
     var w = casualState.week; if (!w) return;
     // Keep the owner's red count in step with what was just saved / submitted / paid.
     var sig = w.weekStart + '|' + w.casuals.map(function (c) { return c.id + c.status + c.totalHours; }).join(',');
-    if (sig !== casualPendingSig_) { casualPendingSig_ = sig; loadCasualPending_(); }
+    if (sig !== casualPendingSig_) { casualPendingSig_ = sig; loadCasualPending_(); if (casualIsOwner_()) loadCasualInsights_(); }
+    var insPanel = document.getElementById('casual-ins-panel'); if (insPanel) insPanel.style.display = casualIsOwner_() ? '' : 'none';
     var isHr = casualIsHr_(), isOwner = casualIsOwner_();
     var badge = document.getElementById('casuals-status-badge');
     badge.className = 'status-badge ' + (w.status === 'paid' ? 'finalized' : 'in-progress');
@@ -5952,6 +5981,157 @@
       if (chip && casualState.week) openCasualWeeksModal_('one', chip.getAttribute('data-casual-weeks'));
     });
   })();
+
+
+  // ----- Casual insights (Owner only): long-term casuals, excessive hours, manager patterns, cost trend -----
+  var casIns = { data: null, open: false, filter: 'all', loading: false, week: null };
+  function casInsSetOpen_(open) {
+    casIns.open = !!open;
+    var wrap = document.getElementById('casual-ins-wrap'), btn = document.getElementById('casual-ins-toggle'), caret = document.getElementById('casual-ins-caret');
+    if (wrap) wrap.hidden = !casIns.open;
+    if (btn) btn.setAttribute('aria-expanded', casIns.open ? 'true' : 'false');
+    if (caret) caret.textContent = casIns.open ? 'Hide ▾' : 'Show ▸';
+    if (casIns.open && !casIns.data && !casIns.loading) loadCasualInsights_();
+  }
+  (function () {
+    var b = document.getElementById('casual-ins-toggle'); if (b) b.addEventListener('click', function () { casInsSetOpen_(!casIns.open); });
+    var r = document.getElementById('casual-ins-refresh'); if (r) r.addEventListener('click', function () { loadCasualInsights_(); });
+  })();
+  function loadCasualInsights_() {
+    if (!casualIsOwner_() || !casualState.weekStart) return Promise.resolve();
+    var asked = casualState.weekStart, st = document.getElementById('casual-ins-status'), btn = document.getElementById('casual-ins-refresh');
+    casIns.loading = true;
+    var sum = document.getElementById('casual-ins-summary'); if (sum && !casIns.data) sum.textContent = 'Loading…';
+    if (casIns.open) {
+      flashStatus(st, 'Working it out…', 'save-status', 0);
+      if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+      if (!casIns.data) document.getElementById('casual-ins-body').innerHTML = '<p class="panel-note">Working out the insights…</p>';
+    }
+    return callApi('getCasualInsights', { weekStart: asked }).then(function (res) {
+      casIns.loading = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Refresh insights'; }
+      if (asked !== casualState.weekStart) return;
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load the insights', 'save-status err', 8000); if (sum) sum.textContent = ''; return; }
+      flashStatus(st, '', 'save-status', 0);
+      casIns.data = res; renderCasualInsights_();
+    }).catch(function () {
+      casIns.loading = false; if (btn) { btn.disabled = false; btn.textContent = 'Refresh insights'; }
+      flashStatus(st, 'Network error', 'save-status err', 6000);
+    });
+  }
+  function casInsHrs_(n) { return (Math.round((Number(n) || 0) * 10) / 10).toLocaleString('en-ZA'); }
+  function casInsPct_(a, b) { return b ? ((a >= b ? '+' : '') + Math.round((a - b) / b * 100) + '%') : ''; }
+  function renderCasualInsights_() {
+    var d = casIns.data; if (!d) return;
+    var counts = { concern: 0, check: 0, positive: 0, info: 0 };
+    d.items.forEach(function (i) { counts[i.level] += 1; });
+    var sum = document.getElementById('casual-ins-summary');
+    if (sum) sum.innerHTML = '<span>' + esc(casualWeekLabel_(d.weekStart)) + '</span>' +
+      (counts.concern ? '<span class="c">' + counts.concern + ' concern' + (counts.concern === 1 ? '' : 's') + '</span>' : '<span class="p">No concerns</span>') +
+      (counts.check ? '<span class="k">' + counts.check + ' to check</span>' : '') +
+      (counts.positive ? '<span class="p">' + counts.positive + ' positive</span>' : '');
+    document.getElementById('casual-ins-sub').textContent = casualWeekLabel_(d.weekStart) + ' compared with the casual\'s own history and the previous ' + (d.thresholds.weeks - 1) + ' weeks. Click a tile, a bar, a manager or an insight for the detail.';
+    var t = d.tiles;
+    var tile = function (key, name, big, cap, color) {
+      return '<button type="button" class="kpi-card" data-cins-tile="' + key + '" style="--dot:' + color + ';"><div class="kpi-head"><span class="name">' + name + '</span></div><div class="big">' + big + '</div><div class="cap">' + cap + '</div></button>';
+    };
+    var hCap = t.prevAvgHours ? casInsPct_(t.hours, t.prevAvgHours) + ' vs recent average (' + casInsHrs_(t.prevAvgHours) + ')' : 'No earlier weeks to compare with';
+    var cCap = t.prevAvgAmount ? casInsPct_(t.amount, t.prevAvgAmount) + ' vs recent average (' + casualRand_(t.prevAvgAmount) + ')' : 'Paid weeks keep the rate they were paid at';
+    var tilesEl = document.getElementById('casual-ins-tiles');
+    tilesEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' +
+      tile('hours', 'Casual hours', casInsHrs_(t.hours), hCap, 'var(--brand)') +
+      tile('cost', 'Casual cost', casualRand_(t.amount), cCap, 'var(--series-total, var(--brand))') +
+      tile('fte', 'Full-time equivalents', String(t.fte), t.people + ' casual' + (t.people === 1 ? '' : 's') + ' · ' + d.thresholds.weekCheck + ' hours = 1 person', 'var(--warning)') +
+      tile('long', 'Long-term casuals', String(t.longTerm), t.longTermConcern ? t.longTermConcern + ' effectively permanent — click to see who' : 'Worked ' + d.thresholds.streakCheck + '+ weeks in a row', t.longTermConcern ? 'var(--critical)' : 'var(--good)') + '</div>';
+    Array.prototype.forEach.call(tilesEl.querySelectorAll('[data-cins-tile]'), function (b) { b.addEventListener('click', function () { openCasualInsModal_(b.getAttribute('data-cins-tile')); }); });
+
+    var max = Math.max.apply(null, d.weeks.map(function (w) { return w.hours; }).concat([1]));
+    document.getElementById('casual-ins-trend').innerHTML = '<div style="font-size:13px; font-weight:600; margin-bottom:4px;">Casual hours per week — last ' + d.weeks.length + ' weeks <span style="font-weight:400; color:var(--text-muted);">(click a bar to open that week)</span></div>' +
+      '<div class="cins-bars">' + d.weeks.map(function (w) {
+        return '<button type="button" class="cins-bar' + (w.weekStart === d.weekStart ? ' sel' : '') + '" data-cins-week="' + esc(w.weekStart) + '" title="' + esc(casualWeekLabel_(w.weekStart)) + ': ' + casInsHrs_(w.hours) + ' hours, ' + w.people + ' casual' + (w.people === 1 ? '' : 's') + ', ' + casualRand_(w.amount) + '">' +
+          '<span class="v">' + (w.hours ? casInsHrs_(w.hours) : '') + '</span><span class="fill" style="height:' + Math.round(w.hours / max * 90) + '%;"></span></button>';
+      }).join('') + '</div><div class="cins-labels">' + d.weeks.map(function (w) { var p = w.weekStart.split('-'); return '<span>' + Number(p[2]) + '/' + Number(p[1]) + '</span>'; }).join('') + '</div>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cins-week]'), function (b) {
+      b.addEventListener('click', function () {
+        var ws = b.getAttribute('data-cins-week'); if (ws === casualState.weekStart) return;
+        flashStatus(document.getElementById('casual-ins-status'), 'Opening that week…', 'save-status', 0);
+        loadCasuals(ws);
+      });
+    });
+
+    var labels = { all: 'All', concern: 'Concerns', check: 'To check', positive: 'Positive', info: 'For information' };
+    if (casIns.filter !== 'all' && !counts[casIns.filter]) casIns.filter = 'all';
+    var h = '<div class="ins-chips">' + ['all', 'concern', 'check', 'positive', 'info'].map(function (k) {
+      var n = k === 'all' ? d.items.length : counts[k];
+      return '<button type="button" class="ins-chip ' + k + (casIns.filter === k ? ' active' : '') + '" data-cins="' + k + '"><span class="n">' + n + '</span> ' + labels[k] + '</button>';
+    }).join('') + '</div>';
+    var shown = d.items.filter(function (i) { return casIns.filter === 'all' || i.level === casIns.filter; });
+    if (!shown.length) h += '<p class="panel-note">Nothing to show here.</p>';
+    var icon = { concern: '!', check: '?', positive: '✓', info: 'i' };
+    h += shown.map(function (i) {
+      var ev = '';
+      if (i.ev) ev = '<div style="overflow-x:auto;"><table class="data-table ins-ev"><thead><tr>' + i.ev.head.map(function (x, ix) { return '<th style="text-align:' + (ix ? 'right' : 'left') + ';">' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        i.ev.rows.map(function (r) { return '<tr>' + r.map(function (x, ix) { return '<td style="text-align:' + (ix ? 'right' : 'left') + ';">' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+      return '<details class="ins-card ' + i.level + '"><summary><span class="ins-icon">' + icon[i.level] + '</span><span class="ins-title">' + esc(i.title) + '</span></summary><div class="ins-body"><p>' + esc(i.text) + '</p>' + ev + '</div></details>';
+    }).join('');
+    var body = document.getElementById('casual-ins-body');
+    body.innerHTML = h;
+    Array.prototype.forEach.call(body.querySelectorAll('.ins-chip'), function (b) {
+      b.addEventListener('click', function () { casIns.filter = b.getAttribute('data-cins'); renderCasualInsights_(); });
+    });
+
+    var mt = document.getElementById('casual-ins-mgrs');
+    if (!d.managers.length) { mt.innerHTML = '<tbody><tr><td style="color:var(--text-muted);">No approving managers recorded in this period.</td></tr></tbody>'; }
+    else mt.innerHTML = '<thead><tr><th style="text-align:left;">Manager</th><th>Casuals</th><th>Hours</th><th>Share</th><th>Avg hrs / week</th><th>Last 4 vs before</th><th>Cost</th><th>Long-term</th></tr></thead><tbody>' +
+      d.managers.map(function (m, i) {
+        var tr = m.prior4 ? casInsPct_(m.last4, m.prior4) : (m.last4 ? 'new' : '—');
+        var trCls = m.prior4 && (m.last4 - m.prior4) / m.prior4 >= 0.3 && m.last4 - m.prior4 >= 30 ? ' style="color:var(--critical); font-weight:700;"' : '';
+        return '<tr><td style="text-align:left;"><button type="button" class="cins-mgr-btn" data-cins-mgr="' + i + '">' + esc(m.name) + '</button></td><td>' + m.casuals + '</td><td>' + casInsHrs_(m.hours) + '</td><td>' + Math.round(m.share * 100) + '%</td><td>' + casInsHrs_(m.avgPerWeek) + '</td><td' + trCls + '>' + tr + '</td><td>' + casualRand_(m.amount) + '</td><td>' + (m.longTerm || '—') + '</td></tr>';
+      }).join('') + '</tbody>';
+    Array.prototype.forEach.call(mt.querySelectorAll('[data-cins-mgr]'), function (b) { b.addEventListener('click', function () { openCasualInsModal_('mgr', Number(b.getAttribute('data-cins-mgr'))); }); });
+  }
+  function openCasualInsModal_(mode, idx) {
+    var d = casIns.data; if (!d) return;
+    var title, sub, html;
+    var th = function (cols) { return '<thead><tr>' + cols.map(function (c, i) { return '<th style="text-align:' + (i === 0 || c.left ? 'left' : 'right') + ';">' + esc(c.t || c) + '</th>'; }).join('') + '</tr></thead>'; };
+    var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    if (mode === 'hours') {
+      title = 'Casual hours — ' + casualWeekLabel_(d.weekStart); sub = 'Each casual\'s hours per day this week, and who approved them.';
+      html = '<table class="data-table">' + th(['Casual', { t: 'Department', left: true }].concat(DAYS, ['Total', { t: 'Manager', left: true }])) + '<tbody>' + d.people.map(function (p) {
+        return '<tr><td style="text-align:left;"><strong>' + esc(p.name) + '</strong></td><td style="text-align:left;">' + esc(p.dept) + '</td>' + p.hours.map(function (h) { return '<td>' + (h ? casInsHrs_(h) : '') + '</td>'; }).join('') +
+          '<td><strong>' + casInsHrs_(p.total) + '</strong></td><td style="text-align:left;">' + esc(p.mgr || '—') + '</td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td>Total</td><td></td>' + DAYS.map(function (x, i) { return '<td>' + casInsHrs_(d.people.reduce(function (a, p) { return a + p.hours[i]; }, 0)) + '</td>'; }).join('') + '<td>' + casInsHrs_(d.tiles.hours) + '</td><td></td></tr></tfoot></table>';
+      if (!d.people.length) html = '<p style="color:var(--text-muted);">No hours recorded for this week.</p>';
+    } else if (mode === 'cost') {
+      title = 'Casual cost — ' + casualWeekLabel_(d.weekStart); sub = 'Hours times the department\'s hourly rate. A casual who has been paid keeps the rate they were paid at.';
+      var byDept = {}; d.people.forEach(function (p) { var k = p.dept || '(none)'; var o = byDept[k] || (byDept[k] = { hours: 0, amount: 0, n: 0 }); o.hours += p.total; o.amount += p.amount; o.n++; });
+      html = '<table class="data-table">' + th(['Department', 'Casuals', 'Hours', 'Cost']) + '<tbody>' + Object.keys(byDept).sort().map(function (k) { return '<tr><td style="text-align:left;">' + esc(k) + '</td><td>' + byDept[k].n + '</td><td>' + casInsHrs_(byDept[k].hours) + '</td><td>' + casualRand_(byDept[k].amount) + '</td></tr>'; }).join('') + '</tbody></table>' +
+        '<table class="data-table" style="margin-top:14px;">' + th(['Casual', 'Hours', 'Cost']) + '<tbody>' + d.people.slice().sort(function (a, b) { return b.amount - a.amount; }).map(function (p) { return '<tr><td style="text-align:left;">' + esc(p.name) + '</td><td>' + casInsHrs_(p.total) + '</td><td>' + casualRand_(p.amount) + '</td></tr>'; }).join('') + '</tbody></table>';
+      if (!d.people.length) html = '<p style="color:var(--text-muted);">No hours recorded for this week.</p>';
+    } else if (mode === 'fte') {
+      title = 'Full-time equivalents — last ' + d.weeks.length + ' weeks'; sub = 'Casual hours divided by ' + d.thresholds.weekCheck + ' (a full-time week). A steady number here is real jobs being filled by casuals.';
+      html = '<table class="data-table">' + th(['Week', 'Casuals', 'Hours', 'Full-time equivalent', 'Cost']) + '<tbody>' + d.weeks.slice().reverse().map(function (w) {
+        return '<tr><td style="text-align:left;">' + esc(casualWeekLabel_(w.weekStart)) + (w.weekStart === d.weekStart ? ' <span class="badge good">selected</span>' : '') + '</td><td>' + w.people + '</td><td>' + casInsHrs_(w.hours) + '</td><td>' + (Math.round(w.hours / d.thresholds.weekCheck * 10) / 10) + '</td><td>' + casualRand_(w.amount) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    } else if (mode === 'long') {
+      title = 'Long-term casuals'; sub = 'Working this week and ' + d.thresholds.streakCheck + '+ weeks in a row, or ' + 12 + '+ weeks in total. Red = ' + d.thresholds.streakConcern + '+ in a row, ' + 12 + '+ weeks in total, or full-time hours.';
+      var list = d.people.filter(function (p) { return p.streak >= d.thresholds.streakCheck || p.lifetime >= 12; }).sort(function (a, b) { return b.streak - a.streak; });
+      html = list.length ? '<table class="data-table">' + th(['Casual', { t: 'Department', left: true }, 'Weeks worked', 'In a row', 'Avg hrs/wk (last 4)', { t: 'Manager', left: true }]) + '<tbody>' + list.map(function (p) {
+        var red = p.streak >= d.thresholds.streakConcern || p.lifetime >= 12 || (p.avg4 !== null && p.avg4 >= 40);
+        return '<tr><td style="text-align:left;"><strong>' + esc(p.name) + '</strong> ' + (red ? '<span class="badge" style="background:var(--critical); color:#fff;">effectively permanent</span>' : '<span class="status-badge in-progress">heading that way</span>') + '</td><td style="text-align:left;">' + esc(p.dept) + '</td><td>' + p.lifetime + '</td><td>' + p.streak + '</td><td>' + (p.avg4 === null ? '—' : casInsHrs_(p.avg4)) + '</td><td style="text-align:left;">' + esc(p.mgr || '—') + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<p style="color:var(--text-muted);">Nobody working this week has been rostered that long.</p>';
+    } else if (mode === 'mgr') {
+      var m = d.managers[idx]; if (!m) return;
+      title = m.name; sub = 'Casuals this manager approved in the last ' + d.thresholds.weeks + ' weeks: ' + casInsHrs_(m.hours) + ' hours, ' + casualRand_(m.amount) + '.';
+      html = '<table class="data-table">' + th(['Casual', { t: 'Department', left: true }, 'Weeks', 'Hours', { t: 'Last week', left: true }]) + '<tbody>' + m.detail.map(function (x) {
+        return '<tr><td style="text-align:left;"><strong>' + esc(x.name) + '</strong></td><td style="text-align:left;">' + esc(x.dept) + '</td><td>' + x.weeks + '</td><td>' + casInsHrs_(x.hours) + '</td><td style="text-align:left;">' + esc(casualWeekLabel_(x.last)) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    }
+    document.getElementById('casual-weeks-title').textContent = title;
+    document.getElementById('casual-weeks-sub').innerHTML = sub;
+    document.getElementById('casual-weeks-body').innerHTML = html;
+    document.getElementById('casual-weeks-modal').classList.add('active');
+  }
 
   function renderCasualPeople_() {
     var w = casualState.week;
