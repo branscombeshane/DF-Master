@@ -1843,7 +1843,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-05.136-edit-discharge-date';
+  var FRONTEND_BUILD = '2026-11-05.137-hr-no-payments-report';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2579,7 +2579,7 @@
   ];
   // HR accounts never get a Dashboard (Total Monthly Cost + per-department
   // cost totals — pure Basic Salary aggregates). They DO get Reports, but a
-  // cut-down one: only the Payslips panel, and only to send payslips on
+  // cut-down one: only the Payslips panel (no Payments report either), and only to send payslips on
   // WhatsApp and see the send status (no payslip view, no PDF download, no
   // EMP201 / IRP5 / Employer Recon — those show Gross/Net figures HR can't
   // see, and the backend refuses those calls for HR anyway: see
@@ -2591,7 +2591,7 @@
   // Hides everything in Reports that isn't "send payslips on WhatsApp + status" for HR.
   function applyHrReportsLimits_() {
     if (state.role !== 'hr') return;
-    ['reports-panel-emp201', 'reports-panel-irp5', 'reports-panel-recon'].forEach(function (id) {
+    ['reports-panel-emp201', 'reports-panel-payments', 'reports-panel-irp5', 'reports-panel-recon'].forEach(function (id) {
       var el = document.getElementById(id); if (el) el.style.display = 'none';
     });
     var dl = document.getElementById('reports-print-selected-btn'); if (dl) dl.style.display = 'none';
