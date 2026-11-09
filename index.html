@@ -1871,7 +1871,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-09.140-sage-spend-reps';
+  var FRONTEND_BUILD = '2026-11-09.141-followup-date';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -8878,6 +8878,16 @@
     function today() {
       return localISODate(new Date());
     }
+    // Same rule as the server: n working days (Mon-Fri) after an ISO date.
+    function addWorkingDays(iso, n) {
+      const d = new Date(iso + 'T00:00:00Z');
+      let added = 0;
+      while (added < n) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(); if (w !== 0 && w !== 6) added++; }
+      return d.toISOString().slice(0, 10);
+    }
+    function isFollowUpStage(division, stage) {
+      return ((state.followUpStages || {})[division] || []).indexOf(stage) !== -1;
+    }
     function escapeHtml(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     }
@@ -8976,7 +8986,8 @@
     }
 
     // Follow-up logging: either "spoke to them" (note required, next reminder in 5 working days)
-    // or "no answer" (note optional, retry the next working day). Resolves { outcome, note } or null.
+    // or "no answer" (note optional, retry the next working day). The next date defaults to that
+    // and can be changed to any date (build .141). Resolves { outcome, note, nextDate } or null.
     function followUpModal() {
       return new Promise((resolve) => {
         const backdrop = document.createElement('div');
@@ -8993,6 +9004,10 @@
               <div class="form-field">
                 <input type="text" data-role="fu-note" placeholder="What happened? What's next?" />
               </div>
+              <div class="form-field">
+                <label>Next follow-up <span style="color:var(--text-muted); font-weight:400">(change it if this lead needs a different time)</span></label>
+                <input type="date" data-role="fu-date" required />
+              </div>
               <div class="modal-actions">
                 <div></div>
                 <div class="modal-actions-right">
@@ -9006,8 +9021,14 @@
         const note = backdrop.querySelector('[data-role=fu-note]');
         const radios = backdrop.querySelectorAll('input[name=fu-outcome]');
         const outcome = () => backdrop.querySelector('input[name=fu-outcome]:checked').value;
+        const dateIn = backdrop.querySelector('[data-role=fu-date]');
+        const autoDate = () => addWorkingDays(today(), outcome() === 'no_answer' ? 1 : 5);
+        let dateTouched = false;
+        dateIn.min = today(); dateIn.value = autoDate();
+        dateIn.addEventListener('input', () => { dateTouched = true; });
         radios.forEach(r => r.addEventListener('change', () => {
           note.placeholder = outcome() === 'no_answer' ? 'Optional note (e.g. phone off, left voicemail)' : "What happened? What's next?";
+          if (!dateTouched) dateIn.value = autoDate();
         }));
         note.focus();
         const cleanup = (result) => { backdrop.remove(); resolve(result); };
@@ -9016,7 +9037,8 @@
           e.preventDefault();
           const val = note.value.trim();
           if (outcome() === 'contacted' && !val) { toast('Add a short note about what happened.', true); return; }
-          cleanup({ outcome: outcome(), note: val });
+          if (!dateIn.value || dateIn.value < today()) { toast('Pick a follow-up date from today onwards.', true); return; }
+          cleanup({ outcome: outcome(), note: val, nextDate: dateIn.value });
         });
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cleanup(null); });
       });
@@ -9111,7 +9133,7 @@
     async function startUp() {
       // One round trip for everything the shell needs (plus the dashboard's own
       // data, so the first screen is usually ready the moment this returns).
-      const [{ user }, { stages }, { users }, visitOpts] = await Promise.all([
+      const [{ user }, { stages, follow_up_stages }, { users }, visitOpts] = await Promise.all([
         api.get('/api/auth/me'),
         api.get('/api/deals/stages'),
         api.get('/api/users/lite'),
@@ -9131,6 +9153,7 @@
       $('#main-nav .nav-btn[data-view="trays"]').hidden = !(isAdmin || user.division_access !== 'wholesale');
       $('#main-nav .nav-btn[data-view="wholesale"]').hidden = !(isAdmin || user.division_access !== 'trays');
       state.stages = stages;
+      state.followUpStages = follow_up_stages || { trays: ['Proposal Sent', 'Sample Tray Sent', 'Follow Up'], wholesale: ['Follow Up Visit'] };
       state.reps = users;
       state.visitOptions = visitOpts;
     }
@@ -9814,8 +9837,8 @@
           const res = await followUpModal();
           if (!res) return;
           try {
-            await api.post(`/api/deals/${id}/follow-up`, { note: res.note, outcome: res.outcome });
-            toast(res.outcome === 'no_answer' ? 'No answer logged — retry reminder set for the next working day.' : 'Follow-up logged — next reminder in 5 working days.');
+            const r = await api.post(`/api/deals/${id}/follow-up`, { note: res.note, outcome: res.outcome, next_date: res.nextDate });
+            toast((res.outcome === 'no_answer' ? 'No answer logged' : 'Follow-up logged') + ' — next reminder on ' + fmtDate(r.next_follow_up_date || res.nextDate) + '.');
             loadKanban(division);
           } catch (err) {
             toast(err.message, true);
@@ -9931,6 +9954,11 @@
               <label>Source</label>
               <input type="text" name="source" value="${escapeHtml(deal?.source || '')}" placeholder="Referral, cold call, inbound…" ${canEdit ? '' : 'disabled'} />
             </div>
+            <div class="form-field" id="deal-followup-field" hidden>
+              <label>Next follow-up date</label>
+              <input type="date" name="next_follow_up_date" min="${today()}" value="${deal?.next_follow_up_date || ''}" ${canEdit ? '' : 'disabled'} />
+              <span style="font-size:11px; color:var(--text-muted); margin-top:4px">Leave as it is (or empty) for the automatic 5 working days, or pick the date this lead needs.</span>
+            </div>
             <div class="form-field full">
               <label>Notes</label>
               <textarea name="notes" ${canEdit ? '' : 'disabled'}>${escapeHtml(deal?.notes || '')}</textarea>
@@ -9965,6 +9993,13 @@
 
       $('#cancel-deal-btn').addEventListener('click', closeModal);
 
+      // The follow-up date only applies while the deal is in a follow-up stage.
+      const stageSel = $('#deal-form select[name=stage]');
+      const fuField = $('#deal-followup-field');
+      const syncFu = () => { fuField.hidden = !isFollowUpStage(division, stageSel.value); };
+      syncFu();
+      stageSel.addEventListener('change', syncFu);
+
       const typeSelect = $('select[name=deal_type]');
       if (typeSelect && !deal) {
         typeSelect.addEventListener('change', () => {
@@ -9990,6 +10025,9 @@
         const payload = Object.fromEntries(fd.entries());
         if (payload.estimated_monthly_value === '') delete payload.estimated_monthly_value;
         if (payload.current_monthly_value === '') delete payload.current_monthly_value;
+        // Only send a follow-up date the rep actually set (and only for a follow-up stage).
+        if (!payload.next_follow_up_date || fuField.hidden || (deal && payload.next_follow_up_date === deal.next_follow_up_date)) delete payload.next_follow_up_date;
+        else if (payload.next_follow_up_date < today()) { toast('The follow-up date cannot be in the past.', true); return; }
         if (payload.date_added !== undefined) {
           // Trays' "Date added to pipeline" field maps to the deal's created_at.
           if (payload.date_added) payload.created_at = payload.date_added;
@@ -10271,7 +10309,7 @@
     }
 
     // ---------------------------------------------------------------------------
-    // Weekly Spend (CSV upload + viewing) — Wholesale only
+    // Weekly Spend (viewing; the figures come from Sage automatically, build .141) — Wholesale only
     // ---------------------------------------------------------------------------
     async function renderWeeklySpend(targetSelector) {
       const root = $(targetSelector);
@@ -10279,37 +10317,13 @@
       const repOptions = state.reps.map(r => `<option value="${r.id}">${escapeHtml(r.full_name)}</option>`).join('');
 
       root.innerHTML = `
-        <div class="card" style="padding:16px 18px; margin-bottom:20px">
-          <h3 style="margin-top:0; font-size:1rem">Upload this week's sales reports</h3>
-          <p style="color:var(--gray-600); font-size:0.85rem; margin-top:-8px">
-            Drop (or choose) the "Sales By Sales Rep Report" CSV export from <strong>each system</strong>
-            as-is — Pyroca 79 on the left, Daily Fruit Veg on the right. The week and each
-            customer's total are read straight from the file, and the two systems are
-            <strong>added together</strong> per customer in "Customer spend by week" below.
-            Re-uploading a week for a system <strong>replaces</strong> only that system's figures
-            for the week. If a file was uploaded with the wrong dates, delete it under
-            "Uploaded weeks" below, then upload the corrected file.
+        <div class="card" style="padding:14px 18px; margin-bottom:20px">
+          <p style="margin:0; font-size:0.85rem; color:var(--text-secondary)">
+            Weekly spend comes in <strong>from Sage automatically</strong> every Monday morning: last week (Monday to Sunday)
+            for Pyroca 79 and Daily Fruit Veg, per rep and customer, excluding VAT. The week before is sent again
+            to pick up anything captured late. Nothing needs to be uploaded. If a figure is wrong, correct it in Sage;
+            it comes through on the next Monday run.
           </p>
-          ${isAdmin ? `
-          <div class="form-field" style="max-width:320px">
-            <label>Rep</label>
-            <select id="spend-rep-select"><option value="">Myself</option>${repOptions}</select>
-          </div>` : ''}
-          <div class="spend-zones">
-            ${[['pyroca', 'Pyroca 79'], ['veg', 'Daily Fruit Veg']].map(([key, label]) => `
-            <div class="spend-zone" data-source="${key}">
-              <h4>${label}</h4>
-              <div class="dropzone" data-role="dropzone" tabindex="0">
-                Drag &amp; drop the CSV here<br>or <span class="dz-pick">choose file</span>
-                <div class="dz-file" data-role="dz-file"></div>
-              </div>
-              <input type="file" data-role="file" accept=".csv,text/csv" hidden />
-              <div class="zone-actions">
-                <div class="zone-result" data-role="zone-result"></div>
-                <button type="button" class="btn btn-primary btn-sm" data-role="zone-upload">Upload</button>
-              </div>
-            </div>`).join('')}
-          </div>
         </div>
 
         <button type="button" class="collapse-head" id="spend-uploads-toggle" aria-expanded="false" aria-controls="spend-uploads-table" style="margin-bottom:10px">
@@ -10328,47 +10342,6 @@
         </p>
         <div id="spend-comparison-table" class="table-wrap"><div class="empty-state">Loading…</div></div>
       `;
-
-      $$('.spend-zone', root).forEach((zone) => {
-        const source = zone.getAttribute('data-source');
-        const dz = zone.querySelector('[data-role=dropzone]');
-        const input = zone.querySelector('[data-role=file]');
-        const nameEl = zone.querySelector('[data-role=dz-file]');
-        const resultEl = zone.querySelector('[data-role=zone-result]');
-        const btn = zone.querySelector('[data-role=zone-upload]');
-        const showName = () => { nameEl.textContent = input.files && input.files[0] ? input.files[0].name : ''; };
-        dz.addEventListener('click', () => input.click());
-        dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
-        input.addEventListener('change', showName);
-        ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
-        ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
-        dz.addEventListener('drop', (e) => {
-          const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-          if (!f) return;
-          const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; showName();
-        });
-        btn.addEventListener('click', async () => {
-          const fd = new FormData();
-          if (input.files && input.files[0]) fd.append('file', input.files[0]);
-          const repSel = $('#spend-rep-select');
-          if (repSel && repSel.value) fd.append('rep_id', repSel.value);
-          fd.append('source', source);
-          resultEl.textContent = 'Uploading…';
-          btn.disabled = true;
-          try {
-            const result = await api.upload('/api/wholesale/spend/upload', fd);
-            resultEl.textContent = `Imported ${result.imported} customer(s) from ${result.transactions_processed} transaction row(s) for the week of ${fmtDate(result.week_start)}` +
-              (result.week_start_detected ? '.' : ' (no date range found in the file, so today\'s week was used).') +
-              (result.replaced ? ` Replaced the ${result.replaced} line(s) uploaded earlier for that week.` : '');
-            toast('Spend uploaded.');
-            input.value = ''; showName();
-            await Promise.all([loadComparisonTable(), loadUploadsTable()]);
-          } catch (err) {
-            resultEl.textContent = '';
-            toast(err.message, true);
-          } finally { btn.disabled = false; }
-        });
-      });
 
       $('#spend-uploads-toggle').addEventListener('click', () => {
         const btn = $('#spend-uploads-toggle'), box = $('#spend-uploads-table');
