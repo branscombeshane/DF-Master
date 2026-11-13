@@ -1928,7 +1928,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.147-biotime-resigned';
+  var FRONTEND_BUILD = '2026-11-13.148-biotime-deptmatch';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5678,7 +5678,7 @@
     var kept = {}; d.keptOut.forEach(function (k) { kept[k.employeeId] = true; });
     document.getElementById('btp-table').innerHTML = '<thead><tr><th style="text-align:left;">Change</th><th style="text-align:left;">#</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Payroll department</th><th style="text-align:left;">What happens</th><th></th></tr></thead><tbody>' +
       (list.length ? list.map(function (x) {
-        return '<tr><td style="text-align:left; font-weight:700;">' + label[x.action] + '</td><td style="text-align:left;">' + esc(x.empCode || '') + '</td><td style="text-align:left;">' + esc(x.name) + '</td><td style="text-align:left;">' + esc(x.department) + '</td>' +
+        return '<tr><td style="text-align:left; font-weight:700;">' + label[x.action] + '</td><td style="text-align:left;">' + esc(x.empCode || '') + '</td><td style="text-align:left;">' + esc(x.name) + '</td><td style="text-align:left;">' + esc(x.department) + (x.group === 'blendid' ? ' <span class="hint" style="margin:0;">(Blendid)</span>' : '') + '</td>' +
           '<td style="text-align:left;' + (x.blocked ? ' color:var(--critical);' : '') + '">' + esc(x.blocked || x.detail || '') + '</td>' +
           '<td style="white-space:nowrap;">' + (x.canAllowBack ? '<button class="btn small" data-btp-back="' + esc(x.employeeId) + '" data-btp-backval="1" title="They are back at work: reinstate them in BioTime">Re-add in BioTime</button> ' : '') +
           (x.allowedBack ? '<button class="btn secondary small" data-btp-back="' + esc(x.employeeId) + '" data-btp-backval="0">Undo re-add</button> ' : '') +
@@ -5692,12 +5692,12 @@
     });
     document.getElementById('btp-map').innerHTML = '<thead><tr><th style="text-align:left;">Payroll department</th><th style="text-align:left;">BioTime department</th><th style="text-align:left;"></th></tr></thead><tbody>' +
       d.map.map(function (m) {
-        return '<tr><td style="text-align:left;">' + esc(m.app) + (m.group === 'blendid' ? ' <span class="hint" style="margin:0;">(Blendid)</span>' : '') + '</td><td style="text-align:left;"><select data-btp-map="' + esc(m.app) + '"><option value="">— not matched (nobody added) —</option>' +
+        return '<tr><td style="text-align:left;">' + esc(m.app) + (m.group === 'blendid' ? ' <span class="hint" style="margin:0;">(Blendid)</span>' : '') + '</td><td style="text-align:left;"><select data-btp-map="' + esc(m.app) + '" data-btp-group="' + esc(m.group) + '"><option value="">— not matched (nobody added) —</option>' +
           d.btDepartments.map(function (b) { return '<option' + (b === m.bt ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('') + '</select></td>' +
           '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + (m.saved ? 'chosen' : (m.suggested ? 'suggested from linked staff' : '')) + '</td></tr>';
       }).join('') + '</tbody>';
     Array.prototype.forEach.call(document.querySelectorAll('select[data-btp-map]'), function (sel) {
-      sel.addEventListener('change', function () { sel.disabled = true; btpCall_('setBiotimeDeptMap', { appDepartment: sel.getAttribute('data-btp-map'), bioTimeDepartment: sel.value }); });
+      sel.addEventListener('change', function () { sel.disabled = true; btpCall_('setBiotimeDeptMap', { appDepartment: sel.getAttribute('data-btp-map'), group: sel.getAttribute('data-btp-group'), bioTimeDepartment: sel.value }); });
     });
     document.getElementById('btp-log').innerHTML = '<thead><tr><th style="text-align:left;">When</th><th style="text-align:left;">Change</th><th style="text-align:left;">#</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Result</th></tr></thead><tbody>' +
       (d.log.length ? d.log.map(function (l) {
