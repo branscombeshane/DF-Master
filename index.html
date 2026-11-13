@@ -1485,6 +1485,20 @@
         </div>
       </div>
 
+      <div class="payroll-subview" id="payroll-sub-attendance">
+        <div class="panel">
+          <h2>Attendance — BioTime link-up</h2>
+          <p class="panel-sub">Clock-ins come from the BioTime machines through the office PC every 15 minutes. Each person in BioTime is linked to their payroll employee here: most are matched automatically (same employee number and name, or the same full name). Link the rest by hand, or mark them <em>not on payroll</em>. The attendance views are built on these links.</p>
+          <div id="att-sync" class="hint" style="margin:0 0 12px;"></div>
+          <div id="att-tiles"></div>
+          <div class="toolbar">
+            <input type="search" id="att-search" placeholder="Search name or number" style="max-width:240px;">
+            <span class="save-status" id="att-status"></span>
+          </div>
+          <div style="overflow-x:auto;"><table class="data-table" id="att-table"></table></div>
+        </div>
+      </div>
+
       <div class="payroll-subview" id="payroll-sub-casuals">
         <div class="panel" id="casual-ins-panel" style="display:none;">
           <button type="button" class="ins-head" id="casual-ins-toggle" aria-expanded="false" aria-controls="casual-ins-wrap">
@@ -1871,7 +1885,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-09.141-followup-date';
+  var FRONTEND_BUILD = '2026-11-13.142-biotime-link';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1890,7 +1904,8 @@
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
-    getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true
+    getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
+    getAttendanceLinks: true, setAttendanceLink: true
   };
 
   // ================= STATE =================
@@ -2603,7 +2618,8 @@
     { key: 'roster', label: 'Roster' },
     { key: 'adjustments', label: 'Pay Adjustments' },
     { key: 'reports', label: 'Reports' },
-    { key: 'casuals', label: 'Casuals' }
+    { key: 'casuals', label: 'Casuals' },
+    { key: 'attendance', label: 'Attendance' }
   ];
   // HR accounts never get a Dashboard (Total Monthly Cost + per-department
   // cost totals — pure Basic Salary aggregates). They DO get Reports, but a
@@ -2649,8 +2665,9 @@
     if (view) view.classList.add('active');
     // Casuals are weekly, so the monthly picker doesn't apply there.
     var monthRow = document.getElementById('payroll-month-row');
-    if (monthRow) monthRow.style.display = key === 'casuals' ? 'none' : 'flex';
+    if (monthRow) monthRow.style.display = (key === 'casuals' || key === 'attendance') ? 'none' : 'flex';
     if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
+    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') loadAttendanceLinks_();
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -5567,6 +5584,84 @@
   }
 
   function casualDirtyCount_() { return Object.keys(casualState.dirty).length; }
+
+  // ---------------- Attendance: BioTime link-up (SETUP §58) ----------------
+  var attState = { data: null, filter: 'all', search: '' };
+  function loadAttendanceLinks_() {
+    if (!hasSection('payroll')) return Promise.resolve();
+    var status = document.getElementById('att-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    return callApi('getAttendanceLinks', {}).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load attendance', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      attState.data = res;
+      renderAttendanceLinks_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function attKind_(pp) {
+    if (pp.employeeId === 'none') return 'none';
+    return pp.employeeId ? 'linked' : 'unlinked';
+  }
+  function renderAttendanceLinks_() {
+    var d = attState.data; if (!d) return;
+    var sync = d.lastSync || {};
+    var syncEl = document.getElementById('att-sync');
+    syncEl.innerHTML = sync.at
+      ? 'Last data from BioTime: <strong>' + esc(casualStamp_(sync.at)) + '</strong> · ' + Number(d.punchesStored || 0).toLocaleString('en-ZA') + ' clock-ins stored.'
+      : (d.keySet ? 'Nothing received from BioTime yet. Set up the sync on the office PC (SETUP §58).' : 'Not connected yet: the BIOTIME_INGEST_KEY Script Property is not set (SETUP §58).');
+    var counts = { all: d.people.length, linked: 0, unlinked: 0, none: 0 };
+    d.people.forEach(function (pp) { counts[attKind_(pp)]++; });
+    var tile = function (key, name, n, cap, color) {
+      return '<button type="button" class="kpi-card' + (attState.filter === key ? ' active' : '') + '" data-att-tile="' + key + '" style="--dot:' + color + ';' + (attState.filter === key ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + name + '</span></div>' +
+        '<div class="big">' + n + '</div><div class="cap">' + cap + '</div></button>';
+    };
+    var tilesEl = document.getElementById('att-tiles');
+    tilesEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' +
+      tile('unlinked', 'Not linked yet', counts.unlinked, counts.unlinked ? 'Click to see who needs linking' : 'Everyone is linked', counts.unlinked ? 'var(--critical)' : 'var(--good)') +
+      tile('linked', 'Linked', counts.linked, 'Click to check the matches', 'var(--good)') +
+      tile('none', 'Not on payroll', counts.none, 'Marked as not on payroll', 'var(--text-muted)') +
+      tile('all', 'Everyone in BioTime', counts.all, 'For this company', 'var(--brand)') + '</div>';
+    Array.prototype.forEach.call(tilesEl.querySelectorAll('[data-att-tile]'), function (b) {
+      b.addEventListener('click', function () { attState.filter = b.getAttribute('data-att-tile'); renderAttendanceLinks_(); });
+    });
+    var q = attState.search.toLowerCase();
+    var list = d.people.filter(function (pp) {
+      if (attState.filter !== 'all' && attKind_(pp) !== attState.filter) return false;
+      return !q || (pp.name + ' ' + pp.empCode + ' ' + (pp.employeeName || '')).toLowerCase().indexOf(q) !== -1;
+    });
+    var opts = function (pp) {
+      return '<option value="">— not linked —</option><option value="none"' + (pp.employeeId === 'none' ? ' selected' : '') + '>Not on payroll</option>' +
+        d.employees.map(function (e) {
+          var taken = e.linkedTo && e.linkedTo !== pp.empCode;
+          return '<option value="' + esc(e.id) + '"' + (e.id === pp.employeeId ? ' selected' : '') + (taken ? ' disabled' : '') + '>' +
+            esc(e.name) + (e.employeeNumber ? ' (#' + esc(e.employeeNumber) + ')' : '') + ' · ' + esc(e.department) + (taken ? ' — linked to ' + esc(e.linkedTo) : '') + '</option>';
+        }).join('');
+    };
+    var table = document.getElementById('att-table');
+    table.innerHTML = '<thead><tr><th style="text-align:left;">BioTime #</th><th style="text-align:left;">Name in BioTime</th><th style="text-align:left;">BioTime department</th><th style="text-align:left;">Payroll employee</th><th style="text-align:left;">How</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (pp) {
+        return '<tr' + (attKind_(pp) === 'unlinked' ? ' style="background:color-mix(in srgb, var(--critical) 8%, transparent);"' : '') + '><td style="text-align:left;">' + esc(pp.empCode) + '</td><td style="text-align:left;">' + esc(pp.name) +
+          '</td><td style="text-align:left;">' + esc(pp.department || '') + '</td><td style="text-align:left;"><select data-att-code="' + esc(pp.empCode) + '" style="max-width:340px;">' + opts(pp) + '</select></td>' +
+          '<td style="text-align:left; color:var(--text-muted); font-size:12px;">' + esc(pp.method || '') + (pp.linkedBy && pp.linkedBy !== 'system' ? ' · ' + esc(pp.linkedBy) : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(table.querySelectorAll('select[data-att-code]'), function (sel) {
+      sel.addEventListener('change', function () {
+        var status = document.getElementById('att-status');
+        sel.disabled = true;
+        flashStatus(status, 'Saving…', 'save-status', 0);
+        callApi('setAttendanceLink', { empCode: sel.getAttribute('data-att-code'), employeeId: sel.value }).then(function (res) {
+          if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); sel.disabled = false; renderAttendanceLinks_(); return; }
+          flashStatus(status, 'Saved', 'save-status ok', 2500);
+          attState.data = res;
+          renderAttendanceLinks_();
+        }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); sel.disabled = false; });
+      });
+    });
+  }
+  (function () {
+    var s = document.getElementById('att-search');
+    if (s) s.addEventListener('input', function () { attState.search = s.value; renderAttendanceLinks_(); });
+  })();
 
   function loadCasuals(weekStart) {
     if (!hasSection('payroll')) return Promise.resolve();
