@@ -894,6 +894,7 @@
       <label for="lc-mgr">Signed off by (manager)</label>
       <input id="lc-mgr" list="lc-mgr-list" placeholder="Start typing the manager's name" autocomplete="off">
       <datalist id="lc-mgr-list"></datalist>
+      <div class="hint" id="lc-mgr-hint"></div>
     </div>
     <div class="field">
       <label for="lc-note">Note (optional)</label>
@@ -1985,7 +1986,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.156-leave-capture';
+  var FRONTEND_BUILD = '2026-11-13.157-mgmt-signoff';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6069,7 +6070,8 @@
     var byId = {}; (d.employees || []).forEach(function (e) { byId[e.id] = e; });
     var label = function (e) { return e.name + ' — ' + (e.department || 'no department'); };
     document.getElementById('lc-emp-list').innerHTML = (d.employees || []).map(function (e) { return '<option value="' + esc(label(e)) + '"></option>'; }).join('');
-    document.getElementById('lc-mgr-list').innerHTML = (d.employees || []).map(function (e) { return '<option value="' + esc(e.name) + '">' + esc(e.department || '') + '</option>'; }).join('');
+    document.getElementById('lc-mgr-list').innerHTML = (d.managers || []).map(function (e) { return '<option value="' + esc(e.name) + '"></option>'; }).join('');
+    document.getElementById('lc-mgr-hint').textContent = (d.managers || []).length ? 'Management department staff only.' : 'Nobody is in a Management department for this company yet, so leave cannot be signed off. Add the managers to the Management department first.';
     document.getElementById('lc-type').innerHTML = (d.types || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
     var emp = document.getElementById('lc-emp'), from = document.getElementById('lc-from'), to = document.getElementById('lc-to'), half = document.getElementById('lc-half');
     emp.value = preset && byId[preset] ? label(byId[preset]) : '';
