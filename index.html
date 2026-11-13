@@ -1527,6 +1527,7 @@
         </div>
         <div class="panel" id="btp-panel" style="display:none;">
           <h2>Send changes to BioTime</h2>
+          <div id="btp-resigned-note" class="hint" style="margin:0 0 8px;"></div>
           <p class="panel-sub">The Master app decides who is in BioTime. Below is every difference between payroll and BioTime: people to <strong>add</strong> (number, name, department, hire date, Marlboro Factory), names or departments to <strong>update</strong>, and discharged people to <strong>resign</strong> (the day after their last day; nobody is ever deleted). When sending is on, the office PC makes these changes within 15 minutes. Fingerprints and faces still have to be enrolled at the machine. Owner only.</p>
           <div class="toolbar">
             <button class="btn" id="btp-toggle"></button>
@@ -1927,7 +1928,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.146-biotime-push';
+  var FRONTEND_BUILD = '2026-11-13.147-biotime-resigned';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5660,6 +5661,7 @@
       if (!d.on && !confirm('Switch on sending to BioTime? The office PC will make the ' + d.items.filter(function (x) { return !x.blocked; }).length + ' ready change(s) listed here within 15 minutes.')) return;
       btpCall_('setBiotimePush', { on: d.on ? '0' : '1' }, d.on ? 'Switched off' : 'Switched on');
     };
+    document.getElementById('btp-resigned-note').textContent = d.resignedInBioTime ? d.resignedInBioTime + ' people are resigned in BioTime. Anyone of them still active in payroll is held back (not re-added) until you discharge them here or press Re-add.' : '';
     var ready = d.items.filter(function (x) { return !x.blocked; });
     var cnt = function (a) { return ready.filter(function (x) { return x.action === a; }).length; };
     var tiles = [['ready', 'Ready to send', ready.length, d.on ? 'Sent on the next PC run' : 'Sent once switched on', 'var(--brand)'],
@@ -5678,8 +5680,13 @@
       (list.length ? list.map(function (x) {
         return '<tr><td style="text-align:left; font-weight:700;">' + label[x.action] + '</td><td style="text-align:left;">' + esc(x.empCode || '') + '</td><td style="text-align:left;">' + esc(x.name) + '</td><td style="text-align:left;">' + esc(x.department) + '</td>' +
           '<td style="text-align:left;' + (x.blocked ? ' color:var(--critical);' : '') + '">' + esc(x.blocked || x.detail || '') + '</td>' +
-          '<td><button class="btn secondary small" data-btp-keep="' + esc(x.employeeId) + '" data-btp-keepval="' + (kept[x.employeeId] ? '0' : '1') + '">' + (kept[x.employeeId] ? 'Allow in BioTime' : 'Keep out of BioTime') + '</button></td></tr>';
+          '<td style="white-space:nowrap;">' + (x.canAllowBack ? '<button class="btn small" data-btp-back="' + esc(x.employeeId) + '" data-btp-backval="1" title="They are back at work: reinstate them in BioTime">Re-add in BioTime</button> ' : '') +
+          (x.allowedBack ? '<button class="btn secondary small" data-btp-back="' + esc(x.employeeId) + '" data-btp-backval="0">Undo re-add</button> ' : '') +
+          '<button class="btn secondary small" data-btp-keep="' + esc(x.employeeId) + '" data-btp-keepval="' + (kept[x.employeeId] ? '0' : '1') + '">' + (kept[x.employeeId] ? 'Allow in BioTime' : 'Keep out of BioTime') + '</button></td></tr>';
       }).join('') : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">Nothing here: payroll and BioTime agree.</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-btp-back]'), function (b) {
+      b.addEventListener('click', function () { b.disabled = true; btpCall_('setBiotimeAllowBack', { employeeId: b.getAttribute('data-btp-back'), allow: b.getAttribute('data-btp-backval') }); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-btp-keep]'), function (b) {
       b.addEventListener('click', function () { b.disabled = true; btpCall_('setBiotimeKeepOut', { employeeId: b.getAttribute('data-btp-keep'), keepOut: b.getAttribute('data-btp-keepval') }); });
     });
