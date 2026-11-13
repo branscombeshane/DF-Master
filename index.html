@@ -1525,6 +1525,20 @@
           </div>
           <div style="overflow-x:auto;"><table class="data-table" id="att-table"></table></div>
         </div>
+        <div class="panel" id="btp-panel" style="display:none;">
+          <h2>Send changes to BioTime</h2>
+          <p class="panel-sub">The Master app decides who is in BioTime. Below is every difference between payroll and BioTime: people to <strong>add</strong> (number, name, department, hire date, Marlboro Factory), names or departments to <strong>update</strong>, and discharged people to <strong>resign</strong> (the day after their last day; nobody is ever deleted). When sending is on, the office PC makes these changes within 15 minutes. Fingerprints and faces still have to be enrolled at the machine. Owner only.</p>
+          <div class="toolbar">
+            <button class="btn" id="btp-toggle"></button>
+            <span class="save-status" id="btp-status"></span>
+          </div>
+          <div id="btp-tiles"></div>
+          <div style="overflow-x:auto;"><table class="data-table" id="btp-table"></table></div>
+          <h3 style="font-size:14px; margin:18px 0 6px;">Department matching (payroll → BioTime)</h3>
+          <div style="overflow-x:auto;"><table class="data-table" id="btp-map"></table></div>
+          <h3 style="font-size:14px; margin:18px 0 6px;">Recent results from the office PC</h3>
+          <div style="overflow-x:auto;"><table class="data-table" id="btp-log"></table></div>
+        </div>
       </div>
 
       <div class="payroll-subview" id="payroll-sub-casuals">
@@ -1913,7 +1927,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.145-hr-attendance-all';
+  var FRONTEND_BUILD = '2026-11-13.146-biotime-push';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2696,7 +2710,7 @@
     var monthRow = document.getElementById('payroll-month-row');
     if (monthRow) monthRow.style.display = (key === 'casuals' || key === 'attendance') ? 'none' : 'flex';
     if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
-    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadAttendanceDay_(); loadLeaveTaken_(); loadAttendanceLinks_(); }
+    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadAttendanceDay_(); loadLeaveTaken_(); loadAttendanceLinks_(); if (state.role === 'owner') loadBiotimePush_(); }
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -5613,6 +5627,77 @@
   }
 
   function casualDirtyCount_() { return Object.keys(casualState.dirty).length; }
+
+  // ---------------- Attendance: send changes to BioTime (SETUP §62, owner only) ----------------
+  var btpState = { data: null, filter: 'ready' };
+  function loadBiotimePush_() {
+    var panel = document.getElementById('btp-panel');
+    if (state.role !== 'owner') { panel.style.display = 'none'; return Promise.resolve(); }
+    panel.style.display = '';
+    var status = document.getElementById('btp-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    return callApi('getBiotimePush', {}).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      btpState.data = res; renderBiotimePush_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function btpCall_(action, params, okText) {
+    var status = document.getElementById('btp-status');
+    flashStatus(status, 'Saving…', 'save-status', 0);
+    return callApi(action, params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+      btpState.data = res; renderBiotimePush_();
+      flashStatus(document.getElementById('btp-status'), okText || 'Saved', 'save-status ok', 3000);
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function renderBiotimePush_() {
+    var d = btpState.data; if (!d) return;
+    var tog = document.getElementById('btp-toggle');
+    tog.textContent = d.on ? 'Sending is ON — switch off' : 'Sending is OFF — switch on';
+    tog.className = d.on ? 'btn secondary' : 'btn';
+    tog.onclick = function () {
+      if (!d.on && !confirm('Switch on sending to BioTime? The office PC will make the ' + d.items.filter(function (x) { return !x.blocked; }).length + ' ready change(s) listed here within 15 minutes.')) return;
+      btpCall_('setBiotimePush', { on: d.on ? '0' : '1' }, d.on ? 'Switched off' : 'Switched on');
+    };
+    var ready = d.items.filter(function (x) { return !x.blocked; });
+    var cnt = function (a) { return ready.filter(function (x) { return x.action === a; }).length; };
+    var tiles = [['ready', 'Ready to send', ready.length, d.on ? 'Sent on the next PC run' : 'Sent once switched on', 'var(--brand)'],
+      ['create', 'To add', cnt('create'), 'In payroll, not in BioTime', 'var(--good)'], ['update', 'To update', cnt('update'), 'Name or department differs', 'var(--warning)'],
+      ['resign', 'To resign', cnt('resign'), 'Discharged in payroll', 'var(--critical)'], ['blocked', 'Held back', d.items.length - ready.length, 'Need a decision (see why)', 'var(--text-muted)']];
+    var tEl = document.getElementById('btp-tiles');
+    tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' + tiles.map(function (t) {
+      return '<button type="button" class="kpi-card" data-btp-tile="' + t[0] + '" style="--dot:' + t[4] + ';' + (btpState.filter === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + t[1] + '</span></div><div class="big">' + t[2] + '</div><div class="cap">' + t[3] + '</div></button>';
+    }).join('') + '</div>';
+    Array.prototype.forEach.call(tEl.querySelectorAll('[data-btp-tile]'), function (b) { b.addEventListener('click', function () { btpState.filter = b.getAttribute('data-btp-tile'); renderBiotimePush_(); }); });
+    var f = btpState.filter;
+    var list = d.items.filter(function (x) { return f === 'ready' ? !x.blocked : f === 'blocked' ? !!x.blocked : (!x.blocked && x.action === f); });
+    var label = { create: 'Add', update: 'Update', resign: 'Resign' };
+    var kept = {}; d.keptOut.forEach(function (k) { kept[k.employeeId] = true; });
+    document.getElementById('btp-table').innerHTML = '<thead><tr><th style="text-align:left;">Change</th><th style="text-align:left;">#</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Payroll department</th><th style="text-align:left;">What happens</th><th></th></tr></thead><tbody>' +
+      (list.length ? list.map(function (x) {
+        return '<tr><td style="text-align:left; font-weight:700;">' + label[x.action] + '</td><td style="text-align:left;">' + esc(x.empCode || '') + '</td><td style="text-align:left;">' + esc(x.name) + '</td><td style="text-align:left;">' + esc(x.department) + '</td>' +
+          '<td style="text-align:left;' + (x.blocked ? ' color:var(--critical);' : '') + '">' + esc(x.blocked || x.detail || '') + '</td>' +
+          '<td><button class="btn secondary small" data-btp-keep="' + esc(x.employeeId) + '" data-btp-keepval="' + (kept[x.employeeId] ? '0' : '1') + '">' + (kept[x.employeeId] ? 'Allow in BioTime' : 'Keep out of BioTime') + '</button></td></tr>';
+      }).join('') : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">Nothing here: payroll and BioTime agree.</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-btp-keep]'), function (b) {
+      b.addEventListener('click', function () { b.disabled = true; btpCall_('setBiotimeKeepOut', { employeeId: b.getAttribute('data-btp-keep'), keepOut: b.getAttribute('data-btp-keepval') }); });
+    });
+    document.getElementById('btp-map').innerHTML = '<thead><tr><th style="text-align:left;">Payroll department</th><th style="text-align:left;">BioTime department</th><th style="text-align:left;"></th></tr></thead><tbody>' +
+      d.map.map(function (m) {
+        return '<tr><td style="text-align:left;">' + esc(m.app) + (m.group === 'blendid' ? ' <span class="hint" style="margin:0;">(Blendid)</span>' : '') + '</td><td style="text-align:left;"><select data-btp-map="' + esc(m.app) + '"><option value="">— not matched (nobody added) —</option>' +
+          d.btDepartments.map(function (b) { return '<option' + (b === m.bt ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('') + '</select></td>' +
+          '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + (m.saved ? 'chosen' : (m.suggested ? 'suggested from linked staff' : '')) + '</td></tr>';
+      }).join('') + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('select[data-btp-map]'), function (sel) {
+      sel.addEventListener('change', function () { sel.disabled = true; btpCall_('setBiotimeDeptMap', { appDepartment: sel.getAttribute('data-btp-map'), bioTimeDepartment: sel.value }); });
+    });
+    document.getElementById('btp-log').innerHTML = '<thead><tr><th style="text-align:left;">When</th><th style="text-align:left;">Change</th><th style="text-align:left;">#</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Result</th></tr></thead><tbody>' +
+      (d.log.length ? d.log.map(function (l) {
+        var ok = l.Ok === true || String(l.Ok) === 'true';
+        return '<tr><td style="text-align:left;">' + esc(casualStamp_(l.At)) + '</td><td style="text-align:left;">' + esc(label[l.Action] || l.Action) + '</td><td style="text-align:left;">' + esc(l.EmpCode) + '</td><td style="text-align:left;">' + esc(l.Name) + '</td><td style="text-align:left;' + (ok ? ' color:var(--good);' : ' color:var(--critical);') + '">' + (ok ? 'Done' : esc(l.Error || 'Failed')) + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">Nothing sent yet.</td></tr>') + '</tbody>';
+  }
 
   // ---------------- Attendance: daily view + shifts (SETUP §60) ----------------
   var attdState = { data: null, date: null, filter: 'scheduled', search: '' };
