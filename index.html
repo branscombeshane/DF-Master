@@ -1487,6 +1487,21 @@
 
       <div class="payroll-subview" id="payroll-sub-attendance">
         <div class="panel">
+          <h2>Daily attendance</h2>
+          <p class="panel-sub">Who came in and when, against each person's shift (from BioTime's schedule; change someone's shift by clicking their name). A night shift belongs to the day it starts. Late or early only counts beyond the grace period. Click a tile to filter, a name to see their last 14 days.</p>
+          <div class="toolbar">
+            <button class="btn secondary small" id="attd-prev" title="Previous day">&lsaquo; Prev</button>
+            <input type="date" id="attd-date">
+            <button class="btn secondary small" id="attd-next" title="Next day">Next &rsaquo;</button>
+            <button class="btn secondary small" id="attd-today">Today</button>
+            <input type="search" id="attd-search" placeholder="Search name" style="max-width:200px;">
+            <span class="save-status" id="attd-status"></span>
+          </div>
+          <div id="attd-note" class="hint" style="margin:0 0 10px;"></div>
+          <div id="attd-tiles"></div>
+          <div style="overflow-x:auto;"><table class="data-table" id="attd-table"></table></div>
+        </div>
+        <div class="panel">
           <h2>Leave taken</h2>
           <p class="panel-sub">Approved leave from BioTime for the year, per employee. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless set otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
           <div class="toolbar">
@@ -1898,7 +1913,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.143-leave-taken';
+  var FRONTEND_BUILD = '2026-11-13.144-attendance-day';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1918,7 +1933,8 @@
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
-    getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true
+    getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true,
+    getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true
   };
 
   // ================= STATE =================
@@ -2680,7 +2696,7 @@
     var monthRow = document.getElementById('payroll-month-row');
     if (monthRow) monthRow.style.display = (key === 'casuals' || key === 'attendance') ? 'none' : 'flex';
     if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
-    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadLeaveTaken_(); loadAttendanceLinks_(); }
+    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadAttendanceDay_(); loadLeaveTaken_(); loadAttendanceLinks_(); }
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -5597,6 +5613,125 @@
   }
 
   function casualDirtyCount_() { return Object.keys(casualState.dirty).length; }
+
+  // ---------------- Attendance: daily view + shifts (SETUP §60) ----------------
+  var attdState = { data: null, date: null, filter: 'scheduled', search: '' };
+  var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', off: 'Off', 'worked-off': 'Worked on day off' };
+  var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
+  function attdShiftDate_(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function loadAttendanceDay_(date) {
+    if (!hasSection('payroll')) return Promise.resolve();
+    var status = document.getElementById('attd-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    var params = {}; if (date || attdState.date) params.date = date || attdState.date;
+    return callApi('getAttendanceDay', params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load attendance', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      attdState.data = res; attdState.date = res.date;
+      renderAttendanceDay_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function attdChip_(r) {
+    var label = ATTD_LABEL[r.status] || r.status;
+    if (r.status === 'leave' && r.leaveType) label = r.leaveType;
+    if (r.status === 'holiday' && r.holiday) label = r.holiday;
+    if (r.status === 'not-started' && r.start) label = 'Starts ' + r.start;
+    return '<span style="display:inline-block; padding:2px 8px; border-radius:100px; font-size:11px; font-weight:700; white-space:nowrap; background:color-mix(in srgb, ' + (ATTD_COLOR[r.status] || 'var(--text-muted)') + ' 16%, transparent); color:' + (ATTD_COLOR[r.status] || 'var(--text-muted)') + ';">' + esc(label) + '</span>';
+  }
+  function attdHrs_(h) { return h ? (Math.round(h * 10) / 10).toString() : ''; }
+  function renderAttendanceDay_() {
+    var d = attdState.data; if (!d) return;
+    document.getElementById('attd-date').value = d.date;
+    var isToday = d.date === d.today;
+    document.getElementById('attd-note').innerHTML = (d.lastSync ? 'Last data from BioTime: ' + esc(casualStamp_(d.lastSync)) + '. ' : '') + 'Grace period ' + d.graceMin + ' minutes.' + (isToday ? ' Today: people still on shift show as <em>In</em>.' : '');
+    var rows = d.rows;
+    var sched = rows.filter(function (r) { return r.status !== 'off'; });
+    var cnt = function (fn) { return rows.filter(fn).length; };
+    var tiles = [
+      ['scheduled', 'On shift / scheduled', sched.length, 'Everyone with a shift ' + (isToday ? 'today' : 'that day'), 'var(--brand)'],
+      ['present', isToday ? 'In / came in' : 'Came in', cnt(function (r) { return r.status === 'present' || r.status === 'in'; }), 'Clocked in for their shift', 'var(--good)'],
+      ['late', 'Late', cnt(function (r) { return r.lateMin > 0; }), 'More than ' + d.graceMin + ' min after the start', 'var(--warning)'],
+      ['absent', isToday ? 'Absent / not in yet' : 'Absent', cnt(function (r) { return r.status === 'absent' || r.status === 'not-in'; }), 'No clock-in, not on leave', 'var(--critical)'],
+      ['leave', 'On leave / holiday', cnt(function (r) { return r.status === 'leave' || r.status === 'holiday'; }), 'Approved leave or public holiday', 'var(--brand)'],
+      ['issues', 'Left early / no clock-out', cnt(function (r) { return r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'worked-off'; }), 'Early leavers, missing clock-outs, day-off clock-ins', 'var(--warning)']
+    ];
+    var tilesEl = document.getElementById('attd-tiles');
+    tilesEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' + tiles.map(function (t) {
+      return '<button type="button" class="kpi-card" data-attd-tile="' + t[0] + '" style="--dot:' + t[4] + ';' + (attdState.filter === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + t[1] + '</span></div><div class="big">' + t[2] + '</div><div class="cap">' + t[3] + '</div></button>';
+    }).join('') + '</div>';
+    Array.prototype.forEach.call(tilesEl.querySelectorAll('[data-attd-tile]'), function (b) {
+      b.addEventListener('click', function () { attdState.filter = b.getAttribute('data-attd-tile'); renderAttendanceDay_(); });
+    });
+    var f = attdState.filter, q = attdState.search.toLowerCase();
+    var list = rows.filter(function (r) {
+      if (f === 'scheduled' && r.status === 'off') return false;
+      if (f === 'present' && !(r.status === 'present' || r.status === 'in')) return false;
+      if (f === 'late' && !(r.lateMin > 0)) return false;
+      if (f === 'absent' && !(r.status === 'absent' || r.status === 'not-in')) return false;
+      if (f === 'leave' && !(r.status === 'leave' || r.status === 'holiday')) return false;
+      if (f === 'issues' && !(r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'worked-off')) return false;
+      return !q || r.name.toLowerCase().indexOf(q) !== -1;
+    });
+    if (f === 'late') list.sort(function (a, b) { return b.lateMin - a.lateMin; });
+    var table = document.getElementById('attd-table');
+    table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late (min)</th><th>Early (min)</th><th style="text-align:left;">Status</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (r) {
+        return '<tr><td style="text-align:left;"><button type="button" data-attd-person="' + esc(r.empCode) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(r.name) + '</button></td>' +
+          '<td style="text-align:left;">' + esc(r.department) + '</td><td style="text-align:left;">' + (r.start ? esc(r.start + '–' + r.end) : '<span class="hint" style="margin:0;">off</span>') + '</td>' +
+          '<td>' + esc(r.arrived) + '</td><td>' + esc(r.left) + '</td><td>' + attdHrs_(r.hours) + '</td>' +
+          '<td' + (r.lateMin ? ' style="color:var(--critical); font-weight:700;"' : '') + '>' + (r.lateMin || '') + '</td><td' + (r.earlyMin ? ' style="color:var(--warning); font-weight:700;"' : '') + '>' + (r.earlyMin || '') + '</td>' +
+          '<td style="text-align:left;">' + attdChip_(r) + '</td></tr>';
+      }).join('') : '<tr><td colspan="9" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(table.querySelectorAll('[data-attd-person]'), function (b) {
+      b.addEventListener('click', function () { openAttendancePerson_(b.getAttribute('data-attd-person')); });
+    });
+  }
+  function openAttendancePerson_(code) {
+    var status = document.getElementById('attd-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    callApi('getAttendancePerson', { empCode: code, days: 14 }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      renderAttendancePerson_(res);
+      document.getElementById('casual-weeks-modal').classList.add('active');
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function renderAttendancePerson_(res) {
+    var pp = res.person, wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var late = res.days.filter(function (x) { return x.lateMin > 0; }).length, abs = res.days.filter(function (x) { return x.status === 'absent'; }).length;
+    document.getElementById('casual-weeks-title').textContent = pp.name + ' — last 14 days';
+    document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department) + ' · BioTime #' + esc(pp.empCode) + ' · late ' + late + '×, absent ' + abs + '×' +
+      '<div class="toolbar" style="margin-top:10px;"><label style="font-size:13px; font-weight:600;">Shift</label><select id="attp-shift" style="max-width:340px;">' +
+      res.shifts.map(function (n) { return '<option' + (n === res.currentShift ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
+      '</select><label style="font-size:13px; font-weight:600;">from</label><input type="date" id="attp-from" value="' + esc(res.days[0].date) + '"><button class="btn small" id="attp-save">Change shift</button><span class="save-status" id="attp-status"></span></div>' +
+      '<div class="hint" style="margin:4px 0 0;">Currently: ' + esc(res.currentShift || 'no shift') + (res.currentFrom ? ' since ' + esc(res.currentFrom) : '') + '.</div>';
+    document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Day</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late</th><th>Early</th><th style="text-align:left;">Status</th><th style="text-align:left;">All clock-ins</th></tr></thead><tbody>' +
+      res.days.map(function (x) {
+        return '<tr><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : 'off') + '</td>' +
+          '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td><td style="text-align:left;">' + attdChip_(x) + '</td>' +
+          '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + esc(x.punches.join(', ')) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    document.getElementById('attp-save').addEventListener('click', function () {
+      var st = document.getElementById('attp-status'), btn = document.getElementById('attp-save');
+      btn.disabled = true; flashStatus(st, 'Saving…', 'save-status', 0);
+      callApi('setAttendanceShift', { empCode: pp.empCode, shift: document.getElementById('attp-shift').value, from: document.getElementById('attp-from').value, days: 14 }).then(function (r2) {
+        btn.disabled = false;
+        if (!r2 || !r2.ok) { flashStatus(st, (r2 && r2.error) || 'Could not save', 'save-status err', 8000); return; }
+        renderAttendancePerson_(r2);
+        flashStatus(document.getElementById('attp-status'), 'Shift changed', 'save-status ok', 3000);
+        loadAttendanceDay_();
+      }).catch(function () { btn.disabled = false; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    });
+  }
+  (function () {
+    var go = function (n) { if (attdState.date) loadAttendanceDay_(attdShiftDate_(attdState.date, n)); };
+    var el = function (id) { return document.getElementById(id); };
+    if (el('attd-prev')) el('attd-prev').addEventListener('click', function () { go(-1); });
+    if (el('attd-next')) el('attd-next').addEventListener('click', function () { go(1); });
+    if (el('attd-today')) el('attd-today').addEventListener('click', function () { attdState.date = null; loadAttendanceDay_(); });
+    if (el('attd-date')) el('attd-date').addEventListener('change', function () { if (el('attd-date').value) loadAttendanceDay_(el('attd-date').value); });
+    if (el('attd-search')) el('attd-search').addEventListener('input', function () { attdState.search = el('attd-search').value; renderAttendanceDay_(); });
+  })();
 
   // ---------------- Attendance: leave taken (SETUP §59) ----------------
   var leaveState = { data: null, year: null, filter: 'all', search: '' };
