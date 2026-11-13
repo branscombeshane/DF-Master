@@ -1524,6 +1524,7 @@
           <div class="toolbar">
             <label for="leave-year" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Year</label>
             <select id="leave-year"></select>
+            <select id="leave-dept" aria-label="Department"><option value="">All departments</option></select>
             <input type="search" id="leave-search" placeholder="Search name" style="max-width:220px;">
             <span class="save-status" id="leave-status"></span>
           </div>
@@ -1945,7 +1946,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.154-entitlement-owner';
+  var FRONTEND_BUILD = '2026-11-13.155-leave-dept-filter';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5896,7 +5897,7 @@
   })();
 
   // ---------------- Attendance: leave taken (SETUP §59) ----------------
-  var leaveState = { data: null, year: null, filter: 'all', search: '' };
+  var leaveState = { data: null, year: null, filter: 'all', search: '', dept: '' };
   function loadLeaveTaken_(year) {
     if (!hasSection('payroll')) return Promise.resolve();
     var status = document.getElementById('leave-status');
@@ -5922,7 +5923,13 @@
     ysel.innerHTML = d.years.map(function (y) { return '<option value="' + y + '"' + (y === d.year ? ' selected' : '') + '>' + y + '</option>'; }).join('');
     document.getElementById('leave-note').innerHTML = (d.leaveSyncedAt ? 'Leave last read from BioTime: ' + esc(casualStamp_(d.leaveSyncedAt)) + '. ' : 'No leave received from BioTime yet. ') +
       (d.pendingSkipped ? d.pendingSkipped + ' leave request' + (d.pendingSkipped === 1 ? ' is' : 's are') + ' not approved in BioTime yet, so not counted.' : '');
-    var linked = d.people.filter(function (pp) { return pp.linked; });
+    // department filter (.155): the tiles and the table both follow it
+    var deptSel = document.getElementById('leave-dept');
+    var depts = d.people.map(function (pp) { return pp.department; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
+    if (leaveState.dept && depts.indexOf(leaveState.dept) === -1) leaveState.dept = '';
+    deptSel.innerHTML = '<option value="">All departments</option>' + depts.map(function (x) { return '<option' + (x === leaveState.dept ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+    var people = d.people.filter(function (pp) { return !leaveState.dept || pp.department === leaveState.dept; });
+    var linked = people.filter(function (pp) { return pp.linked; });
     var n = { lots: 0, little: 0, over: 0, dec: 0 };
     linked.forEach(function (pp) { var b = leaveBucket_(pp); if (b) n[b]++; if (pp.decemberDays > 0) n.dec++; });
     var tile = function (key, name, count, cap, color) {
@@ -5935,12 +5942,12 @@
       tile('little', '3 days or less left', n.little, 'Nearly used it all', 'var(--good)') +
       tile('over', 'Over entitlement', n.over, n.over ? 'Took more than their days: check' : 'Nobody over', n.over ? 'var(--critical)' : 'var(--good)') +
       tile('dec', 'Leave booked in December', n.dec, 'Approved leave in December ' + d.year, 'var(--brand)') +
-      tile('all', 'Everyone', d.people.length, 'All employees with a BioTime link', 'var(--text-muted)') + '</div>';
+      tile('all', 'Everyone', people.length, leaveState.dept ? 'Everyone in ' + esc(leaveState.dept) : 'All employees with a BioTime link', 'var(--text-muted)') + '</div>';
     Array.prototype.forEach.call(tilesEl.querySelectorAll('[data-leave-tile]'), function (b) {
       b.addEventListener('click', function () { leaveState.filter = b.getAttribute('data-leave-tile'); renderLeaveTaken_(); });
     });
     var q = leaveState.search.toLowerCase();
-    var list = d.people.filter(function (pp) {
+    var list = people.filter(function (pp) {
       var f = leaveState.filter;
       if (f === 'dec' && !(pp.decemberDays > 0)) return false;
       if (f !== 'all' && f !== 'dec' && (!pp.linked || leaveBucket_(pp) !== f)) return false;
@@ -5995,6 +6002,8 @@
     if (y) y.addEventListener('change', function () { leaveState.year = Number(y.value); loadLeaveTaken_(leaveState.year); });
     var s2 = document.getElementById('leave-search');
     if (s2) s2.addEventListener('input', function () { leaveState.search = s2.value; renderLeaveTaken_(); });
+    var ld = document.getElementById('leave-dept');
+    if (ld) ld.addEventListener('change', function () { leaveState.dept = ld.value; renderLeaveTaken_(); });
   })();
 
   // ---------------- Attendance: BioTime link-up (SETUP §58) ----------------
