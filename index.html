@@ -644,7 +644,7 @@
 
 
   .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
-  .toolbar input[type=text], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
+  .toolbar input[type=text], .toolbar input[type=search], .toolbar input[type=date], .toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 13px; font-family: inherit; }
 
   .csv-drop-zone { border: 2px dashed var(--gridline); border-radius: 10px; padding: 16px 12px; text-align: center; font-size: 12px; color: var(--text-secondary); cursor: pointer; margin-bottom: 8px; transition: background 0.15s, border-color 0.15s; }
   .csv-drop-zone:hover { border-color: var(--brand); }
@@ -1510,6 +1510,7 @@
             <input type="date" id="attd-date">
             <button class="btn secondary small" id="attd-next" title="Next day">Next &rsaquo;</button>
             <button class="btn secondary small" id="attd-today">Today</button>
+            <select id="attd-dept" aria-label="Department"><option value="">All departments</option></select>
             <input type="search" id="attd-search" placeholder="Search name" style="max-width:200px;">
             <span class="save-status" id="attd-status"></span>
           </div>
@@ -1944,7 +1945,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.152-mgmt-dept-fix';
+  var FRONTEND_BUILD = '2026-11-13.153-attd-dept-filter';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5770,7 +5771,7 @@
   }
 
   // ---------------- Attendance: daily view + shifts (SETUP §60) ----------------
-  var attdState = { data: null, date: null, filter: 'scheduled', search: '' };
+  var attdState = { data: null, date: null, filter: 'scheduled', search: '', dept: '' };
   var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', off: 'Off', 'worked-off': 'Worked on day off' };
   var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
   function attdShiftDate_(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
@@ -5799,7 +5800,12 @@
     document.getElementById('attd-date').value = d.date;
     var isToday = d.date === d.today;
     document.getElementById('attd-note').innerHTML = (d.lastSync ? 'Last data from BioTime: ' + esc(casualStamp_(d.lastSync)) + '. ' : '') + 'Grace period ' + d.graceMin + ' minutes.' + (isToday ? ' Today: people still on shift show as <em>In</em>.' : '');
-    var rows = d.rows;
+    // department filter (.153): the tiles and the table both follow it
+    var deptSel = document.getElementById('attd-dept');
+    var depts = d.rows.map(function (r) { return r.department; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
+    if (attdState.dept && depts.indexOf(attdState.dept) === -1) attdState.dept = '';
+    deptSel.innerHTML = '<option value="">All departments</option>' + depts.map(function (x) { return '<option' + (x === attdState.dept ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+    var rows = d.rows.filter(function (r) { return !attdState.dept || r.department === attdState.dept; });
     var sched = rows.filter(function (r) { return r.status !== 'off'; });
     var cnt = function (fn) { return rows.filter(fn).length; };
     var tiles = [
@@ -5886,6 +5892,7 @@
     if (el('attd-today')) el('attd-today').addEventListener('click', function () { attdState.date = null; loadAttendanceDay_(); });
     if (el('attd-date')) el('attd-date').addEventListener('change', function () { if (el('attd-date').value) loadAttendanceDay_(el('attd-date').value); });
     if (el('attd-search')) el('attd-search').addEventListener('input', function () { attdState.search = el('attd-search').value; renderAttendanceDay_(); });
+    if (el('attd-dept')) el('attd-dept').addEventListener('change', function () { attdState.dept = el('attd-dept').value; renderAttendanceDay_(); });
   })();
 
   // ---------------- Attendance: leave taken (SETUP §59) ----------------
