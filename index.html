@@ -1520,7 +1520,7 @@
         </div>
         <div class="panel" data-attpanel="leave">
           <h2>Leave taken</h2>
-          <p class="panel-sub">Approved leave from BioTime for the year, per employee. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless set otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
+          <p class="panel-sub">Approved leave from BioTime for the year, per employee. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless the Owner sets otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
           <div class="toolbar">
             <label for="leave-year" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Year</label>
             <select id="leave-year"></select>
@@ -1945,7 +1945,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.153-attd-dept-filter';
+  var FRONTEND_BUILD = '2026-11-13.154-entitlement-owner';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5949,6 +5949,7 @@
     if (leaveState.filter === 'lots') list.sort(function (a, b) { return b.annualLeft - a.annualLeft; });
     var entCell = function (pp) {
       if (!pp.linked) return '<span class="hint" style="margin:0;">not linked</span>';
+      if (state.role !== 'owner') return pp.entitlement + ' days';   // Owner only (.154)
       var opts = [15, 20]; if (opts.indexOf(pp.entitlement) === -1) opts.push(pp.entitlement);
       return '<select data-leave-ent="' + esc(pp.employeeId) + '">' + opts.map(function (o) { return '<option value="' + o + '"' + (o === pp.entitlement ? ' selected' : '') + '>' + o + ' days</option>'; }).join('') + '</select>';
     };
