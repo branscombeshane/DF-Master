@@ -1502,7 +1502,7 @@
       </div>
 
       <div class="payroll-subview" id="payroll-sub-attendance">
-        <div class="panel">
+        <div class="panel" data-attpanel="daily">
           <h2>Daily attendance</h2>
           <p class="panel-sub">Who came in and when, against each person's shift (from BioTime's schedule; change someone's shift by clicking their name). A night shift belongs to the day it starts. Late or early only counts beyond the grace period. Click a tile to filter, a name to see their last 14 days.</p>
           <div class="toolbar">
@@ -1517,7 +1517,7 @@
           <div id="attd-tiles"></div>
           <div style="overflow-x:auto;"><table class="data-table" id="attd-table"></table></div>
         </div>
-        <div class="panel">
+        <div class="panel" data-attpanel="leave">
           <h2>Leave taken</h2>
           <p class="panel-sub">Approved leave from BioTime for the year, per employee. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless set otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
           <div class="toolbar">
@@ -1530,7 +1530,7 @@
           <div id="leave-tiles"></div>
           <div style="overflow-x:auto;"><table class="data-table" id="leave-table"></table></div>
         </div>
-        <div class="panel">
+        <div class="panel" data-attpanel="link">
           <h2>Attendance — BioTime link-up</h2>
           <p class="panel-sub">Clock-ins come from the BioTime machines through the office PC every 15 minutes. Each person in BioTime is linked to their payroll employee here: most are matched automatically (same employee number and name, or the same full name). Link the rest by hand, or mark them <em>not on payroll</em>. The attendance views are built on these links.</p>
           <div id="att-sync" class="hint" style="margin:0 0 12px;"></div>
@@ -1541,7 +1541,7 @@
           </div>
           <div style="overflow-x:auto;"><table class="data-table" id="att-table"></table></div>
         </div>
-        <div class="panel" id="btp-panel" style="display:none;">
+        <div class="panel" id="btp-panel" data-attpanel="push" style="display:none;">
           <h2>Send changes to BioTime</h2>
           <div id="btp-resigned-note" class="hint" style="margin:0 0 8px;"></div>
           <p class="panel-sub">The Master app decides who is in BioTime. Below is every difference between payroll and BioTime: people to <strong>add</strong> (number, name, department, hire date, Marlboro Factory), names or departments to <strong>update</strong>, and discharged people to <strong>resign</strong> (the day after their last day; nobody is ever deleted). When sending is on, the office PC makes these changes within 15 minutes. Fingerprints and faces still have to be enrolled at the machine. Owner only.</p>
@@ -1944,7 +1944,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.150-staff-management';
+  var FRONTEND_BUILD = '2026-11-13.151-attendance-tabs';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2700,6 +2700,27 @@
     });
     var dl = document.getElementById('reports-print-selected-btn'); if (dl) dl.style.display = 'none';
   }
+  // Attendance sections (.151): shown one at a time from the Attendance row; each loads only its own data.
+  var ATT_PANELS_ = [
+    { key: 'daily', label: 'Daily Attendance' },
+    { key: 'leave', label: 'Leave Taken' },
+    { key: 'link', label: 'BioTime Link-up' },
+    { key: 'push', label: 'Send to BioTime', ownerOnly: true }
+  ];
+  function showAttendancePanel_(key) {
+    if (key === 'push' && state.role !== 'owner') key = 'daily';
+    state.attPanel = key;
+    Array.prototype.forEach.call(document.querySelectorAll('#payroll-sub-attendance [data-attpanel]'), function (el) {
+      el.style.display = el.getAttribute('data-attpanel') === key ? '' : 'none';
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs [data-attpanel-btn]'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-attpanel-btn') === key);
+    });
+    if (key === 'daily') loadAttendanceDay_();
+    else if (key === 'leave') loadLeaveTaken_();
+    else if (key === 'link') loadAttendanceLinks_();
+    else if (key === 'push') loadBiotimePush_();
+  }
   // Staff Management (.150): Dashboard | Payroll (Roster, Pay Adjustments, Reports, Casuals) | Attendance.
   var PAYROLL_GROUP_KEYS_ = ['roster', 'adjustments', 'reports', 'casuals'];
   function payrollGroupOf_(key) { return PAYROLL_GROUP_KEYS_.indexOf(key) !== -1 ? 'payroll' : key; }
@@ -2724,7 +2745,12 @@
       if (PAYROLL_GROUP_KEYS_.indexOf(t.key) === -1) return;
       sub.appendChild(mk(t.label, { 'data-subview': t.key }, function () { showPayrollSubTab(t.key); }));
     });
-    nav.appendChild(top); nav.appendChild(sub);
+    // Attendance's own second row (.151): one section at a time
+    var attSub = document.createElement('div'); attSub.className = 'sm-sub sm-sub-att'; attSub.hidden = true;
+    ATT_PANELS_.filter(function (a) { return !a.ownerOnly || state.role === 'owner'; }).forEach(function (a) {
+      attSub.appendChild(mk(a.label, { 'data-attpanel-btn': a.key }, function () { showAttendancePanel_(a.key); }));
+    });
+    nav.appendChild(top); nav.appendChild(sub); nav.appendChild(attSub);
     showPayrollSubTab(state.payrollSubTab || defaultSubTab);
   }
   function showPayrollSubTab(key) {
@@ -2738,8 +2764,10 @@
     Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs .sm-sub button'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-subview') === key);
     });
-    var subRow = document.querySelector('#payroll-subtabs .sm-sub');
+    var subRow = document.querySelector('#payroll-subtabs .sm-sub:not(.sm-sub-att)');
     if (subRow) subRow.hidden = group !== 'payroll';
+    var attRow = document.querySelector('#payroll-subtabs .sm-sub-att');
+    if (attRow) attRow.hidden = group !== 'attendance';
     Array.prototype.forEach.call(document.querySelectorAll('.payroll-subview'), function (v) { v.classList.remove('active'); });
     var view = document.getElementById('payroll-sub-' + key);
     if (view) view.classList.add('active');
@@ -2747,7 +2775,7 @@
     var monthRow = document.getElementById('payroll-month-row');
     if (monthRow) monthRow.style.display = (key === 'casuals' || key === 'attendance') ? 'none' : 'flex';
     if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
-    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadAttendanceDay_(); loadLeaveTaken_(); loadAttendanceLinks_(); if (state.role === 'owner') loadBiotimePush_(); }
+    if (key === 'attendance' && typeof showAttendancePanel_ === 'function') showAttendancePanel_(state.attPanel || 'daily');
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -5670,7 +5698,6 @@
   function loadBiotimePush_() {
     var panel = document.getElementById('btp-panel');
     if (state.role !== 'owner') { panel.style.display = 'none'; return Promise.resolve(); }
-    panel.style.display = '';
     var status = document.getElementById('btp-status');
     flashStatus(status, 'Loading…', 'save-status', 0);
     return callApi('getBiotimePush', {}).then(function (res) {
