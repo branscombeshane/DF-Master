@@ -2016,7 +2016,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.161-hr-mgmt-money';
+  var FRONTEND_BUILD = '2026-11-13.162-missed-clockin';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4296,7 +4296,8 @@
           '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + '</td>' +
           '<td>' + cell(r, 'late', r.lateMin, r.accepted.LateIn, r.lateTotal ? lateText(r) : '') + '</td>' +
           '<td>' + cell(r, 'ot', r.otHours, r.accepted.Overtime) + '</td>' +
-          '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') + '</td>' +
+          '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') +
+            ((r.noClockIn || []).length ? (r.noClockOut.length ? '<br>' : '') + cell(r, 'nci', '', '', r.noClockIn.length + ' day' + (r.noClockIn.length === 1 ? '' : 's') + ' with no clock-in') : '') + '</td>' +
           '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-accept]'), function (b) {
@@ -4319,11 +4320,14 @@
     } else if (kind === 'ot') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift end</th><th style="text-align:left;">Clocked out</th><th>Overtime (hours)</th>';
       body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td></tr>'; }).join('');
+    } else if (kind === 'nci') {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift start</th><th style="text-align:left;">Only clock-in</th><th style="text-align:left;">What to check</th>';
+      body = r.noClockIn.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Clocked out but not in: not counted as late or absent. Add the missed clock-in (Daily Attendance, click the name) so lateness can be checked.</td></tr>'; }).join('');
     } else {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">What to check</th>';
       body = r.noClockOut.map(function (dt) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(dt)) + '</td><td style="text-align:left;">Clocked in but not out: no overtime is worked out for this day. Add a manual clock-out in BioTime if they stayed late.</td></tr>'; }).join('');
     }
-    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out' })[kind];
+    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out', nci: 'no clock-in' })[kind];
     document.getElementById('casual-weeks-sub').textContent = 'Clock-ins ' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ', for ' + monthLabel(d.month) + ' pay.';
     document.getElementById('casual-weeks-body').innerHTML = t + '</tr></thead><tbody>' + body + '</tbody></table>';
     document.getElementById('casual-weeks-modal').classList.add('active');
@@ -6080,8 +6084,8 @@
 
   // ---------------- Attendance: daily view + shifts (SETUP §60) ----------------
   var attdState = { data: null, date: null, filter: 'scheduled', search: '', dept: '' };
-  var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', off: 'Off', 'worked-off': 'Worked on day off' };
-  var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
+  var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', 'no-clock-in': 'No clock-in', off: 'Off', 'worked-off': 'Worked on day off' };
+  var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', 'no-clock-in': 'var(--warning)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
   function attdShiftDate_(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
   function loadAttendanceDay_(date) {
     if (!hasSection('payroll')) return Promise.resolve();
@@ -6122,7 +6126,7 @@
       ['late', 'Late', cnt(function (r) { return r.lateMin > 0; }), 'More than ' + d.graceMin + ' min after the start', 'var(--warning)'],
       ['absent', isToday ? 'Absent / not in yet' : 'Absent', cnt(function (r) { return r.status === 'absent' || r.status === 'not-in'; }), 'No clock-in, not on leave', 'var(--critical)'],
       ['leave', 'On leave / holiday', cnt(function (r) { return r.status === 'leave' || r.status === 'holiday'; }), 'Approved leave or public holiday', 'var(--brand)'],
-      ['issues', 'Left early / no clock-out', cnt(function (r) { return r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'worked-off'; }), 'Early leavers, missing clock-outs, day-off clock-ins', 'var(--warning)']
+      ['issues', 'Left early / missed clock', cnt(function (r) { return r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'no-clock-in' || r.status === 'worked-off'; }), 'Early leavers, missing clock-ins or clock-outs, day-off clock-ins', 'var(--warning)']
     ];
     var tilesEl = document.getElementById('attd-tiles');
     tilesEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' + tiles.map(function (t) {
@@ -6138,7 +6142,7 @@
       if (f === 'late' && !(r.lateMin > 0)) return false;
       if (f === 'absent' && !(r.status === 'absent' || r.status === 'not-in')) return false;
       if (f === 'leave' && !(r.status === 'leave' || r.status === 'holiday')) return false;
-      if (f === 'issues' && !(r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'worked-off')) return false;
+      if (f === 'issues' && !(r.earlyMin > 0 || r.status === 'no-clock-out' || r.status === 'no-clock-in' || r.status === 'worked-off')) return false;
       return !q || r.name.toLowerCase().indexOf(q) !== -1;
     });
     if (f === 'late') list.sort(function (a, b) { return b.lateMin - a.lateMin; });
