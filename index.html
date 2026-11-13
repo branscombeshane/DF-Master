@@ -355,6 +355,14 @@
     color: var(--text-secondary); border-bottom: 2px solid transparent;
   }
   .subtabs button.active { color: var(--text-primary); border-bottom-color: var(--brand); }
+  /* Staff Management (.150): top row Dashboard / Payroll / Attendance, and under Payroll a second row of pills
+     (Roster, Pay Adjustments, Reports, Casuals). */
+  #payroll-subtabs { display: block; border-bottom: none; }
+  #payroll-subtabs .sm-top { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  #payroll-subtabs .sm-sub { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  #payroll-subtabs .sm-sub[hidden] { display: none; }
+  #payroll-subtabs .sm-sub button { border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; margin-right: 0; font-size: 12.5px; }
+  #payroll-subtabs .sm-sub button.active { background: color-mix(in srgb, var(--brand) 14%, transparent); border-color: var(--brand); color: var(--text-primary); }
   .payroll-subview { display: none; }
   .payroll-subview.active { display: block; }
 
@@ -1936,10 +1944,10 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.149-roster-fit';
+  var FRONTEND_BUILD = '2026-11-13.150-staff-management';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
-  var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
+  var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
 
   // Actions whose data is partitioned by company group (Daily Fruit Group /
   // Daily Fruit Cpt / Blendid) — callApi automatically stamps state.companyGroup
@@ -2620,7 +2628,7 @@
     var tabs = [
       { key: 'dashboard', label: 'Dashboard', show: hasSection('dashboard') },
       { key: 'history', label: 'History', show: hasSection('history') },
-      { key: 'payroll', label: 'Payroll', show: hasSection('payroll') },
+      { key: 'payroll', label: 'Staff Management', show: hasSection('payroll') },
       { key: 'vehicles', label: 'Vehicles', show: hasSection('vehicles') },
       { key: 'sales', label: 'Sales', show: hasSection('sales') },
       { key: 'settings', label: 'Settings', show: state.role === 'owner' },
@@ -2692,26 +2700,46 @@
     });
     var dl = document.getElementById('reports-print-selected-btn'); if (dl) dl.style.display = 'none';
   }
+  // Staff Management (.150): Dashboard | Payroll (Roster, Pay Adjustments, Reports, Casuals) | Attendance.
+  var PAYROLL_GROUP_KEYS_ = ['roster', 'adjustments', 'reports', 'casuals'];
+  function payrollGroupOf_(key) { return PAYROLL_GROUP_KEYS_.indexOf(key) !== -1 ? 'payroll' : key; }
   function renderPayrollSubNav() {
     applyHrReportsLimits_();
     var nav = document.getElementById('payroll-subtabs');
     var defaultSubTab = state.role === 'hr' ? 'roster' : 'dashboard';
     if (!nav || nav.childElementCount) { showPayrollSubTab(state.payrollSubTab || defaultSubTab); return; }
-    visiblePayrollSubtabs_().forEach(function (t) {
-      var btn = document.createElement('button');
-      btn.textContent = t.label;
-      btn.setAttribute('data-subview', t.key);
-      btn.addEventListener('click', function () { showPayrollSubTab(t.key); });
-      nav.appendChild(btn);
+    var visible = visiblePayrollSubtabs_();
+    var has = function (k) { return visible.some(function (t) { return t.key === k; }); };
+    var top = document.createElement('div'); top.className = 'sm-top';
+    var sub = document.createElement('div'); sub.className = 'sm-sub'; sub.hidden = true;
+    var mk = function (label, attrs, onClick) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      Object.keys(attrs).forEach(function (k) { b.setAttribute(k, attrs[k]); });
+      b.addEventListener('click', onClick); return b;
+    };
+    if (has('dashboard')) top.appendChild(mk('Dashboard', { 'data-subgroup': 'dashboard', 'data-subview': 'dashboard' }, function () { showPayrollSubTab('dashboard'); }));
+    top.appendChild(mk('Payroll', { 'data-subgroup': 'payroll' }, function () { showPayrollSubTab(state.payrollLastSub || 'roster'); }));
+    if (has('attendance')) top.appendChild(mk('Attendance', { 'data-subgroup': 'attendance', 'data-subview': 'attendance' }, function () { showPayrollSubTab('attendance'); }));
+    visible.forEach(function (t) {
+      if (PAYROLL_GROUP_KEYS_.indexOf(t.key) === -1) return;
+      sub.appendChild(mk(t.label, { 'data-subview': t.key }, function () { showPayrollSubTab(t.key); }));
     });
+    nav.appendChild(top); nav.appendChild(sub);
     showPayrollSubTab(state.payrollSubTab || defaultSubTab);
   }
   function showPayrollSubTab(key) {
     if (!key) return;
     state.payrollSubTab = key;
-    Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs button'), function (b) {
+    var group = payrollGroupOf_(key);
+    if (group === 'payroll') state.payrollLastSub = key;
+    Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs .sm-top button'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-subgroup') === group);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs .sm-sub button'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-subview') === key);
     });
+    var subRow = document.querySelector('#payroll-subtabs .sm-sub');
+    if (subRow) subRow.hidden = group !== 'payroll';
     Array.prototype.forEach.call(document.querySelectorAll('.payroll-subview'), function (v) { v.classList.remove('active'); });
     var view = document.getElementById('payroll-sub-' + key);
     if (view) view.classList.add('active');
