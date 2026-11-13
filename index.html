@@ -1271,6 +1271,16 @@
           <div id="advance-balances-wrap"></div>
           <div id="deduction-accounts-wrap"></div>
 
+          <div id="attpay-wrap" style="margin-top:16px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 4px;">
+              <h3 id="attpay-title" style="margin:0; font-size:14px; color:var(--text-muted);">From clock-ins</h3>
+              <button class="btn small" id="attpay-all" type="button" style="display:none;">Accept all</button>
+              <span class="save-status" id="attpay-status"></span>
+            </div>
+            <div id="attpay-note" style="margin:0 0 8px; font-size:12px; color:var(--text-muted); line-height:1.45;"></div>
+            <div style="overflow-x:auto;"><table class="data-table" id="attpay-table"></table></div>
+          </div>
+
           <h3 style="margin:18px 0 4px; font-size:14px; color:var(--text-muted);">Add for this month</h3>
           <div class="form-grid">
             <div class="field">
@@ -1986,7 +1996,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.157-mgmt-signoff';
+  var FRONTEND_BUILD = '2026-11-13.158-clockin-pay';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2002,7 +2012,7 @@
     getFinancialYear: true, getFiscalYears: true,
     getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getCasualInsights: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
-    getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true,
+    getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true, getAttendancePay: true, acceptAttendancePay: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
@@ -4198,9 +4208,102 @@
         state.payrollAdjustments = res.payrollAdjustments;
         state.monthLocked = !!res.monthLocked;
         renderAdjustments();
+        loadAttendancePay_();
       }
       return res;
     });
+  }
+
+  // ---- From clock-ins (SETUP §72): suggested Absent / Late In / Overtime for the 20th-19th period; Accept writes them ----
+  var attPayState = { data: null };
+  function attPayDate_(d) { var m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return Number(d.slice(8, 10)) + ' ' + m[Number(d.slice(5, 7)) - 1]; }
+  function loadAttendancePay_() {
+    var status = document.getElementById('attpay-status'); if (!status) return Promise.resolve();
+    var month = state.selectedMonth;
+    flashStatus(status, 'Loading clock-ins…', 'save-status', 0);
+    return callApi('getAttendancePay', { month: month }).then(function (res) {
+      if (month !== state.selectedMonth) return;
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load clock-ins', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      attPayState.data = res; renderAttendancePay_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function acceptAttendancePay_(ids, btn) {
+    var status = document.getElementById('attpay-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Accepting…'; }
+    flashStatus(status, 'Accepting…', 'save-status', 0);
+    return callApiWithOwnerUnlock('acceptAttendancePay', { month: attPayState.data.month, employeeIds: ids.join(',') }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not accept', 'save-status err', 8000); if (btn) { btn.disabled = false; btn.textContent = 'Accept'; } return; }
+      attPayState.data = res; renderAttendancePay_();
+      flashStatus(document.getElementById('attpay-status'), res.saved ? res.saved + ' adjustment' + (res.saved === 1 ? '' : 's') + ' added' + (res.skipped.length ? '. Not added: ' + res.skipped.join('; ') : '') : (res.skipped.length ? res.skipped.join('; ') : 'Nothing new to add'), res.skipped.length ? 'save-status err' : 'save-status ok', 8000);
+      if (res.saved) callApi('getPayrollAdjustments', { month: state.selectedMonth }).then(function (r2) {
+        if (r2 && r2.ok) { state.payrollAdjustments = r2.payrollAdjustments; state.monthLocked = !!r2.monthLocked; renderAdjustments(); }
+      });
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); if (btn) { btn.disabled = false; btn.textContent = 'Accept'; } });
+  }
+  function attPayPending_(r, rules) {
+    return (r.absentDays > 0 && !r.accepted.Absent) || (r.lateMin > 0 && !r.accepted.LateIn) || (r.otHours > 0 && !r.accepted.Overtime);
+  }
+  function renderAttendancePay_() {
+    var d = attPayState.data; if (!d) return;
+    document.getElementById('attpay-title').textContent = 'From clock-ins (' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ')';
+    document.getElementById('attpay-note').innerHTML = (d.complete ? '' : '<strong style="color:var(--warning);">This period runs to ' + esc(attPayDate_(d.to)) + ', so these are the figures so far.</strong> ') +
+      'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
+      'Overtime: clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
+      (d.noShift ? ' ' + d.noShift + ' linked ' + (d.noShift === 1 ? 'person has' : 'people have') + ' no shift in this period, so nothing is worked out for them.' : '');
+    var pend = d.rows.filter(function (r) { return attPayPending_(r, d.rules); });
+    var allBtn = document.getElementById('attpay-all');
+    allBtn.style.display = pend.length > 1 ? '' : 'none';
+    allBtn.textContent = 'Accept all (' + pend.length + ')';
+    allBtn.disabled = false;
+    allBtn.onclick = function () {
+      if (!confirm('Add the clock-in adjustments for ' + pend.length + ' people to ' + monthLabel(d.month) + '?')) return;
+      acceptAttendancePay_(pend.map(function (r) { return r.employeeId; }), allBtn);
+    };
+    var cell = function (r, kind, val, acc, extra) {
+      if (acc) return '<span style="color:var(--good); font-weight:600;">✓ ' + acc + '</span>';
+      if (!val && !extra) return '';
+      return '<button type="button" class="linklike" data-attpay="' + esc(r.employeeId) + '" data-attpay-kind="' + kind + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + (val || extra) + '</button>';
+    };
+    var lateText = function (r) { return r.lateMin ? String(r.lateMin) : (r.lateTotal ? '<span style="color:var(--text-muted);">' + r.lateTotal + ' (under ' + d.rules.lateMinOver + ')</span>' : ''); };
+    document.getElementById('attpay-table').innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Absent (days)</th><th>Late in (min)</th><th>Overtime (hours)</th><th style="text-align:left;">Check</th><th></th></tr></thead><tbody>' +
+      (d.rows.length ? d.rows.map(function (r) {
+        var pending = attPayPending_(r, d.rules);
+        return '<tr><td style="text-align:left;">' + esc(r.name) + '</td><td style="text-align:left;">' + esc(r.department) + '</td>' +
+          '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + '</td>' +
+          '<td>' + cell(r, 'late', r.lateMin, r.accepted.LateIn, r.lateTotal ? lateText(r) : '') + '</td>' +
+          '<td>' + cell(r, 'ot', r.otHours, r.accepted.Overtime) + '</td>' +
+          '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') + '</td>' +
+          '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-accept]'), function (b) {
+      b.addEventListener('click', function () { acceptAttendancePay_([b.getAttribute('data-attpay-accept')], b); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-attpay]'), function (b) {
+      b.addEventListener('click', function () { openAttPayDetail_(b.getAttribute('data-attpay'), b.getAttribute('data-attpay-kind')); });
+    });
+  }
+  function openAttPayDetail_(id, kind) {
+    var d = attPayState.data, r = d.rows.filter(function (x) { return x.employeeId === id; })[0]; if (!r) return;
+    var t = '<table class="data-table"><thead><tr>', body = '';
+    if (kind === 'absent') {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Why</th><th>Days</th>';
+      body = r.absent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.why) + '</td><td>' + a.days + '</td></tr>'; }).join('');
+    } else if (kind === 'late') {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift start</th><th style="text-align:left;">Clocked in</th><th>Minutes late</th>';
+      body = r.late.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td>' + a.min + '</td></tr>'; }).join('') +
+        '<tr><td colspan="3" style="text-align:left; font-weight:700;">Total' + (r.lateMin ? '' : ' (not more than ' + d.rules.lateMinOver + ', so nothing is taken off)') + '</td><td style="font-weight:700;">' + r.lateTotal + '</td></tr>';
+    } else if (kind === 'ot') {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift end</th><th style="text-align:left;">Clocked out</th><th>Overtime (hours)</th>';
+      body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td></tr>'; }).join('');
+    } else {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">What to check</th>';
+      body = r.noClockOut.map(function (dt) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(dt)) + '</td><td style="text-align:left;">Clocked in but not out: no overtime is worked out for this day. Add a manual clock-out in BioTime if they stayed late.</td></tr>'; }).join('');
+    }
+    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out' })[kind];
+    document.getElementById('casual-weeks-sub').textContent = 'Clock-ins ' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ', for ' + monthLabel(d.month) + ' pay.';
+    document.getElementById('casual-weeks-body').innerHTML = t + '</tr></thead><tbody>' + body + '</tbody></table>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
   }
 
   // Shows a small red "Locked" badge right after the given panel-sub
