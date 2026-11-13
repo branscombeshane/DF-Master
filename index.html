@@ -1487,6 +1487,19 @@
 
       <div class="payroll-subview" id="payroll-sub-attendance">
         <div class="panel">
+          <h2>Leave taken</h2>
+          <p class="panel-sub">Approved leave from BioTime for the year, per employee. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless set otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
+          <div class="toolbar">
+            <label for="leave-year" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Year</label>
+            <select id="leave-year"></select>
+            <input type="search" id="leave-search" placeholder="Search name" style="max-width:220px;">
+            <span class="save-status" id="leave-status"></span>
+          </div>
+          <div id="leave-note" class="hint" style="margin:0 0 10px;"></div>
+          <div id="leave-tiles"></div>
+          <div style="overflow-x:auto;"><table class="data-table" id="leave-table"></table></div>
+        </div>
+        <div class="panel">
           <h2>Attendance — BioTime link-up</h2>
           <p class="panel-sub">Clock-ins come from the BioTime machines through the office PC every 15 minutes. Each person in BioTime is linked to their payroll employee here: most are matched automatically (same employee number and name, or the same full name). Link the rest by hand, or mark them <em>not on payroll</em>. The attendance views are built on these links.</p>
           <div id="att-sync" class="hint" style="margin:0 0 12px;"></div>
@@ -1885,7 +1898,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.142-biotime-link';
+  var FRONTEND_BUILD = '2026-11-13.143-leave-taken';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -1905,7 +1918,7 @@
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
-    getAttendanceLinks: true, setAttendanceLink: true
+    getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true
   };
 
   // ================= STATE =================
@@ -2667,7 +2680,7 @@
     var monthRow = document.getElementById('payroll-month-row');
     if (monthRow) monthRow.style.display = (key === 'casuals' || key === 'attendance') ? 'none' : 'flex';
     if (key === 'casuals' && typeof loadCasuals === 'function') loadCasuals();
-    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') loadAttendanceLinks_();
+    if (key === 'attendance' && typeof loadAttendanceLinks_ === 'function') { loadLeaveTaken_(); loadAttendanceLinks_(); }
   }
 
   // Greys out the Payroll content (sub-tabs included) with a spinner until
@@ -5584,6 +5597,107 @@
   }
 
   function casualDirtyCount_() { return Object.keys(casualState.dirty).length; }
+
+  // ---------------- Attendance: leave taken (SETUP §59) ----------------
+  var leaveState = { data: null, year: null, filter: 'all', search: '' };
+  function loadLeaveTaken_(year) {
+    if (!hasSection('payroll')) return Promise.resolve();
+    var status = document.getElementById('leave-status');
+    flashStatus(status, 'Loading…', 'save-status', 0);
+    var params = {}; if (year || leaveState.year) params.year = year || leaveState.year;
+    return callApi('getLeaveTaken', params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load leave', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      leaveState.data = res; leaveState.year = res.year;
+      renderLeaveTaken_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function leaveDays_(n) { n = Number(n) || 0; return (Math.round(n * 10) / 10).toString(); }
+  function leaveBucket_(pp) {
+    if (pp.annualLeft < 0) return 'over';
+    if (pp.annualLeft <= 3) return 'little';
+    if (pp.annualLeft >= 10) return 'lots';
+    return '';
+  }
+  function renderLeaveTaken_() {
+    var d = leaveState.data; if (!d) return;
+    var ysel = document.getElementById('leave-year');
+    ysel.innerHTML = d.years.map(function (y) { return '<option value="' + y + '"' + (y === d.year ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    document.getElementById('leave-note').innerHTML = (d.leaveSyncedAt ? 'Leave last read from BioTime: ' + esc(casualStamp_(d.leaveSyncedAt)) + '. ' : 'No leave received from BioTime yet. ') +
+      (d.pendingSkipped ? d.pendingSkipped + ' leave request' + (d.pendingSkipped === 1 ? ' is' : 's are') + ' not approved in BioTime yet, so not counted.' : '');
+    var linked = d.people.filter(function (pp) { return pp.linked; });
+    var n = { lots: 0, little: 0, over: 0, dec: 0 };
+    linked.forEach(function (pp) { var b = leaveBucket_(pp); if (b) n[b]++; if (pp.decemberDays > 0) n.dec++; });
+    var tile = function (key, name, count, cap, color) {
+      return '<button type="button" class="kpi-card" data-leave-tile="' + key + '" style="--dot:' + color + ';' + (leaveState.filter === key ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + name + '</span></div>' +
+        '<div class="big">' + count + '</div><div class="cap">' + cap + '</div></button>';
+    };
+    var tilesEl = document.getElementById('leave-tiles');
+    tilesEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:14px;">' +
+      tile('lots', '10+ days left', n.lots, 'Most leave still to take: plan them in', 'var(--warning)') +
+      tile('little', '3 days or less left', n.little, 'Nearly used it all', 'var(--good)') +
+      tile('over', 'Over entitlement', n.over, n.over ? 'Took more than their days: check' : 'Nobody over', n.over ? 'var(--critical)' : 'var(--good)') +
+      tile('dec', 'Leave booked in December', n.dec, 'Approved leave in December ' + d.year, 'var(--brand)') +
+      tile('all', 'Everyone', d.people.length, 'All employees with a BioTime link', 'var(--text-muted)') + '</div>';
+    Array.prototype.forEach.call(tilesEl.querySelectorAll('[data-leave-tile]'), function (b) {
+      b.addEventListener('click', function () { leaveState.filter = b.getAttribute('data-leave-tile'); renderLeaveTaken_(); });
+    });
+    var q = leaveState.search.toLowerCase();
+    var list = d.people.filter(function (pp) {
+      var f = leaveState.filter;
+      if (f === 'dec' && !(pp.decemberDays > 0)) return false;
+      if (f !== 'all' && f !== 'dec' && (!pp.linked || leaveBucket_(pp) !== f)) return false;
+      return !q || pp.name.toLowerCase().indexOf(q) !== -1;
+    });
+    if (leaveState.filter === 'lots') list.sort(function (a, b) { return b.annualLeft - a.annualLeft; });
+    var entCell = function (pp) {
+      if (!pp.linked) return '<span class="hint" style="margin:0;">not linked</span>';
+      var opts = [15, 20]; if (opts.indexOf(pp.entitlement) === -1) opts.push(pp.entitlement);
+      return '<select data-leave-ent="' + esc(pp.employeeId) + '">' + opts.map(function (o) { return '<option value="' + o + '"' + (o === pp.entitlement ? ' selected' : '') + '>' + o + ' days</option>'; }).join('') + '</select>';
+    };
+    var table = document.getElementById('leave-table');
+    table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Entitlement</th><th>Annual used</th><th>Annual left</th><th>Sick</th><th>Family resp.</th><th>Other</th><th>In December</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (pp, i) {
+        var left = pp.linked ? leaveDays_(pp.annualLeft) : '—';
+        var leftStyle = pp.annualLeft < 0 ? 'color:var(--critical); font-weight:700;' : (pp.annualLeft >= 10 ? 'font-weight:700;' : '');
+        return '<tr><td style="text-align:left;"><button type="button" class="linklike" data-leave-person="' + d.people.indexOf(pp) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(pp.name) + '</button></td>' +
+          '<td style="text-align:left;">' + esc(pp.department || '') + '</td><td>' + entCell(pp) + '</td><td>' + leaveDays_(pp.annual) + '</td><td style="' + leftStyle + '">' + left + '</td>' +
+          '<td>' + leaveDays_(pp.sick) + '</td><td>' + leaveDays_(pp.family) + '</td><td>' + leaveDays_(pp.other) + '</td><td>' + (pp.decemberDays ? leaveDays_(pp.decemberDays) : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="9" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(table.querySelectorAll('[data-leave-person]'), function (b) {
+      b.addEventListener('click', function () { openLeaveDetail_(d.people[Number(b.getAttribute('data-leave-person'))]); });
+    });
+    Array.prototype.forEach.call(table.querySelectorAll('select[data-leave-ent]'), function (sel) {
+      sel.addEventListener('change', function () {
+        var status = document.getElementById('leave-status');
+        sel.disabled = true;
+        flashStatus(status, 'Saving…', 'save-status', 0);
+        callApi('setLeaveEntitlement', { employeeId: sel.getAttribute('data-leave-ent'), days: sel.value, year: leaveState.year }).then(function (res) {
+          if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); sel.disabled = false; return; }
+          flashStatus(status, 'Saved', 'save-status ok', 2500);
+          leaveState.data = res; renderLeaveTaken_();
+        }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); sel.disabled = false; });
+      });
+    });
+  }
+  function openLeaveDetail_(pp) {
+    if (!pp) return;
+    var fmt = function (s) { return esc(casualStamp_(s.length === 16 ? s + ':00' : s)); };
+    document.getElementById('casual-weeks-title').textContent = pp.name + ' — leave ' + leaveState.data.year;
+    document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department || '') + (pp.linked ? ' · annual leave ' + leaveDays_(pp.annual) + ' of ' + pp.entitlement + ' days used, ' + leaveDays_(pp.annualLeft) + ' left' : ' · not linked to a payroll employee yet');
+    document.getElementById('casual-weeks-body').innerHTML = pp.records.length
+      ? '<table class="data-table"><thead><tr><th style="text-align:left;">From</th><th style="text-align:left;">To</th><th style="text-align:left;">Type</th><th>Days counted</th></tr></thead><tbody>' +
+        pp.records.map(function (r) { return '<tr><td style="text-align:left;">' + fmt(r.start) + '</td><td style="text-align:left;">' + fmt(r.end) + '</td><td style="text-align:left;">' + esc(r.type) + '</td><td>' + leaveDays_(r.days) + '</td></tr>'; }).join('') +
+        '</tbody></table>'
+      : '<p style="color:var(--text-muted);">No approved leave this year.</p>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
+  }
+  (function () {
+    var y = document.getElementById('leave-year');
+    if (y) y.addEventListener('change', function () { leaveState.year = Number(y.value); loadLeaveTaken_(leaveState.year); });
+    var s2 = document.getElementById('leave-search');
+    if (s2) s2.addEventListener('input', function () { leaveState.search = s2.value; renderLeaveTaken_(); });
+  })();
 
   // ---------------- Attendance: BioTime link-up (SETUP §58) ----------------
   var attState = { data: null, filter: 'all', search: '' };
