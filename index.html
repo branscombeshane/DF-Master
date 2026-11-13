@@ -468,6 +468,14 @@
      (see the Roster's overflow-x:auto wrapper) for anything genuinely too
      wide, the same way a spreadsheet behaves. */
   table.data-table td.wrap { white-space: normal; }
+  /* Roster: fits the screen without a side-scroll (Shane, 2026-11-13): tighter cells, long names / notes /
+     leaver chips wrap, Payslip + Edit stacked. The overflow-x wrapper stays only as a last resort. */
+  table.roster-table th, table.roster-table td { padding: 7px 6px; }
+  table.roster-table td.name-cell { white-space: normal; min-width: 130px; }
+  table.roster-table td.name-cell .chip { display: inline-block; margin-top: 3px; white-space: nowrap; }
+  table.roster-table td.wrap { max-width: 160px; }
+  table.roster-table .roster-actions { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  table.roster-table .roster-actions .btn { padding: 4px 10px; }
   table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
   table.data-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
   table.data-table tr.inactive td { opacity: 0.45; }
@@ -1197,12 +1205,12 @@
             <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show discharged</label>
           </div>
           <div style="overflow-x:auto;">
-            <table class="data-table" id="payroll-table"></table>
+            <table class="data-table roster-table" id="payroll-table"></table>
           </div>
           <div id="payroll-discharged-wrap" style="display:none;">
             <h3 style="margin:28px 0 4px; font-size:14px; color:var(--text-muted);">Discharged employees</h3>
             <div style="overflow-x:auto;">
-              <table class="data-table" id="payroll-table-discharged"></table>
+              <table class="data-table roster-table" id="payroll-table-discharged"></table>
             </div>
           </div>
         </div>
@@ -1928,7 +1936,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.148-biotime-deptmatch';
+  var FRONTEND_BUILD = '2026-11-13.149-roster-fit';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Payroll', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3673,8 +3681,8 @@
     function actionsHtml(e) {
       // One combined Actions column instead of two separate buttons each
       // with their own blank header — same actions, less visual noise.
-      return (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button> ') +
-        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button>';
+      return '<div class="roster-actions">' + (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button>') +
+        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></div>';
     }
 
     var table = document.getElementById('payroll-table');
@@ -3684,7 +3692,7 @@
     // actually has a note.
     var anyNotes = activeRows.some(function (e) { return e.notes && String(e.notes).trim(); });
     var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th>Days/wk</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th title="Days per week">Days</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
     var body = '<tbody>' + activeRows.map(function (e) {
       var salaryCells = isHr ? '' :
         '<td>' + (e.salaryNeeded ? '<button type="button" class="salary-pill" data-setsalary-id="' + esc(e.id) + '" title="No Basic Salary yet — click to set it">Set salary</button>' : money(e.amount)) + '</td>' +
@@ -3692,13 +3700,13 @@
         '<td>' + (e.hourRate === null ? '—' : 'R ' + moneyExact(e.hourRate)) + '</td>';
       var leavingChip = e.discharged ? ' <span class="chip" title="Discharged — paid up to this date, then off payroll from the next pay month" style="background:color-mix(in srgb, var(--critical) 14%, transparent); color:var(--critical); font-weight:700;">Discharged ' + esc(e.dateDischarged) + ' — final pay</span>' : '';
       return '<tr>' +
-        '<td style="text-align:left;">' + esc(e.name) + leavingChip + '</td>' +
+        '<td class="name-cell" style="text-align:left;">' + esc(e.name) + leavingChip + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
         salaryCells +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
-        (anyNotes ? '<td class="wrap" style="text-align:left; max-width:220px;">' + esc(e.notes) + '</td>' : '') +
+        (anyNotes ? '<td class="wrap" style="text-align:left; max-width:160px;">' + esc(e.notes) + '</td>' : '') +
         '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
         '<td style="text-align:right; white-space:nowrap;">' + actionsHtml(e) + '</td>' +
         '</tr>';
@@ -3712,7 +3720,7 @@
       var dHead = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th style="text-align:left;">Employed</th><th style="text-align:left;">Discharged</th><th style="text-align:left;">Reason</th><th></th></tr></thead>';
       var dBody = '<tbody>' + dischargedRows.map(function (e) {
         return '<tr class="inactive">' +
-          '<td style="text-align:left;">' + esc(e.name) + '</td>' +
+          '<td class="name-cell" style="text-align:left;">' + esc(e.name) + '</td>' +
           '<td style="text-align:left;">' + esc(e.department) + '</td>' +
           '<td>' + esc(e.employeeNumber) + '</td>' +
           '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
