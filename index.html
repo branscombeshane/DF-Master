@@ -476,6 +476,8 @@
      (see the Roster's overflow-x:auto wrapper) for anything genuinely too
      wide, the same way a spreadsheet behaves. */
   table.data-table td.wrap { white-space: normal; }
+  table.data-table.attpay-detail td { white-space: normal; vertical-align: top; }
+  table.data-table.attpay-detail td:first-child, table.data-table.attpay-detail td:last-child { white-space: nowrap; }
   /* Roster: fits the screen without a side-scroll (Shane, 2026-11-13): tighter cells, long names / notes /
      leaver chips wrap, Payslip + Edit stacked. The overflow-x wrapper stays only as a last resort. */
   table.roster-table th, table.roster-table td { padding: 7px 6px; }
@@ -2017,7 +2019,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-14.166-attd-refresh';
+  var FRONTEND_BUILD = '2026-11-14.167-drivers-sunday';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2791,12 +2793,15 @@
     Array.prototype.forEach.call(document.querySelectorAll('#payroll-subtabs [data-attpanel-btn]'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-attpanel-btn') === key);
     });
-    if (key === 'daily') loadAttendanceDay_();
-    else if (key === 'leave') loadLeaveTaken_();
-    else if (key === 'settings') loadAttSettings_();
-    else if (key === 'link') loadAttendanceLinks_();
-    else if (key === 'push') loadBiotimePush_();
+    // §82: a section loaded in the last minute (same company) is shown as it is, no reload; Daily Attendance
+    // still refreshes itself every 5 minutes, and Today / the date / Prev / Next always load.
+    var seen = state.attLoaded && state.attLoaded[key];
+    if (seen && seen.group === state.companyGroup && Date.now() - seen.at < ATT_PANEL_FRESH_MS_) return;
+    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
+    var pr = loader ? loader() : null;
+    if (pr && pr.then) pr.then(function () { state.attLoaded = state.attLoaded || {}; state.attLoaded[key] = { at: Date.now(), group: state.companyGroup }; });
   }
+  var ATT_PANEL_FRESH_MS_ = 60 * 1000;
   // Staff Management (.150): Dashboard | Payroll (Roster, Pay Adjustments, Reports, Casuals) | Attendance.
   var PAYROLL_GROUP_KEYS_ = ['roster', 'adjustments', 'reports', 'casuals'];
   function payrollGroupOf_(key) { return PAYROLL_GROUP_KEYS_.indexOf(key) !== -1 ? 'payroll' : key; }
@@ -4324,35 +4329,49 @@
   }
   function openAttPayDetail_(id, kind) {
     var d = attPayState.data, r = d.rows.filter(function (x) { return x.employeeId === id; })[0]; if (!r) return;
-    var t = '<table class="data-table"><thead><tr>', body = '';
+    var t = '<table class="data-table attpay-detail"><thead><tr>', body = '';
+    // §82: every row opens Daily Attendance on that date with the person's days, to check or fix it there
+    var fixTd = function (date) { return '<td><button class="btn secondary small" type="button" data-attpay-open="' + esc(date) + '">Open</button></td>'; };
     if (kind === 'absent') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Why</th><th>Days</th>';
-      body = r.absent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.why) + '</td><td>' + a.days + '</td></tr>'; }).join('');
+      body = r.absent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.why) + '</td><td>' + a.days + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'late') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift start</th><th style="text-align:left;">Clocked in</th><th>Minutes late</th>';
-      body = r.late.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td>' + a.min + '</td></tr>'; }).join('') +
-        '<tr><td colspan="3" style="text-align:left; font-weight:700;">Total' + (r.lateMin ? '' : ' (not more than ' + d.rules.lateMinOver + ', so nothing is taken off)') + '</td><td style="font-weight:700;">' + r.lateTotal + '</td></tr>';
+      body = r.late.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td>' + a.min + '</td>' + fixTd(a.date) + '</tr>'; }).join('') +
+        '<tr><td colspan="3" style="text-align:left; font-weight:700;">Total' + (r.lateMin ? '' : ' (not more than ' + d.rules.lateMinOver + ', so nothing is taken off)') + '</td><td style="font-weight:700;">' + r.lateTotal + '</td><td></td></tr>';
     } else if (kind === 'ot') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift end</th><th style="text-align:left;">Clocked out</th><th>Overtime (hours)</th>';
-      body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.holiday ? ' <span class="hint" style="margin:0;">' + esc(a.holiday) + ': all hours (from ' + esc(a.arrived) + ')</span>' : '') + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td></tr>'; }).join('');
+      body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.holiday ? ' <span class="hint" style="margin:0;">' + esc(a.holiday) + ': all hours (from ' + esc(a.arrived) + ')</span>' : '') + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'do') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th>Hours</th>';
-      body = r.dayOff.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.min ? a.min / 60 : '') + '</td></tr>'; }).join('') +
-        '<tr><td colspan="4" style="text-align:left; color:var(--text-muted);">No shift on these days. If they were meant to work, click Pay as overtime. If the shift is wrong, fix it on Daily Attendance (click the name).</td></tr>';
+      body = r.dayOff.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.inPackage ? ' <span class="hint" style="margin:0;">Sunday in the drivers\' package: not overtime</span>' : '') + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.inPackage ? '<span style="color:var(--text-muted);">' + (a.packageMin / 60) + ' (0)</span>' : (a.min ? a.min / 60 : '')) + '</td>' + fixTd(a.date) + '</tr>'; }).join('') +
+        '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">No shift on these days. If they were meant to work, click Pay as overtime. If the shift is wrong, click Open and change it there.</td></tr>';
     } else if (kind === 'hw') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Holiday</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th style="text-align:left;">What to check</th>';
-      body = r.holWorked.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Not on the holiday team, so no overtime is worked out. If they were meant to work, add them with Plan who works (Daily Attendance on that date).</td></tr>'; }).join('');
+      body = r.holWorked.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Not on the holiday team, so no overtime is worked out. If they were meant to work, click Open and use Plan who works.</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'nci') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift start</th><th style="text-align:left;">Only clock-in</th><th style="text-align:left;">What to check</th>';
-      body = r.noClockIn.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Clocked out but not in: not counted as late or absent. Add the missed clock-in (Daily Attendance, click the name) so lateness can be checked.</td></tr>'; }).join('');
+      body = r.noClockIn.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Clocked out but not in: not counted as late or absent. Click Open and add the missed clock-in, so lateness can be checked.</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">What to check</th>';
-      body = r.noClockOut.map(function (dt) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(dt)) + '</td><td style="text-align:left;">Clocked in but not out: no overtime is worked out for this day. Add a manual clock-out in BioTime if they stayed late.</td></tr>'; }).join('');
+      body = r.noClockOut.map(function (dt) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(dt)) + '</td><td style="text-align:left;">Clocked in but not out: no overtime is worked out for this day. Click Open and add the missed clock-out if they stayed late.</td>' + fixTd(dt) + '</tr>'; }).join('');
     }
     document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out', nci: 'no clock-in', hw: 'holiday clock-in', do: 'worked on a day off' })[kind];
     document.getElementById('casual-weeks-sub').textContent = 'Clock-ins ' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ', for ' + monthLabel(d.month) + ' pay.';
-    document.getElementById('casual-weeks-body').innerHTML = t + '</tr></thead><tbody>' + body + '</tbody></table>';
+    document.getElementById('casual-weeks-body').innerHTML = t + '<th></th></tr></thead><tbody>' + body + '</tbody></table>';
+    Array.prototype.forEach.call(document.querySelectorAll('#casual-weeks-body [data-attpay-open]'), function (b) {
+      b.addEventListener('click', function () { openAttendanceFix_(r.empCode, b.getAttribute('data-attpay-open')); });
+    });
     document.getElementById('casual-weeks-modal').classList.add('active');
+  }
+  // Pay Adjustments -> Staff Management > Attendance > Daily Attendance on that date, with the person's days open
+  function openAttendanceFix_(empCode, date) {
+    document.getElementById('casual-weeks-modal').classList.remove('active');
+    attdState.date = date; state.attPanel = 'daily';
+    if (state.attLoaded) delete state.attLoaded.daily;
+    showPayrollSubTab('attendance');
+    openAttendancePerson_(empCode, date);
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
   }
 
   // Shows a small red "Locked" badge right after the given panel-sub
@@ -6166,11 +6185,12 @@
     if (attdState.dept && depts.indexOf(attdState.dept) === -1) attdState.dept = '';
     deptSel.innerHTML = '<option value="">All departments</option>' + depts.map(function (x) { return '<option' + (x === attdState.dept ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
     var rows = d.rows.filter(function (r) { return !attdState.dept || r.department === attdState.dept; });
-    var sched = rows.filter(function (r) { return r.status !== 'off' && r.status !== 'holiday' && r.status !== 'holiday-worked' && !(r.holiday && r.status === 'leave' && !r.start); });
+    // on a public holiday (§78/§82): the planned team plus anyone who clocked in, so clock-ins show before the team is planned
+    var sched = rows.filter(function (r) { return r.status !== 'off' && r.status !== 'holiday' && !(r.holiday && r.status === 'leave' && !r.start); });
     var cnt = function (fn) { return rows.filter(fn).length; };
     var tiles = [
-      ['scheduled', 'On shift / scheduled', sched.length, d.holiday ? 'Planned to work the holiday' : 'Everyone with a shift ' + (isToday ? 'today' : 'that day'), 'var(--brand)'],
-      ['present', isToday ? 'In / came in' : 'Came in', cnt(function (r) { return r.status === 'present' || r.status === 'in'; }), 'Clocked in for their shift', 'var(--good)'],
+      ['scheduled', d.holiday ? 'Working the holiday' : 'On shift / scheduled', sched.length, d.holiday ? 'Planned team, plus anyone who clocked in' : 'Everyone with a shift ' + (isToday ? 'today' : 'that day'), 'var(--brand)'],
+      ['present', isToday ? 'In / came in' : 'Came in', cnt(function (r) { return r.status === 'present' || r.status === 'in' || r.status === 'holiday-worked'; }), d.holiday ? 'Clocked in (planned or not)' : 'Clocked in for their shift', 'var(--good)'],
       ['late', 'Late', cnt(function (r) { return r.lateMin > 0; }), 'More than ' + d.graceMin + ' min after the start', 'var(--warning)'],
       ['absent', isToday ? 'Absent / not in yet' : 'Absent', cnt(function (r) { return r.status === 'absent' || r.status === 'not-in'; }), 'No clock-in, not on leave', 'var(--critical)'],
       ['leave', 'On leave / holiday', cnt(function (r) { return r.status === 'leave' || r.status === 'holiday'; }), 'Approved leave or public holiday', 'var(--brand)'],
@@ -6186,7 +6206,7 @@
     var f = attdState.filter, q = attdState.search.toLowerCase();
     var list = rows.filter(function (r) {
       if (f === 'scheduled' && sched.indexOf(r) === -1) return false;
-      if (f === 'present' && !(r.status === 'present' || r.status === 'in')) return false;
+      if (f === 'present' && !(r.status === 'present' || r.status === 'in' || r.status === 'holiday-worked')) return false;
       if (f === 'late' && !(r.lateMin > 0)) return false;
       if (f === 'absent' && !(r.status === 'absent' || r.status === 'not-in')) return false;
       if (f === 'leave' && !(r.status === 'leave' || r.status === 'holiday')) return false;
@@ -6240,10 +6260,18 @@
       }).catch(function () { btn.disabled = false; btn.textContent = 'Save holiday team'; flashStatus(st, 'Network error', 'save-status err', 6000); });
     });
   }
-  function openAttendancePerson_(code) {
+  function openAttendancePerson_(code, focusDate) {
     var status = document.getElementById('attd-status');
     flashStatus(status, 'Loading…', 'save-status', 0);
-    callApi('getAttendancePerson', { empCode: code, days: 14 }).then(function (res) {
+    var params = { empCode: code, days: 14 };
+    attdState.focusDate = focusDate || '';
+    if (focusDate) {   // show the 14 days around that date (up to a week after it, never past today)
+      var t = new Date(focusDate + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 6);
+      var to = t.toISOString().slice(0, 10), today = (attdState.data && attdState.data.today) || '';
+      params.to = today && to > today ? today : to;
+    }
+    attdState.focusTo = params.to || '';
+    callApi('getAttendancePerson', params).then(function (res) {
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
       flashStatus(status, '', 'save-status', 0);
       renderAttendancePerson_(res);
@@ -6255,7 +6283,8 @@
     var late = res.days.filter(function (x) { return x.lateMin > 0; }).length, abs = res.days.filter(function (x) { return x.status === 'absent'; }).length;
     var otTot = res.days.reduce(function (t, x) { return t + (x.otMin || 0); }, 0);
     var otH = function (m) { return m ? String(Math.round(m / 60 * 100) / 100) : ''; };
-    document.getElementById('casual-weeks-title').textContent = pp.name + ' — last 14 days';
+    var focus = attdState.focusDate || '';
+    document.getElementById('casual-weeks-title').textContent = pp.name + (focus ? ' — 14 days to ' + res.days[0].date : ' — last 14 days');
     document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department) + ' · BioTime #' + esc(pp.empCode) + ' · late ' + late + '×, absent ' + abs + '×' + (otTot ? ', overtime ' + otH(otTot) + ' h' : '') +
       '<div class="toolbar" style="margin-top:10px;"><label style="font-size:13px; font-weight:600;">Shift</label><select id="attp-shift" style="max-width:340px;">' +
       res.shifts.map(function (n) { return '<option' + (n === res.currentShift ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
@@ -6263,12 +6292,12 @@
       '<div class="hint" style="margin:4px 0 0;">Currently: ' + esc(res.currentShift || 'no shift') + (res.currentFrom ? ' since ' + esc(res.currentFrom) : '') + (res.currentTo ? ' until ' + esc(res.currentTo) : '') + '. Leave <em>to</em> empty for a permanent change; with a <em>to</em> date they go back to their usual shift afterwards.</div>';
     document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Day</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late</th><th>Early</th><th title="Clocked out more than 30 minutes after the shift end, in half hours (the same rule as Pay Adjustments)">Overtime (h)</th><th style="text-align:left;">Status</th><th style="text-align:left;">All clock-ins</th></tr></thead><tbody>' +
       res.days.map(function (x) {
-        return '<tr><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : 'off') + '</td>' +
+        return '<tr' + (focus && x.date === focus ? ' style="background:color-mix(in srgb, var(--brand) 12%, transparent);"' : '') + '><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : 'off') + '</td>' +
           '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td><td' + (x.otMin ? ' style="font-weight:700; color:var(--good);" title="Left ' + esc(x.left) + ', ' + (x.afterMin || 0) + ' min after the shift end"' : '') + '>' + otH(x.otMin) + '</td><td style="text-align:left;">' + attdChip_(x) + '</td>' +
           '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + esc(x.punches.join(', ')) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<h3 style="font-size:14px; margin:18px 0 6px;">Add a missed clock-in or clock-out</h3>' +
-      '<div class="toolbar"><input type="date" id="attm-date" value="' + esc(res.days[0].date) + '" aria-label="Date"><input type="time" id="attm-time" aria-label="Time" style="max-width:130px;">' +
+      '<div class="toolbar"><input type="date" id="attm-date" value="' + esc(focus || res.days[0].date) + '" aria-label="Date"><input type="time" id="attm-time" aria-label="Time" style="max-width:130px;">' +
       '<input type="text" id="attm-reason" placeholder="Why it was missed" maxlength="200" style="max-width:220px;">' +
       '<input id="attm-mgr" list="attm-mgr-list" placeholder="Signed off by (Management)" autocomplete="off" style="max-width:240px;"><datalist id="attm-mgr-list">' +
       (res.managers || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist>' +
@@ -6281,7 +6310,7 @@
     var attmCall = function (action, params, btn, okText) {
       var st = document.getElementById('attm-status');
       if (btn) btn.disabled = true; flashStatus(st, 'Saving…', 'save-status', 0);
-      callApi(action, Object.assign({ days: 14 }, params)).then(function (r2) {
+      callApi(action, Object.assign({ days: 14 }, attdState.focusTo ? { to: attdState.focusTo } : {}, params)).then(function (r2) {
         if (btn) btn.disabled = false;
         if (!r2 || !r2.ok) { flashStatus(st, (r2 && r2.error) || 'Could not save', 'save-status err', 8000); return; }
         renderAttendancePerson_(r2);
@@ -8007,7 +8036,7 @@
 
   // §75: HR editing a Management employee never sees (or overwrites) their medical aid / retirement contributions
   function setContributionFieldsHidden_(hide) {
-    ['payroll-medical-contribution', 'payroll-retirement'].forEach(function (fid) {
+    ['payroll-medical-contribution', 'payroll-retirement', 'payroll-notes'].forEach(function (fid) {
       var el = document.getElementById(fid); if (!el) return;
       el.disabled = hide; el.placeholder = hide ? 'Hidden (Management)' : '';
     });
