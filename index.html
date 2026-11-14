@@ -2017,7 +2017,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-14.164-holiday-team';
+  var FRONTEND_BUILD = '2026-11-14.165-overtime-1-5';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4071,7 +4071,8 @@
     // record.
     var overtimeLabel = 'Overtime';
     if (c.adjustments.Overtime && c.overtimeHours && res.hourRate) {
-      overtimeLabel = 'Overtime — ' + c.overtimeHours.toFixed(2) + ' Hrs @ Rate ' + moneyExact(res.hourRate);
+      // the rate actually paid (amount / hours): 1.5x from .165, 1x on older months (§79)
+      overtimeLabel = 'Overtime — ' + c.overtimeHours.toFixed(2) + ' Hrs @ Rate ' + moneyExact(Math.round(c.adjustments.Overtime / c.overtimeHours * 100) / 100);
     }
     overtimeLabel = withNote(overtimeLabel, 'Overtime', notesByType);
 
@@ -4221,6 +4222,8 @@
     TravelAllowance: 'Travel Allowance', OtherAllowance: 'Other Allowance (Non-taxable)',
     Absent: 'Absent', LateIn: 'Late in', Deduction: 'Deduction', AdvanceGiven: 'Advance given', AdvanceRepayment: 'Advance repayment'
   };
+  // Overtime is paid at 1.5x the hourly rate (§79); Code.gs has the same OVERTIME_RATE_MULTIPLIER.
+  var OVERTIME_RATE_MULTIPLIER = 1.5;
   var ADJ_TYPE_SIGN = {
     Commission: '+', Bonus: '+', Overtime: '+', Other: '+', TravelAllowance: '+', OtherAllowance: '+',
     Absent: '−', LateIn: '−', Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
@@ -4252,11 +4255,11 @@
       attPayState.data = res; renderAttendancePay_();
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
-  function acceptAttendancePay_(ids, btn) {
+  function acceptAttendancePay_(ids, btn, dayOff) {
     var status = document.getElementById('attpay-status');
     if (btn) { btn.disabled = true; btn.textContent = 'Accepting…'; }
     flashStatus(status, 'Accepting…', 'save-status', 0);
-    return callApiWithOwnerUnlock('acceptAttendancePay', { month: attPayState.data.month, employeeIds: ids.join(',') }).then(function (res) {
+    return callApiWithOwnerUnlock('acceptAttendancePay', { month: attPayState.data.month, employeeIds: ids.join(','), dayOff: dayOff ? '1' : '' }).then(function (res) {
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not accept', 'save-status err', 8000); if (btn) { btn.disabled = false; btn.textContent = 'Accept'; } return; }
       attPayState.data = res; renderAttendancePay_();
       flashStatus(document.getElementById('attpay-status'), res.saved ? res.saved + ' adjustment' + (res.saved === 1 ? '' : 's') + ' added' + (res.skipped.length ? '. Not added: ' + res.skipped.join('; ') : '') : (res.skipped.length ? res.skipped.join('; ') : 'Nothing new to add'), res.skipped.length ? 'save-status err' : 'save-status ok', 8000);
@@ -4273,7 +4276,7 @@
     document.getElementById('attpay-title').textContent = 'From clock-ins (' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ')';
     document.getElementById('attpay-note').innerHTML = (d.complete ? '' : '<strong style="color:var(--warning);">This period runs to ' + esc(attPayDate_(d.to)) + ', so these are the figures so far.</strong> ') +
       'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
-      'Overtime: clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
+      'Overtime (paid at ' + d.rules.otFactor + 'x): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
       (d.noShift ? ' ' + d.noShift + ' linked ' + (d.noShift === 1 ? 'person has' : 'people have') + ' no shift in this period, so nothing is worked out for them.' : '');
     var pend = d.rows.filter(function (r) { return attPayPending_(r, d.rules); });
     var allBtn = document.getElementById('attpay-all');
@@ -4299,11 +4302,21 @@
           '<td>' + cell(r, 'ot', r.otHours, r.accepted.Overtime) + '</td>' +
           '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') +
             ((r.noClockIn || []).length ? (r.noClockOut.length ? '<br>' : '') + cell(r, 'nci', '', '', r.noClockIn.length + ' day' + (r.noClockIn.length === 1 ? '' : 's') + ' with no clock-in') : '') +
-            ((r.holWorked || []).length ? '<br>' + cell(r, 'hw', '', '', 'clocked in on a holiday, not planned') : '') + '</td>' +
+            ((r.holWorked || []).length ? '<br>' + cell(r, 'hw', '', '', 'clocked in on a holiday, not planned') : '') +
+            ((r.dayOff || []).length ? '<br>' + (r.accepted.DayOff ? '<span style="color:var(--good); font-weight:600;">✓ day off ' + r.accepted.DayOff + ' h paid as overtime</span>'
+              : cell(r, 'do', '', '', 'worked ' + r.dayOff.length + ' day' + (r.dayOff.length === 1 ? '' : 's') + ' off' + (r.dayOffHours ? ' (' + r.dayOffHours + ' h)' : '')) +
+                (r.dayOffHours ? ' <button class="btn secondary small" type="button" data-attpay-dayoff="' + esc(r.employeeId) + '" style="padding:2px 8px;">Pay as overtime</button>' : '')) : '') + '</td>' +
           '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-accept]'), function (b) {
       b.addEventListener('click', function () { acceptAttendancePay_([b.getAttribute('data-attpay-accept')], b); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-dayoff]'), function (b) {
+      b.addEventListener('click', function () {
+        var rr = d.rows.filter(function (x) { return x.employeeId === b.getAttribute('data-attpay-dayoff'); })[0];
+        if (!confirm('Pay ' + rr.name + ' ' + rr.dayOffHours + ' h worked on days off as overtime (' + d.rules.otFactor + 'x)? Check the dates first if unsure.')) return;
+        acceptAttendancePay_([rr.employeeId], b, true);
+      });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay]'), function (b) {
       b.addEventListener('click', function () { openAttPayDetail_(b.getAttribute('data-attpay'), b.getAttribute('data-attpay-kind')); });
@@ -4322,6 +4335,10 @@
     } else if (kind === 'ot') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift end</th><th style="text-align:left;">Clocked out</th><th>Overtime (hours)</th>';
       body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.holiday ? ' <span class="hint" style="margin:0;">' + esc(a.holiday) + ': all hours (from ' + esc(a.arrived) + ')</span>' : '') + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td></tr>'; }).join('');
+    } else if (kind === 'do') {
+      t += '<th style="text-align:left;">Date</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th>Hours</th>';
+      body = r.dayOff.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.min ? a.min / 60 : '') + '</td></tr>'; }).join('') +
+        '<tr><td colspan="4" style="text-align:left; color:var(--text-muted);">No shift on these days. If they were meant to work, click Pay as overtime. If the shift is wrong, fix it on Daily Attendance (click the name).</td></tr>';
     } else if (kind === 'hw') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Holiday</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th style="text-align:left;">What to check</th>';
       body = r.holWorked.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td style="text-align:left;">Not on the holiday team, so no overtime is worked out. If they were meant to work, add them with Plan who works (Daily Attendance on that date).</td></tr>'; }).join('');
@@ -4332,7 +4349,7 @@
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">What to check</th>';
       body = r.noClockOut.map(function (dt) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(dt)) + '</td><td style="text-align:left;">Clocked in but not out: no overtime is worked out for this day. Add a manual clock-out in BioTime if they stayed late.</td></tr>'; }).join('');
     }
-    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out', nci: 'no clock-in', hw: 'holiday clock-in' })[kind];
+    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + ({ absent: 'absent', late: 'late in', ot: 'overtime', nco: 'no clock-out', nci: 'no clock-in', hw: 'holiday clock-in', do: 'worked on a day off' })[kind];
     document.getElementById('casual-weeks-sub').textContent = 'Clock-ins ' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ', for ' + monthLabel(d.month) + ' pay.';
     document.getElementById('casual-weeks-body').innerHTML = t + '</tr></thead><tbody>' + body + '</tbody></table>';
     document.getElementById('casual-weeks-modal').classList.add('active');
@@ -5018,21 +5035,21 @@
     var emp = selectedAdjEmployee();
 
     if (isOvertime) {
-      var hours = Number(document.getElementById('adj-hours').value) || 0;
+      var hours = Number(document.getElementById('adj-hours').value) || 0;   // priced at OVERTIME_RATE_MULTIPLIER (1.5x, §79)
       var hint = document.getElementById('adj-hours-rate-hint');
       if (!emp || emp.hourRate === null || emp.hourRate === undefined) {
         hint.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
         amountInput.value = '';
         return;
       }
-      var amount = Math.round(hours * emp.hourRate * 100) / 100;
+      var amount = Math.round(hours * emp.hourRate * OVERTIME_RATE_MULTIPLIER * 100) / 100;
       amountInput.value = amount ? amount.toFixed(2) : '';
       // Both the rate and the total show to the cent here (money() rounds to
       // whole Rand, which made this look like it didn't add up -- e.g.
       // "5.7 hrs x R33/h = R190" when the real rate was R33.00-something and
       // the real total R188.10; the underlying calc above was always exact,
       // only the display was misleading).
-      hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h = R ' + moneyExact(amount);
+      hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h × ' + OVERTIME_RATE_MULTIPLIER + ' = R ' + moneyExact(amount);
       return;
     }
 
@@ -5097,7 +5114,7 @@
           errEl.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
           return;
         }
-        amount = Math.round(hours * emp.hourRate * 100) / 100;
+        amount = Math.round(hours * emp.hourRate * OVERTIME_RATE_MULTIPLIER * 100) / 100;
       }
     } else if (type === 'LateIn') {
       // Minutes go under the same generic "hours" param (stored in the Hours column).
