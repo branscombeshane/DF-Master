@@ -2017,7 +2017,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-14.165-overtime-1-5';
+  var FRONTEND_BUILD = '2026-11-14.166-attd-refresh';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6109,18 +6109,26 @@
   var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', 'no-clock-in': 'No clock-in', 'holiday-worked': 'Clocked in (not planned)', off: 'Off', 'worked-off': 'Worked on day off' };
   var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', 'no-clock-in': 'var(--warning)', 'holiday-worked': 'var(--warning)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
   function attdShiftDate_(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
-  function loadAttendanceDay_(date) {
+  function loadAttendanceDay_(date, quiet) {
     if (!hasSection('payroll')) return Promise.resolve();
     var status = document.getElementById('attd-status');
-    flashStatus(status, 'Loading…', 'save-status', 0);
+    if (!quiet) flashStatus(status, 'Loading…', 'save-status', 0);
     var params = {}; if (date || attdState.date) params.date = date || attdState.date;
     return callApi('getAttendanceDay', params).then(function (res) {
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load attendance', 'save-status err', 8000); return; }
       flashStatus(status, '', 'save-status', 0);
-      attdState.data = res; attdState.date = res.date;
+      attdState.data = res; attdState.date = res.date; attdState.loadedAt = new Date();
       renderAttendanceDay_();
-    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+    }).catch(function () { if (!quiet) flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
+  // §80: while Daily Attendance shows today, reload every 5 minutes (not while a pop-up is open or the tab is hidden)
+  var ATTD_REFRESH_MS_ = 5 * 60 * 1000;
+  setInterval(function () {
+    var d = attdState.data, panel = document.querySelector('#payroll-sub-attendance [data-attpanel="daily"]');
+    if (!d || d.date !== d.today || document.hidden || !panel || panel.offsetParent === null) return;
+    if (document.querySelector('.modal-overlay.active')) return;
+    loadAttendanceDay_(d.date, true);
+  }, ATTD_REFRESH_MS_);
   function attdChip_(r) {
     var label = ATTD_LABEL[r.status] || r.status;
     if (r.status === 'leave' && r.leaveType) label = r.leaveType;
@@ -6133,7 +6141,15 @@
     var d = attdState.data; if (!d) return;
     document.getElementById('attd-date').value = d.date;
     var isToday = d.date === d.today;
-    document.getElementById('attd-note').innerHTML = (d.lastSync ? 'Last data from BioTime: ' + esc(casualStamp_(d.lastSync)) + '. ' : '') + 'Grace period ' + d.graceMin + ' minutes.' + (isToday ? ' Today: people still on shift show as <em>In</em>.' : '');
+    var stale = d.syncAgeMin === null || d.syncAgeMin === undefined ? !d.lastSync : d.syncAgeMin > d.syncStaleMin;
+    var hm = function (dt) { return ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2); };
+    document.getElementById('attd-note').innerHTML = (stale && isToday
+        ? '<div style="margin:0 0 6px; padding:8px 12px; border-radius:8px; background:color-mix(in srgb, var(--critical) 12%, transparent); color:var(--critical); font-weight:700;">' +
+          (d.lastSync ? 'BioTime has not sent data since ' + esc(casualStamp_(d.lastSync)) : 'No data has come from BioTime yet') +
+          '. Clock-ins after that are missing, so people may show as not in. Check the office PC (on, awake, network) and its sync.</div>'
+        : '') +
+      (d.lastSync ? 'Last data from BioTime: ' + esc(casualStamp_(d.lastSync)) + '. ' : '') + 'Grace period ' + d.graceMin + ' minutes.' +
+      (isToday ? ' Today: people still on shift show as <em>In</em>. This page refreshes every 5 minutes' + (attdState.loadedAt ? ' (updated ' + hm(attdState.loadedAt) + ')' : '') + '; the office PC sends clock-ins every 15 minutes.' : '');
     // public holiday (§78): plan the team that works it
     var hb = document.getElementById('attd-holiday');
     if (d.holiday) {
