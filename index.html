@@ -2019,7 +2019,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-14.168-discharge-rerun';
+  var FRONTEND_BUILD = '2026-11-14.169-run-errors';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2264,7 +2264,11 @@
   // locked response, so a caller's normal `if (!res.ok) ...` handling just
   // shows the "payroll already run" message — there's no separate cancel
   // path callers need to handle.
+  // §85: once the Owner password has been accepted it is reused for 2 minutes (this browser tab only), so a
+  // follow-up step (e.g. "run anyway with a R0 salary") does not ask again and look like a loop.
+  var ownerPwCache_ = null;
   function callApiWithOwnerUnlock(action, params) {
+    if (ownerPwCache_ && Date.now() - ownerPwCache_.at < 2 * 60 * 1000 && !(params && params.ownerPassword)) params = Object.assign({}, params, { ownerPassword: ownerPwCache_.pw });
     return callApi(action, params).then(function (res) {
       if (!res || res.locked !== true) return res;
       return promptOwnerUnlockAndRetry_(action, params, res);
@@ -2313,6 +2317,7 @@
             input.focus();
             return;
           }
+          ownerPwCache_ = { pw: pw, at: Date.now() };
           cleanup();
           resolve(res2);
         });
@@ -7622,11 +7627,15 @@
         loadIrp5();
         loadPayroll(); loadAdjustments(); // lock badges / who is locked now
         loadRerunNeeded_(); // the re-run notice clears for the people just run
+      } else if (!res.locked) {
+        // §85: stays on screen (it used to vanish after 5 s, so after the password it looked like nothing happened)
+        flashStatus(status, 'Not run: ' + (res.error || 'Failed'), 'save-status err', 0);
+        window.alert('Payroll was NOT run.\n\n' + (res.error || 'Failed'));
       } else {
-        flashStatus(status, res.error || 'Failed', 'save-status err', 5000);
+        flashStatus(status, 'Not run (Owner password not given).', 'save-status err', 8000);
       }
     }).catch(function () {
-      flashStatus(status, 'Network error', 'save-status err', 5000);
+      flashStatus(status, 'Network error', 'save-status err', 0);
     });
   });
 
