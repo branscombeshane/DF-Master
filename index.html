@@ -1571,7 +1571,7 @@
         </div>
         <div class="panel" data-attpanel="leave">
           <h2>Leave taken</h2>
-          <p class="panel-sub">Approved leave for the year, per employee: leave captured here with <em>+ Capture leave</em> (approved when saved, with the manager who signed it off) plus the leave history from BioTime. A day entered in both is counted once. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless the Owner sets otherwise in the <em>Entitlement</em> column. Days carried over from last year are not included. Click a name to see every leave record.</p>
+          <p class="panel-sub">Approved leave for the year, per employee: leave captured here with <em>+ Capture leave</em> (approved when saved, with the manager who signed it off) plus the leave history from BioTime. A day entered in both is counted once. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless the Owner sets otherwise in the <em>Entitlement</em> column. Leave policy: the leave year is the calendar year and unused leave is forfeited on 31 December. In the year someone starts, leave builds up at 1.25 days per completed month (for 15 days); from 1 January of the next year they get the full entitlement. <em>Available now</em> is what has built up so far minus what was used. Click a name to see every leave record.</p>
           <div class="toolbar">
             <label for="leave-year" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Year</label>
             <select id="leave-year"></select>
@@ -2016,7 +2016,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-13.162-missed-clockin';
+  var FRONTEND_BUILD = '2026-11-14.163-leave-policy';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6257,11 +6257,14 @@
       renderLeaveTaken_();
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
-  function leaveDays_(n) { n = Number(n) || 0; return (Math.round(n * 10) / 10).toString(); }
+  function leaveDays_(n) { n = Number(n) || 0; return (Math.round(n * 100) / 100).toString(); }   // 2 decimals: 1.25-day steps (§77)
+  // §77: what the person can take now (first calendar year: only what has built up so far)
+  function leaveAvail_(pp) { return typeof pp.availableNow === 'number' ? pp.availableNow : pp.annualLeft; }
   function leaveBucket_(pp) {
-    if (pp.annualLeft < 0) return 'over';
-    if (pp.annualLeft <= 3) return 'little';
-    if (pp.annualLeft >= 10) return 'lots';
+    var av = leaveAvail_(pp);
+    if (av < 0) return 'over';
+    if (av <= 3) return 'little';
+    if (av >= 10) return 'lots';
     return '';
   }
   function renderLeaveTaken_() {
@@ -6301,18 +6304,21 @@
       if (f !== 'all' && f !== 'dec' && (!pp.linked || leaveBucket_(pp) !== f)) return false;
       return !q || pp.name.toLowerCase().indexOf(q) !== -1;
     });
-    if (leaveState.filter === 'lots') list.sort(function (a, b) { return b.annualLeft - a.annualLeft; });
+    if (leaveState.filter === 'lots') list.sort(function (a, b) { return leaveAvail_(b) - leaveAvail_(a); });
     var entCell = function (pp) {
       if (!pp.linked) return '<span class="hint" style="margin:0;">not linked</span>';
-      if (state.role !== 'owner') return pp.entitlement + ' days';   // Owner only (.154)
-      var opts = [15, 20]; if (opts.indexOf(pp.entitlement) === -1) opts.push(pp.entitlement);
-      return '<select data-leave-ent="' + esc(pp.employeeId) + '">' + opts.map(function (o) { return '<option value="' + o + '"' + (o === pp.entitlement ? ' selected' : '') + '>' + o + ' days</option>'; }).join('') + '</select>';
+      var full = typeof pp.fullEntitlement === 'number' ? pp.fullEntitlement : pp.entitlement;
+      var first = pp.firstYear ? '<div class="hint" style="margin:2px 0 0; white-space:nowrap;" title="Started ' + esc(pp.startDate) + ': ' + pp.monthlyAccrual + ' days per completed month until 31 Dec; ' + leaveDays_(pp.accrued) + ' built up so far">First year: ' + leaveDays_(pp.entitlement) + ' this year</div>' : '';
+      if (state.role !== 'owner') return full + ' days' + first;   // Owner only (.154)
+      var opts = [15, 20]; if (opts.indexOf(full) === -1) opts.push(full);
+      return '<select data-leave-ent="' + esc(pp.employeeId) + '">' + opts.map(function (o) { return '<option value="' + o + '"' + (o === full ? ' selected' : '') + '>' + o + ' days</option>'; }).join('') + '</select>' + first;
     };
     var table = document.getElementById('leave-table');
-    table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Entitlement</th><th>Annual used</th><th>Annual left</th><th>Sick</th><th>Family resp.</th><th>Other</th><th>In December</th></tr></thead><tbody>' +
+    table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Entitlement</th><th>Annual used</th><th title="Built up so far minus used. Unused leave is forfeited on 31 December.">Available now</th><th>Sick</th><th>Family resp.</th><th>Other</th><th>In December</th></tr></thead><tbody>' +
       (list.length ? list.map(function (pp, i) {
-        var left = pp.linked ? leaveDays_(pp.annualLeft) : '—';
-        var leftStyle = pp.annualLeft < 0 ? 'color:var(--critical); font-weight:700;' : (pp.annualLeft >= 10 ? 'font-weight:700;' : '');
+        var av = leaveAvail_(pp);
+        var left = pp.linked ? leaveDays_(av) : '—';
+        var leftStyle = av < 0 ? 'color:var(--critical); font-weight:700;' : (av >= 10 ? 'font-weight:700;' : '');
         return '<tr><td style="text-align:left;"><button type="button" class="linklike" data-leave-person="' + d.people.indexOf(pp) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(pp.name) + '</button></td>' +
           '<td style="text-align:left;">' + esc(pp.department || '') + '</td><td>' + entCell(pp) + '</td><td>' + leaveDays_(pp.annual) + '</td><td style="' + leftStyle + '">' + left + '</td>' +
           '<td>' + leaveDays_(pp.sick) + '</td><td>' + leaveDays_(pp.family) + '</td><td>' + leaveDays_(pp.other) + '</td><td>' + (pp.decemberDays ? leaveDays_(pp.decemberDays) : '') + '</td></tr>';
@@ -6337,7 +6343,8 @@
     if (!pp) return;
     var fmt = function (s) { return esc(casualStamp_(s.length === 16 ? s + ':00' : s)); };
     document.getElementById('casual-weeks-title').textContent = pp.name + ' — leave ' + leaveState.data.year;
-    document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department || '') + (pp.linked ? ' · annual leave ' + leaveDays_(pp.annual) + ' of ' + pp.entitlement + ' days used, ' + leaveDays_(pp.annualLeft) + ' left' : ' · not linked to a payroll employee yet');
+    document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department || '') + (pp.linked ? ' · annual leave ' + leaveDays_(pp.annual) + ' of ' + leaveDays_(pp.entitlement) + ' days used, ' + leaveDays_(leaveAvail_(pp)) + ' available now' +
+        (pp.firstYear ? ' · first year (started ' + esc(pp.startDate) + '): ' + pp.monthlyAccrual + ' days per completed month, ' + leaveDays_(pp.accrued) + ' built up so far' : '') : ' · not linked to a payroll employee yet');
     document.getElementById('casual-weeks-body').innerHTML = pp.records.length
       ? '<table class="data-table"><thead><tr><th style="text-align:left;">From</th><th style="text-align:left;">To</th><th style="text-align:left;">Type</th><th>Days counted</th><th style="text-align:left;">Source</th><th></th></tr></thead><tbody>' +
         pp.records.map(function (r) {
