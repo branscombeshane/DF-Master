@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.185-missed-clockin';
+  var FRONTEND_BUILD = '2026-11-16.186-faster-attendance';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2314,6 +2314,8 @@
           forceLogout();
         }
         if (res && res.ok && res.rerunNeeded && res.rerunNeeded.month) { showRerunToast_(res.rerunNeeded); loadRerunNeeded_(); }
+        // §101: Attendance sections are kept 5 minutes; any change (not a read) makes them load again when next shown
+        if (res && res.ok && !/^(get|list|login|sageStatus)/.test(action)) state.attLoaded = {};
         return res;
       })
       .finally(function () {
@@ -2875,13 +2877,44 @@
     });
     // §82: a section loaded in the last minute (same company) is shown as it is, no reload; Daily Attendance
     // still refreshes itself every 5 minutes, and Today / the date / Prev / Next always load.
-    var seen = state.attLoaded && state.attLoaded[key];
-    if (seen && seen.group === state.companyGroup && Date.now() - seen.at < ATT_PANEL_FRESH_MS_) return;
-    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, absent: loadAbsences_, decplan: loadDecPlan_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
-    var pr = loader ? loader() : null;
-    if (pr && pr.then) pr.then(function () { state.attLoaded = state.attLoaded || {}; state.attLoaded[key] = { at: Date.now(), group: state.companyGroup }; });
+    if (attPanelFresh_(key)) return;
+    // §101: a background load of this section is already on its way: wait for it instead of asking again
+    var inflight = state.attInflight && state.attInflight[key];
+    if (inflight && inflight.group === state.companyGroup) return;
+    attLoadPanel_(key, false);
   }
-  var ATT_PANEL_FRESH_MS_ = 60 * 1000;
+  var ATT_PANEL_FRESH_MS_ = 5 * 60 * 1000;   // §101: was 1 minute
+  var ATT_LOADERS_ = function () { return { daily: loadAttendanceDay_, leave: loadLeaveTaken_, absent: loadAbsences_, decplan: loadDecPlan_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }; };
+  function attPanelFresh_(key) {
+    var seen = state.attLoaded && state.attLoaded[key];
+    return !!(seen && seen.group === state.companyGroup && Date.now() - seen.at < ATT_PANEL_FRESH_MS_);
+  }
+  function attLoadPanel_(key, quiet) {
+    var loader = ATT_LOADERS_()[key]; if (!loader) return null;
+    var group = state.companyGroup, was = silentApi_;
+    if (quiet) silentApi_ = true;   // background: no click-loading overlay
+    var pr; try { pr = loader(); } finally { silentApi_ = was; }
+    if (!pr || !pr.then) return null;
+    state.attInflight = state.attInflight || {}; state.attInflight[key] = { group: group };
+    pr.then(function () {
+      state.attLoaded = state.attLoaded || {};
+      if (state.companyGroup === group) state.attLoaded[key] = { at: Date.now(), group: group };
+    }, function () {}).then(function () { if (state.attInflight) delete state.attInflight[key]; attPrefetchNext_(); });
+    return pr;
+  }
+  // §101 speed: once the section on screen has loaded, the other Attendance sections load quietly one after the
+  // other, so switching between them shows them at once (Shane, 2026-11-16: "a lot of loading time").
+  var ATT_PREFETCH_ORDER_ = ['leave', 'absent', 'decplan', 'settings', 'link'];
+  function attPrefetchNext_() {
+    var sec = document.getElementById('payroll-sub-attendance');
+    if (state.attPrefetching || !sec || !sec.offsetParent) return;   // only while Attendance is on screen
+    var next = ATT_PREFETCH_ORDER_.filter(function (k) {
+      return k !== state.attPanel && !attPanelFresh_(k) && !(state.attInflight && state.attInflight[k]);
+    })[0];
+    if (!next) return;
+    state.attPrefetching = true;
+    setTimeout(function () { state.attPrefetching = false; if (!attPanelFresh_(next) && !(state.attInflight && state.attInflight[next])) attLoadPanel_(next, true); }, 300);
+  }
   // Staff Management (.150): Dashboard | Payroll (Roster, Pay Adjustments, Reports, Casuals) | Attendance.
   var PAYROLL_GROUP_KEYS_ = ['roster', 'adjustments', 'reports', 'casuals'];
   function payrollGroupOf_(key) { return PAYROLL_GROUP_KEYS_.indexOf(key) !== -1 ? 'payroll' : key; }
