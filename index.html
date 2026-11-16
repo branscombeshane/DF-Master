@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.179-cpt-shifts';
+  var FRONTEND_BUILD = '2026-11-16.181-shift-time-fix';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7119,7 +7119,7 @@
         d.employees.map(function (e) {
           var taken = e.linkedTo && e.linkedTo !== pp.empCode;
           return '<option value="' + esc(e.id) + '"' + (e.id === pp.employeeId ? ' selected' : '') + (taken ? ' disabled' : '') + '>' +
-            esc(e.name) + (e.employeeNumber ? ' (#' + esc(e.employeeNumber) + ')' : '') + ' · ' + esc(e.department) + (taken ? ' — linked to ' + esc(e.linkedTo) : '') + '</option>';
+            esc(e.name) + (e.employeeNumber ? ' (#' + esc(e.employeeNumber) + ')' : '') + ' · ' + (e.company ? esc(e.company) + ' · ' : '') + esc(e.department) + (taken ? ' — linked to ' + esc(e.linkedTo) : '') + '</option>';
         }).join('');
     };
     var table = document.getElementById('att-table');
@@ -7136,7 +7136,8 @@
         flashStatus(status, 'Saving…', 'save-status', 0);
         callApi('setAttendanceLink', { empCode: sel.getAttribute('data-att-code'), employeeId: sel.value }).then(function (res) {
           if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); sel.disabled = false; renderAttendanceLinks_(); return; }
-          flashStatus(status, 'Saved', 'save-status ok', 2500);
+          var picked = (attState.data.employees || []).filter(function (x) { return x.id === sel.value; })[0];
+          flashStatus(status, picked && picked.company ? 'Saved: ' + picked.name + ' now shows under ' + picked.company + ' (attendance, leave, pay)' : 'Saved', 'save-status ok', picked && picked.company ? 8000 : 2500);
           attState.data = res;
           renderAttendanceLinks_();
         }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); sel.disabled = false; });
