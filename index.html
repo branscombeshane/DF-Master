@@ -2077,7 +2077,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.174-leave-requests';
+  var FRONTEND_BUILD = '2026-11-16.175-leave-msg';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6319,7 +6319,7 @@
 
   // ---------------- December leave requests on WhatsApp (SETUP §91) ----------------
   var lrState = { data: null, filter: '', search: '', ticked: {}, tplChecked: false };
-  var LR_TPL_TEXT_ = 'Hi {{1}}, we are planning December leave. You have {{2}} annual leave days left this year (unused leave is lost on 31 December). Tap the button to choose the days you would like off between 1 December and 8 January. Please choose by {{3}}.';
+  var LR_TPL_TEXT_ = 'Hi {{1}}, we are planning December leave. You have {{2}} annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your 2027 leave. Tap the button below to choose the days you would like off between 1 December and 8 January. Please choose by {{3}}. Thank you.';
   function loadLeaveReqs_() {
     var st = document.getElementById('lr-status'); if (!st) return Promise.resolve();
     flashStatus(st, 'Loading leave requests…', 'save-status', 0);
@@ -6410,7 +6410,7 @@
         callApi('getLeaveRequestLink', { employeeId: id, year: d.year }).then(function (res) {
           b.disabled = false; b.textContent = label;
           if (!res || !res.ok) { flashStatus(document.getElementById('lr-status'), (res && res.error) || 'Could not make the link', 'save-status err', 8000); return; }
-          var msg = 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
+          var msg = 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your ' + (d.year + 1) + ' leave. Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
           if (wa) {
             if (!res.phone) { flashStatus(document.getElementById('lr-status'), res.name + ' has no valid cell number: use Copy link.', 'save-status err', 8000); return; }
             window.open('https://wa.me/' + res.phone + '?text=' + encodeURIComponent(msg), '_blank');
