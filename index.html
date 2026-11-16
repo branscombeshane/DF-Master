@@ -961,6 +961,11 @@
         <select id="payroll-department"></select>
       </div>
       <div class="field">
+        <label>Shift *</label>
+        <select id="payroll-shift"></select>
+        <div class="hint" id="payroll-shift-hint">Every employee needs a shift: it decides their clock-in times, late, absent and overtime. A change here applies from today; for a few days only, use Attendance → Daily Attendance.</div>
+      </div>
+      <div class="field">
         <label>Employee number</label>
         <input type="text" id="payroll-empnum" disabled>
         <div class="hint" id="payroll-empnum-hint">Assigned automatically when you save a new employee.</div>
@@ -1592,6 +1597,7 @@
           <p class="panel-sub">Everything about shifts, holidays and clock-in fixes is set here; BioTime only passes on clock-ins from the machines. South African public holidays are filled in automatically every year; add company days off yourself. Shift times and shifts can only be changed by the Owner, because they decide Late in and Overtime. People are put on a shift (also just for a few days) and missed clock-ins are added by clicking their name in Daily Attendance.</p>
           <div class="toolbar"><span class="save-status" id="atts-status"></span></div>
           <div id="atts-cutover" style="margin:0 0 14px;"></div>
+          <div id="atts-noshift" style="margin:0 0 14px;"></div>
           <h3 style="font-size:14px; margin:6px 0 6px;">Public holidays</h3>
           <div class="toolbar">
             <select id="atts-year" aria-label="Year"></select>
@@ -1604,6 +1610,21 @@
           <div style="overflow-x:auto;"><table class="data-table" id="atts-tt"></table></div>
           <h3 style="font-size:14px; margin:18px 0 6px;">Shifts (which shift time on which day)</h3>
           <div style="overflow-x:auto;"><table class="data-table" id="atts-sh"></table></div>
+          <h3 style="font-size:14px; margin:18px 0 6px;">Shift times for a period</h3>
+          <div class="hint" style="margin:0 0 6px;">A department works other shift times between two dates on some weekdays (only on days people have a shift), e.g. Veg Night 12:00–22:00 Monday to Friday over the festive season.</div>
+          <div style="overflow-x:auto;"><table class="data-table" id="atts-seasons"></table></div>
+        </div>
+        <div class="panel" data-attpanel="decplan">
+          <h2>December planner</h2>
+          <p class="panel-sub">How many people each department needs every day from 1 December to 8 January, who is booked (has a shift that day and is not on leave) and where you are short. <strong>Needed</strong> starts as the department's normal number for that weekday (four normal weeks in November), scaled by last year's sales for that week compared with last year's normal weeks (October–November). Click any cell to see who is booked or on leave and to set your own number. Closed on 25 December and 1 January.</p>
+          <div class="toolbar">
+            <select id="dp-year" aria-label="Year"></select>
+            <span class="save-status" id="dp-status"></span>
+          </div>
+          <div id="dp-note" style="margin:0 0 10px; font-size:12px; color:var(--text-muted);"></div>
+          <div id="dp-tiles"></div>
+          <div id="dp-board" style="overflow-x:auto; border:1px solid var(--border); border-radius:10px;"></div>
+          <div style="margin-top:8px; font-size:12px; color:var(--text-muted);"><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--good) 22%, transparent);"></span> covered &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--warning) 28%, transparent);"></span> 1–2 short &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--critical) 24%, transparent);"></span> 3 or more short &nbsp; Each cell: booked / needed. A dot means someone set the number by hand.</div>
         </div>
         <div class="panel" data-attpanel="link">
           <h2>Attendance — BioTime link-up</h2>
@@ -2019,7 +2040,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.172-veg-night-holidays';
+  var FRONTEND_BUILD = '2026-11-16.173-dec-planner-shifts';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2041,7 +2062,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -2785,6 +2806,7 @@
   var ATT_PANELS_ = [
     { key: 'daily', label: 'Daily Attendance' },
     { key: 'leave', label: 'Leave Taken' },
+    { key: 'decplan', label: 'December Planner' },
     { key: 'settings', label: 'Shifts & Holidays' },
     { key: 'link', label: 'BioTime Link-up' },
     { key: 'push', label: 'Send to BioTime', ownerOnly: true }
@@ -2802,7 +2824,7 @@
     // still refreshes itself every 5 minutes, and Today / the date / Prev / Next always load.
     var seen = state.attLoaded && state.attLoaded[key];
     if (seen && seen.group === state.companyGroup && Date.now() - seen.at < ATT_PANEL_FRESH_MS_) return;
-    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
+    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, decplan: loadDecPlan_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
     var pr = loader ? loader() : null;
     if (pr && pr.then) pr.then(function () { state.attLoaded = state.attLoaded || {}; state.attLoaded[key] = { at: Date.now(), group: state.companyGroup }; });
   }
@@ -6028,7 +6050,7 @@
     return callApi('getAttendanceSettings', params).then(function (res) {
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
       flashStatus(status, '', 'save-status', 0);
-      attsState.data = res; attsState.year = res.year; renderAttSettings_();
+      attsState.data = res; attsState.year = res.year; renderAttSettings_(); renderAttSeasons_();
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
   function attsCall_(action, params, btn, okText) {
@@ -6039,7 +6061,7 @@
       if (btn) { btn.disabled = false; btn.textContent = label; }
       if (!res || !res.ok) { if (btn) { try { btn.scrollIntoView({ block: 'nearest' }); } catch (e) {} alert((res && res.error) || 'Could not save'); } }
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return false; }
-      attsState.data = res; attsState.year = res.year; renderAttSettings_();
+      attsState.data = res; attsState.year = res.year; renderAttSettings_(); renderAttSeasons_();
       flashStatus(document.getElementById('atts-status'), okText || 'Saved', 'save-status ok', 3000);
       return true;
     }).catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } flashStatus(status, 'Network error', 'save-status err', 6000); return false; });
@@ -6082,7 +6104,7 @@
       return '<tr><td style="text-align:left;">' + (isNew ? '<input type="text" data-tt-name placeholder="New, e.g. PACKHOUSE 06H00" maxlength="40" style="max-width:220px;">' : esc(t.name)) + '</td>' +
         '<td>' + (ed ? '<input type="time" data-tt-in value="' + esc(t.inT) + '" style="max-width:120px;">' : esc(t.inT)) + '</td>' +
         '<td>' + (ed ? '<input type="time" data-tt-out value="' + esc(t.outT) + '" style="max-width:120px;">' : esc(t.outT) + (t.outT <= t.inT ? ' (+1)' : '')) + '</td>' +
-        '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + (isNew ? '' : (t.usedIn.length ? t.usedIn.length + ' shift' + (t.usedIn.length === 1 ? '' : 's') : 'not used')) + '</td>' +
+        '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + (isNew ? '' : (t.usedIn.length ? t.usedIn.length + ' shift' + (t.usedIn.length === 1 ? '' : 's') + ((t.alsoUsed || []).length ? ', ' + esc(t.alsoUsed.join(', ')) : '') : (t.alsoUsed || []).length ? esc(t.alsoUsed.join(', ')) : 'not used' + (ed ? ' <button class="btn secondary small" type="button" data-tt-del="' + esc(t.name) + '">Delete</button>' : ''))) + '</td>' +
         '<td>' + (ed ? '<button class="btn small" type="button" data-tt-save="' + esc(key) + '">' + (isNew ? 'Add' : 'Save') + '</button>' : '') + '</td></tr>';
     };
     document.getElementById('atts-tt').innerHTML = '<thead><tr><th style="text-align:left;">Shift time</th><th>Start</th><th>End</th><th style="text-align:left;">Used in</th><th></th></tr></thead><tbody>' +
@@ -6104,7 +6126,7 @@
       var key = isNew ? '__new' : x.name, open = ed && editing === key;
       return '<tr' + (!isNew && !x.active ? ' style="opacity:.55;"' : '') + '><td style="text-align:left; min-width:180px;">' + (isNew ? '<input type="text" data-sh-name placeholder="New shift name" maxlength="80" style="width:100%;">' : esc(x.name)) + '</td>' +
         x.days.map(function (dd, i) { return '<td style="text-align:left; font-size:11.5px;">' + (open ? '<select data-sh-day="' + i + '" style="width:100%; min-width:90px; font-size:11.5px; padding:5px 4px;">' + ttOpts(dd) + '</select>' : (dd ? '<span title="' + esc(dd) + '" style="white-space:nowrap;">' + esc(ttShort(dd)) + '</span>' : '<span style="color:var(--text-muted);">Off</span>')) + '</td>'; }).join('') +
-        '<td>' + (isNew ? '' : x.people) + '</td>' +
+        '<td>' + (isNew ? '' : x.people) + (ed && !isNew && !x.everUsed ? ' <button class="btn secondary small" type="button" data-sh-del="' + esc(x.name) + '" title="Nobody has ever been on this shift">Delete</button>' : '') + '</td>' +
         '<td style="white-space:nowrap;">' + (open ? '<label style="font-size:12px;"><input type="checkbox" data-sh-active' + (isNew || x.active ? ' checked' : '') + '> in use</label>' : (x.active ? '' : '<span style="font-size:12px;">not in use</span>')) + '</td>' +
         '<td style="white-space:nowrap;">' + (!ed ? '' : open ? '<button class="btn small" type="button" data-sh-save="' + esc(key) + '">' + (isNew ? 'Add' : 'Save') + '</button> <button class="btn secondary small" type="button" data-sh-cancel>Cancel</button>'
           : '<button class="btn secondary small" type="button" data-sh-edit="' + esc(key) + '">' + (isNew ? '+ New shift' : 'Edit') + '</button>') + '</td></tr>';
@@ -6131,7 +6153,134 @@
       });
     });
   }
+  // §89 shift times for a period (Owner edits)
+  function renderAttSeasons_() {
+    var d = attsState.data; if (!d) return;
+    // §90 delete never-used shifts / shift times; list employees without a shift
+    Array.prototype.forEach.call(document.querySelectorAll('[data-sh-del]'), function (b) {
+      b.addEventListener('click', function () { if (confirm('Delete the shift "' + b.getAttribute('data-sh-del') + '"? Nobody has ever been on it.')) attsCall_('deleteAttSetting', { kind: 'shift', name: b.getAttribute('data-sh-del') }, b, 'Shift deleted'); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tt-del]'), function (b) {
+      b.addEventListener('click', function () { if (confirm('Delete the shift time ' + b.getAttribute('data-tt-del') + '? No shift uses it.')) attsCall_('deleteAttSetting', { kind: 'timetable', name: b.getAttribute('data-tt-del') }, b, 'Shift time deleted'); });
+    });
+    var ns = document.getElementById('atts-noshift');
+    if (ns) ns.innerHTML = (d.noShift || []).length
+      ? '<div style="padding:10px 14px; border-radius:10px; border:1px solid var(--warning); background:color-mix(in srgb, var(--warning) 10%, transparent); font-size:13px;"><strong>' + d.noShift.length + ' current employee' + (d.noShift.length === 1 ? ' has' : 's have') + ' no shift</strong>, so attendance, late, absent and the December planner skip them. Give them one in Staff Management → Payroll → Roster → Edit (or Daily Attendance → click the name).<div style="margin-top:6px; line-height:1.6;">' +
+        d.noShift.map(function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.department) + (x.why === 'no employee number' ? ' · no employee number' : '') + '</span>'; }).join('<br>') + '</div></div>'
+      : '';
+    var ed = d.canEditShifts, wdn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var rows = (d.seasons || []).map(function (x) {
+      return '<tr><td style="text-align:left;">' + esc(x.department) + '</td><td style="text-align:left;">' + esc(x.from) + ' – ' + esc(x.to) + '</td><td style="text-align:left;">' + x.days.map(function (n) { return wdn[n]; }).join(', ') + '</td>' +
+        '<td style="text-align:left;">' + esc(x.tt) + '</td><td style="text-align:left; color:var(--text-muted);">' + esc(x.note) + '</td><td>' + (ed ? '<button class="btn secondary small" type="button" data-season-del="' + esc(x.id) + '">Remove</button>' : '') + '</td></tr>';
+    }).join('');
+    var add = ed ? '<tr><td style="text-align:left;"><select id="ssn-dept">' + (d.departments || []).map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') + '</select></td>' +
+      '<td style="text-align:left; white-space:nowrap;"><input type="date" id="ssn-from"> – <input type="date" id="ssn-to"></td>' +
+      '<td style="text-align:left; white-space:nowrap;">' + [1, 2, 3, 4, 5, 6, 0].map(function (n) { return '<label style="font-size:12px; margin-right:6px;"><input type="checkbox" data-ssn-day="' + n + '"' + (n >= 1 && n <= 5 ? ' checked' : '') + '> ' + wdn[n] + '</label>'; }).join('') + '</td>' +
+      '<td style="text-align:left;"><select id="ssn-tt">' + d.timetables.map(function (t) { return '<option>' + esc(t.name) + '</option>'; }).join('') + '</select></td>' +
+      '<td style="text-align:left;"><input type="text" id="ssn-note" placeholder="Note" maxlength="80" style="max-width:150px;"></td>' +
+      '<td><button class="btn small" type="button" id="ssn-add">Add</button></td></tr>' : '';
+    document.getElementById('atts-seasons').innerHTML = '<thead><tr><th style="text-align:left;">Department</th><th style="text-align:left;">Dates</th><th style="text-align:left;">Days</th><th style="text-align:left;">Shift time</th><th style="text-align:left;">Note</th><th></th></tr></thead><tbody>' +
+      (rows || (ed ? '' : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">None.</td></tr>')) + add + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-season-del]'), function (b) {
+      b.addEventListener('click', function () { if (confirm('Remove this period shift?')) attsCall_('saveShiftSeason', 'deleteAttSetting', { id: b.getAttribute('data-season-del'), remove: '1' }, b, 'Removed'); });
+    });
+    var ab = document.getElementById('ssn-add');
+    if (ab) ab.addEventListener('click', function () {
+      var days = Array.prototype.filter.call(document.querySelectorAll('[data-ssn-day]'), function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-ssn-day'); });
+      attsCall_('saveShiftSeason', 'deleteAttSetting', { department: document.getElementById('ssn-dept').value, from: document.getElementById('ssn-from').value, to: document.getElementById('ssn-to').value,
+        weekdays: days.join(','), timetable: document.getElementById('ssn-tt').value, note: document.getElementById('ssn-note').value }, ab, 'Period shift added');
+    });
+  }
+
+  // ---------------- December planner (SETUP §89) ----------------
+  var dpState = { data: null, year: null, onlyShort: false };
+  function loadDecPlan_(year) {
+    var status = document.getElementById('dp-status');
+    flashStatus(status, 'Loading the December plan…', 'save-status', 0);
+    var params = {}; if (year || dpState.year) params.year = year || dpState.year;
+    return callApi('getDecPlanner', params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
+      flashStatus(status, '', 'save-status', 0);
+      dpState.data = res; dpState.year = res.year; renderDecPlan_();
+    }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
+  }
+  function dpColor_(c) {
+    if (c.closed) return 'var(--surface-1)';
+    if (c.short <= 0) return 'color-mix(in srgb, var(--good) 22%, transparent)';
+    return c.short <= 2 ? 'color-mix(in srgb, var(--warning) 28%, transparent)' : 'color-mix(in srgb, var(--critical) 24%, transparent)';
+  }
+  function renderDecPlan_() {
+    var d = dpState.data; if (!d) return;
+    var ys = document.getElementById('dp-year'), thisY = d.year;
+    ys.innerHTML = [thisY - 1, thisY, thisY + 1].map(function (y) { return '<option value="' + y + '"' + (y === thisY ? ' selected' : '') + '>December ' + y + '</option>'; }).join('');
+    document.getElementById('dp-note').innerHTML = (d.haveSales ? 'Sales pattern: last year\'s weeks compared with ' + esc(d.salesNormal.from) + ' – ' + esc(d.salesNormal.to) + '. ' :
+      '<strong style="color:var(--warning);">No weekly sales from Sage yet, so "needed" is just the normal November number (100%).</strong> The Owner runs sageSpendSalesWeeksBackfill in the Packing project once. ') +
+      'Normal numbers from ' + esc(d.reference.from) + ' – ' + esc(d.reference.to) + '.' + ((d.seasons || []).length ? ' Period shifts: ' + d.seasons.map(function (x) { return esc(x.department) + ' ' + esc(x.tt) + ' (' + esc(x.from.slice(5)) + ' – ' + esc(x.to.slice(5)) + ')'; }).join('; ') + '.' : '');
+    var shortCells = 0, shortPeople = 0, leaveNames = {};
+    d.dates.forEach(function (dt) { d.departments.forEach(function (dep) { var c = d.cells[dt + '|' + dep]; if (c.short > 0) { shortCells++; shortPeople += c.short; } c.leaveList.forEach(function (l) { leaveNames[l.name] = (leaveNames[l.name] || 0) + 1; }); }); });
+    var tile = function (key, name, val, cap, color) { return '<button type="button" class="kpi-card" data-dp-tile="' + key + '" style="--dot:' + color + ';' + (key === 'short' && dpState.onlyShort ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + name + '</span></div><div class="big">' + val + '</div><div class="cap">' + cap + '</div></button>'; };
+    var tEl = document.getElementById('dp-tiles');
+    tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' +
+      tile('short', 'Short', shortCells, shortCells ? shortPeople + ' people-days short; click to show only those departments' : 'Every day covered', shortCells ? 'var(--critical)' : 'var(--good)') +
+      tile('leave', 'On leave in the period', Object.keys(leaveNames).length, 'People with approved leave; click for the list', 'var(--brand)') + '</div>';
+    tEl.querySelector('[data-dp-tile="short"]').addEventListener('click', function () { dpState.onlyShort = !dpState.onlyShort; renderDecPlan_(); });
+    tEl.querySelector('[data-dp-tile="leave"]').addEventListener('click', function () {
+      document.getElementById('casual-weeks-title').textContent = 'On leave, 1 Dec – 8 Jan';
+      document.getElementById('casual-weeks-sub').textContent = 'Days of approved leave in the planner period per person.';
+      var names = Object.keys(leaveNames).sort();
+      document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Employee</th><th>Days</th></tr></thead><tbody>' +
+        (names.length ? names.map(function (n) { return '<tr><td style="text-align:left;">' + esc(n) + '</td><td>' + leaveNames[n] + '</td></tr>'; }).join('') : '<tr><td colspan="2" style="text-align:left;">Nobody.</td></tr>') + '</tbody></table>';
+      document.getElementById('casual-weeks-modal').classList.add('active');
+    });
+    var wdn = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'], hol = {}; d.holidays.forEach(function (h) { hol[h.date] = h.name; });
+    var depts = d.departments.filter(function (dep) { return !dpState.onlyShort || d.dates.some(function (dt) { return d.cells[dt + '|' + dep].short > 0; }); });
+    var th = function (dt) {
+      var w = new Date(dt + 'T00:00:00Z').getUTCDay(), closed = d.closed.indexOf(dt.slice(5)) !== -1;
+      return '<th title="' + esc(dt + (hol[dt] ? ' · ' + hol[dt] : '') + (closed ? ' · closed' : '')) + '" style="min-width:44px; padding:4px 2px; text-align:center; font-size:11px;' + (w === 0 || w === 6 ? 'color:var(--text-muted);' : '') + (hol[dt] ? 'background:color-mix(in srgb, var(--brand) 14%, transparent);' : '') + '">' + wdn[w] + '<br>' + Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(dt.slice(5, 7)) - 1] : '') + '</th>';
+    };
+    var cell = function (dt, dep) {
+      var c = d.cells[dt + '|' + dep];
+      return '<td data-dp-cell="' + esc(dt + '|' + dep) + '" style="cursor:pointer; text-align:center; padding:4px 2px; font-size:12px; white-space:nowrap; background:' + dpColor_(c) + ';">' +
+        (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '')) + '</td>';
+    };
+    document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--surface-2, #fff); z-index:2; text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
+      '<tr><td style="position:sticky; left:0; background:var(--surface-2, #fff); text-align:left; font-weight:700;">All</td>' + d.dates.map(function (dt) { var t = d.totals[dt]; return '<td style="text-align:center; font-size:12px; font-weight:700; padding:4px 2px; background:' + dpColor_({ short: t.short, closed: d.closed.indexOf(dt.slice(5)) !== -1 }) + ';">' + (d.closed.indexOf(dt.slice(5)) !== -1 ? '–' : t.booked + '/' + t.required) + '</td>'; }).join('') + '</tr>' +
+      depts.map(function (dep) { return '<tr><td style="position:sticky; left:0; background:var(--surface-2, #fff); text-align:left; white-space:nowrap;">' + esc(dep) + '</td>' + d.dates.map(function (dt) { return cell(dt, dep); }).join('') + '</tr>'; }).join('') +
+      (depts.length ? '' : '<tr><td colspan="' + (d.dates.length + 1) + '" style="text-align:left;">No shortfalls.</td></tr>') + '</tbody></table>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dp-cell]'), function (td) {
+      td.addEventListener('click', function () { var k = td.getAttribute('data-dp-cell').split('|'); openDecPlanCell_(k[0], k.slice(1).join('|')); });
+    });
+  }
+  function openDecPlanCell_(date, dept) {
+    var d = dpState.data, c = d.cells[date + '|' + dept];
+    var how = c.closed ? 'Company closed.' : 'Normal ' + c.normal + ' for this weekday × ' + (c.factor === null ? '100% (no sales data)' : Math.round(c.factor * 100) + '% (last year\'s sales that week)') + ' = ' + c.estimate + '.';
+    document.getElementById('casual-weeks-title').textContent = dept + ' — ' + date;
+    document.getElementById('casual-weeks-sub').innerHTML = (c.holiday ? '<strong>' + esc(c.holiday) + '.</strong> ' : '') + 'Booked ' + c.booked + ' of ' + c.required + ' needed' + (c.short ? ', <strong style="color:var(--critical);">' + c.short + ' short</strong>' : '') + '. Estimate: ' + esc(how) +
+      (c.override ? ' Number set by ' + esc(c.setBy) + '.' : '') +
+      '<div class="toolbar" style="margin:10px 0 0;"><label style="font-size:13px; font-weight:600;">Needed</label><input type="number" id="dp-req" min="0" step="1" value="' + c.required + '" style="max-width:90px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);">' +
+      '<button class="btn small" type="button" id="dp-save">Save</button>' + (c.override ? '<button class="btn secondary small" type="button" id="dp-reset">Use the estimate (' + c.estimate + ')</button>' : '') + '<span class="save-status" id="dp-cell-status"></span></div>';
+    var list = function (title, arr, fmt) { return '<h3 style="font-size:13px; margin:12px 0 4px;">' + title + ' (' + arr.length + ')</h3>' + (arr.length ? '<div style="font-size:13px; line-height:1.6;">' + arr.map(fmt).join('<br>') + '</div>' : '<div class="hint" style="margin:0;">None.</div>'); };
+    document.getElementById('casual-weeks-body').innerHTML =
+      list('Booked', c.bookedList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; }) +
+      list('On leave', c.leaveList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
+      list('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
+    document.getElementById('casual-weeks-modal').classList.add('active');
+    var save = function (val, btn) {
+      var st = document.getElementById('dp-cell-status');
+      btn.disabled = true; btn.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
+      callApi('setDecPlanRequired', { year: d.year, date: date, department: dept, required: val }).then(function (res) {
+        if (!res || !res.ok) { btn.disabled = false; btn.textContent = 'Save'; flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+        dpState.data = res; renderDecPlan_(); openDecPlanCell_(date, dept);
+        flashStatus(document.getElementById('dp-cell-status'), 'Saved', 'save-status ok', 3000);
+      }).catch(function () { btn.disabled = false; btn.textContent = 'Save'; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    };
+    document.getElementById('dp-save').addEventListener('click', function () { save(document.getElementById('dp-req').value, this); });
+    var rs = document.getElementById('dp-reset'); if (rs) rs.addEventListener('click', function () { save('', this); });
+  }
+
   (function () {
+    var dy = document.getElementById('dp-year');
+    if (dy) dy.addEventListener('change', function () { dpState.year = Number(dy.value); loadDecPlan_(dpState.year); });
     var y = document.getElementById('atts-year');
     if (y) y.addEventListener('change', function () { attsState.year = Number(y.value); loadAttSettings_(attsState.year); });
     var add = document.getElementById('atts-hol-add');
@@ -7946,6 +8095,7 @@
     document.getElementById('payroll-edit-id').value = e.id;
     document.getElementById('payroll-name').value = e.name;
     populateEmployeeDepartmentSelect_(e.department);
+    populateShiftSelect_(e.shift || '');
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
     document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when this employee was created — edit the Sheet directly if it genuinely needs correcting.';
     document.getElementById('payroll-job-title').value = e.jobTitle || '';
@@ -8065,7 +8215,15 @@
       el.disabled = hide; el.placeholder = hide ? 'Hidden (Management)' : '';
     });
   }
+  // §90: the shift list comes with the roster data; current value pre-selected
+  function populateShiftSelect_(cur) {
+    var sel = document.getElementById('payroll-shift'); if (!sel) return;
+    var names = ((state.payroll && state.payroll.shiftNames) || []).slice();
+    if (cur && names.indexOf(cur) === -1) names.unshift(cur);
+    sel.innerHTML = '<option value="">— choose a shift —</option>' + names.map(function (n) { return '<option' + (n === cur ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+  }
   function resetEmployeeForm() {
+    populateShiftSelect_('');
     setContributionFieldsHidden_(false);
     document.getElementById('payroll-form-title').textContent = 'Add employee';
     document.getElementById('payroll-edit-id').value = '';
@@ -8163,6 +8321,8 @@
     var department = document.getElementById('payroll-department').value.trim();
     var contactNumber = document.getElementById('payroll-contact-number').value.trim();
     if (!name || !department || !contactNumber) { errEl.textContent = 'Name, department and contact number are required.'; return; }
+    var shiftPick = document.getElementById('payroll-shift').value;
+    if (!id && !shiftPick) { errEl.textContent = 'Choose the employee\'s shift.'; return; }   // §90: required for a new employee
     var bankName = document.getElementById('payroll-bank-name').value.trim();
     var branchCode = document.getElementById('payroll-branch-code').value.trim();
     var accountNumber = document.getElementById('payroll-account-number').value.trim();
@@ -8177,6 +8337,7 @@
       name: name,
       department: department,
       employeeNumber: document.getElementById('payroll-empnum').value.trim(),
+      shift: shiftPick,
       jobTitle: document.getElementById('payroll-job-title').value.trim(),
       days: document.getElementById('payroll-days').value,
       dateEmployed: document.getElementById('payroll-date').value.trim(),
