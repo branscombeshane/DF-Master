@@ -2019,7 +2019,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-15.171-holiday-rules';
+  var FRONTEND_BUILD = '2026-11-16.172-veg-night-holidays';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6192,7 +6192,7 @@
     if (d.holiday) {
       var planned = d.rows.filter(function (r) { return r.holidayPlanned; }).length;
       hb.style.display = '';
-      hb.innerHTML = '<strong>Public holiday: ' + esc(d.holiday) + '.</strong> ' + (planned ? planned + ' planned to work. ' : 'Nobody planned to work yet. ') +
+      hb.innerHTML = '<strong>' + (d.holidayVegNightOnly ? '' : 'Public holiday: ') + esc(d.holiday) + '.</strong> ' + (d.holidayVegNightOnly ? 'For Veg Night today is the holiday (they work the Monday on their Sunday shift). ' : '') + (planned ? planned + ' planned to work. ' : 'Nobody planned to work yet. ') +
         'People planned to work who do not clock in are absent; the hours they work are overtime. Everyone else is off. ' +
         '<button class="btn small" id="attd-holplan" type="button" style="margin-left:6px;">Plan who works</button>';
       document.getElementById('attd-holplan').addEventListener('click', openHolidayPlan_);
@@ -6236,7 +6236,8 @@
     table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late (min)</th><th>Early (min)</th><th title="Clocked out more than 30 minutes after the shift end, in half hours; on a planned public holiday every hour worked">Overtime (h)</th><th style="text-align:left;">Status</th></tr></thead><tbody>' +
       (list.length ? list.map(function (r) {
         return '<tr><td style="text-align:left;"><button type="button" data-attd-person="' + esc(r.empCode) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(r.name) + '</button></td>' +
-          '<td style="text-align:left;">' + esc(r.department) + '</td><td style="text-align:left;">' + (r.start ? esc(r.start + '–' + r.end) + (r.holidayPlanned ? ' <span class="hint" style="margin:0;">holiday team</span>' : '') : '<span class="hint" style="margin:0;">' + (r.holiday ? 'holiday' : 'off') + '</span>') + '</td>' +
+          '<td style="text-align:left;">' + esc(r.department) + '</td><td style="text-align:left;">' + (r.start ? esc(r.start + '–' + r.end) + (r.holidayPlanned ? ' <span class="hint" style="margin:0;">holiday team</span>' : '') : '<span class="hint" style="margin:0;">' + (r.holiday ? 'holiday' : 'off') + '</span>') +
+            (r.dayAs ? '<div class="hint" style="margin:0; font-size:11px;">' + esc(r.dayAs) + '</div>' : '') + '</td>' +
           '<td>' + esc(r.arrived) + '</td><td>' + esc(r.left) + '</td><td>' + attdHrs_(r.hours) + '</td>' +
           '<td' + (r.lateMin ? ' style="color:var(--critical); font-weight:700;"' : '') + '>' + (r.lateMin || '') + '</td><td' + (r.earlyMin ? ' style="color:var(--warning); font-weight:700;"' : '') + '>' + (r.earlyMin || '') + '</td>' +
           '<td' + (r.otMin ? ' style="color:var(--good); font-weight:700;"' : '') + '>' + (r.otMin ? String(Math.round(r.otMin / 60 * 100) / 100) : '') + '</td>' +
@@ -6248,14 +6249,15 @@
   }
   function openHolidayPlan_() {
     var d = attdState.data; if (!d || !d.holiday) return;
-    var people = d.rows.slice().sort(function (a, b) { return (a.department + a.name).localeCompare(b.department + b.name); });
+    var people = d.rows.filter(function (r) { return !d.holidayVegNightOnly || String(r.department).toLowerCase() === 'veg night'; })   // §88
+      .sort(function (a, b) { return (a.department + a.name).localeCompare(b.department + b.name); });
     var opts = function (sel) { return d.timetables.map(function (t) { return '<option' + (t === sel ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join(''); };
     document.getElementById('casual-weeks-title').textContent = 'Who works ' + d.holiday + ' (' + d.date + ')';
     document.getElementById('casual-weeks-sub').innerHTML = 'Tick everyone who must work and choose their shift time. Ticked people who do not clock in are absent; the hours they work are paid as overtime. Everyone else is off for the holiday.' +
       '<div class="toolbar" style="margin:10px 0 0;"><button class="btn" id="holplan-save" type="button">Save holiday team</button><span class="save-status" id="holplan-status"></span></div>';
     document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th>Works</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift time</th></tr></thead><tbody>' +
       people.map(function (r) {
-        var dflt = r.holidayPlanned ? r.timetable : (r.normalTimetable || (d.timetables.indexOf('HOLIDAY SHIFT') !== -1 ? 'HOLIDAY SHIFT' : d.timetables[0]));
+        var dflt = r.holidayPlanned ? r.timetable : (r.planDefault || r.normalTimetable || (d.timetables.indexOf('HOLIDAY SHIFT') !== -1 ? 'HOLIDAY SHIFT' : d.timetables[0]));
         return '<tr><td><input type="checkbox" data-holplan="' + esc(r.empCode) + '"' + (r.holidayPlanned ? ' checked' : '') + '></td><td style="text-align:left;">' + esc(r.name) + '</td><td style="text-align:left;">' + esc(r.department) + '</td>' +
           '<td style="text-align:left;"><select data-holplan-tt="' + esc(r.empCode) + '" style="font-size:12px; padding:5px 6px;">' + opts(dflt) + '</select></td></tr>';
       }).join('') + '</tbody></table>';
