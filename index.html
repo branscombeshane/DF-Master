@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.181-shift-time-fix';
+  var FRONTEND_BUILD = '2026-11-16.182-small-att-note';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6684,8 +6684,9 @@
           (d.lastSync ? 'BioTime has not sent data since ' + esc(casualStamp_(d.lastSync)) : 'No data has come from BioTime yet') +
           '. Clock-ins after that are missing, so people may show as not in. Check the office PC (on, awake, network) and its sync.</div>'
         : '') +
-      (d.lastSync ? 'Last data from BioTime: ' + esc(casualStamp_(d.lastSync)) + '. ' : '') + 'Grace period ' + d.graceMin + ' minutes.' +
-      (isToday ? ' Today: people still on shift show as <em>In</em>. This page refreshes every 5 minutes' + (attdState.loadedAt ? ' (updated ' + hm(attdState.loadedAt) + ')' : '') + '; the office PC sends clock-ins every 15 minutes.' : '');
+      // one small grey line (Shane: was cluttering the page); the full explanation is in the tooltip
+      '<div style="font-size:11px; color:var(--text-muted);" title="Grace period ' + d.graceMin + ' minutes. Today, people still on shift show as In. This page refreshes every 5 minutes; the BioTime PC sends clock-ins every 15 minutes.">' +
+      (d.lastSync ? 'BioTime ' + esc(casualStamp_(d.lastSync)) : 'No BioTime data yet') + ' · grace ' + d.graceMin + ' min' + (isToday && attdState.loadedAt ? ' · updated ' + hm(attdState.loadedAt) + ', refreshes every 5 min' : '') + '</div>';
     // public holiday (§78): plan the team that works it
     var hb = document.getElementById('attd-holiday');
     if (d.holiday) {
