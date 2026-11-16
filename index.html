@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.176-absent-mgmt';
+  var FRONTEND_BUILD = '2026-11-16.177-cpt-biotime';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7091,8 +7091,9 @@
     var sync = d.lastSync || {};
     var syncEl = document.getElementById('att-sync');
     syncEl.innerHTML = sync.at
-      ? 'Last data from BioTime: <strong>' + esc(casualStamp_(sync.at)) + '</strong> · ' + Number(d.punchesStored || 0).toLocaleString('en-ZA') + ' clock-ins stored.'
-      : (d.keySet ? 'Nothing received from BioTime yet. Set up the sync on the office PC (SETUP §58).' : 'Not connected yet: the BIOTIME_INGEST_KEY Script Property is not set (SETUP §58).');
+      ? 'Last data from the ' + esc(d.siteLabel || '') + ' BioTime: <strong>' + esc(casualStamp_(sync.at)) + '</strong> · ' + Number(d.punchesStored || 0).toLocaleString('en-ZA') + ' clock-ins stored.'
+      : (d.keySet ? 'Nothing received from the ' + esc(d.siteLabel || '') + ' BioTime yet. Set up the sync on that site\'s BioTime PC (SETUP ' + (d.site === 'cpt' ? '§94' : '§58') + ').'
+        : 'Not connected yet: the ' + (d.site === 'cpt' ? 'BIOTIME_INGEST_KEY_CPT' : 'BIOTIME_INGEST_KEY') + ' Script Property is not set. In Apps Script run <code>' + (d.site === 'cpt' ? 'biotimeCreateIngestKeyCpt' : 'biotimeCreateIngestKey') + '</code> once (SETUP ' + (d.site === 'cpt' ? '§94' : '§58') + ').');
     var counts = { all: d.people.length, linked: 0, unlinked: 0, none: 0 };
     d.people.forEach(function (pp) { counts[attKind_(pp)]++; });
     var tile = function (key, name, n, cap, color) {
