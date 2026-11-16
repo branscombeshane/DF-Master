@@ -1603,7 +1603,7 @@
           <div style="overflow-x:auto;"><table class="data-table" id="attd-table"></table></div>
         </div>
         <div class="panel" data-attpanel="leave">
-          <h2>Leave taken</h2>
+          <h2>Leave management</h2>
           <p class="panel-sub">Approved leave for the year, per employee: leave captured here with <em>+ Capture leave</em> (approved when saved, with the manager who signed it off) plus the leave history from BioTime. A day entered in both is counted once. Annual leave is counted in working days (Monday to Friday, public holidays left out; half a day for leave under 6 hours) against each person's entitlement: 15 days unless the Owner sets otherwise in the <em>Entitlement</em> column. Leave policy: the leave year is the calendar year and unused leave is forfeited on 31 December. In the year someone starts, leave builds up at 1.25 days per completed month (for 15 days); from 1 January of the next year they get the full entitlement. <em>Available now</em> is what has built up so far minus what was used. Click a name to see every leave record.</p>
           <div class="toolbar">
             <label for="leave-year" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Year</label>
@@ -1616,6 +1616,21 @@
           <div id="leave-note" class="hint" style="margin:0 0 10px;"></div>
           <div id="leave-tiles"></div>
           <div style="overflow-x:auto;"><table class="data-table" id="leave-table"></table></div>
+        </div>
+        <div class="panel" data-attpanel="absent">
+          <h2>Absent management</h2>
+          <p class="panel-sub">Every day someone had a shift but did not clock in (not on leave, not a public holiday), for one clock-ins pay period (20th to 19th, the same period as Pay Adjustments → From clock-ins). Check each one: <strong>Confirm absent</strong> if they really were absent, or <strong>Add leave</strong> if they bring a sick note (or other leave) later; the day then becomes leave and is not deducted. <strong>The Absent pay deduction for a person can only be accepted once all their absent days in the period are checked.</strong> Missed a clock-in but was at work? Click the name and add the missed clock-in instead.</p>
+          <div class="toolbar">
+            <label for="abs-month" style="font-size:13px; font-weight:600; color:var(--text-secondary);">Pay month</label>
+            <select id="abs-month"></select>
+            <select id="abs-dept" aria-label="Department"><option value="">All departments</option></select>
+            <input type="search" id="abs-search" placeholder="Search name" style="max-width:220px;">
+            <button class="btn secondary small" type="button" id="abs-confirm-all">Confirm all shown as absent</button>
+            <span class="save-status" id="abs-status"></span>
+          </div>
+          <div id="abs-note" class="hint" style="margin:0 0 10px;"></div>
+          <div id="abs-tiles"></div>
+          <div style="overflow-x:auto;"><table class="data-table" id="abs-table"></table></div>
         </div>
         <div class="panel" data-attpanel="settings">
           <h2>Shifts &amp; public holidays</h2>
@@ -2077,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.175-leave-msg';
+  var FRONTEND_BUILD = '2026-11-16.176-absent-mgmt';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2099,7 +2114,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getLeaveRequests: true, getLeaveRequestLink: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -2842,7 +2857,8 @@
   // Attendance sections (.151): shown one at a time from the Attendance row; each loads only its own data.
   var ATT_PANELS_ = [
     { key: 'daily', label: 'Daily Attendance' },
-    { key: 'leave', label: 'Leave Taken' },
+    { key: 'leave', label: 'Leave Management' },
+    { key: 'absent', label: 'Absent Management' },
     { key: 'decplan', label: 'December Planner' },
     { key: 'settings', label: 'Shifts & Holidays' },
     { key: 'link', label: 'BioTime Link-up' },
@@ -2861,7 +2877,7 @@
     // still refreshes itself every 5 minutes, and Today / the date / Prev / Next always load.
     var seen = state.attLoaded && state.attLoaded[key];
     if (seen && seen.group === state.companyGroup && Date.now() - seen.at < ATT_PANEL_FRESH_MS_) return;
-    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, decplan: loadDecPlan_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
+    var loader = { daily: loadAttendanceDay_, leave: loadLeaveTaken_, absent: loadAbsences_, decplan: loadDecPlan_, settings: loadAttSettings_, link: loadAttendanceLinks_, push: loadBiotimePush_ }[key];
     var pr = loader ? loader() : null;
     if (pr && pr.then) pr.then(function () { state.attLoaded = state.attLoaded || {}; state.attLoaded[key] = { at: Date.now(), group: state.companyGroup }; });
   }
@@ -4366,7 +4382,7 @@
       (d.rows.length ? d.rows.map(function (r) {
         var pending = attPayPending_(r, d.rules);
         return '<tr><td style="text-align:left;">' + esc(r.name) + '</td><td style="text-align:left;">' + esc(r.department) + '</td>' +
-          '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + '</td>' +
+          '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + (r.absentUnchecked && !r.accepted.Absent ? '<div style="font-size:11px;"><button type="button" class="linklike" data-goto-absent="1" style="background:none;border:0;padding:0;font:inherit;color:var(--warning);text-decoration:underline;cursor:pointer;" title="Absent is only added once every absent day is checked">' + r.absentUnchecked + ' to check</button></div>' : '') + '</td>' +
           '<td>' + cell(r, 'late', r.lateMin, r.accepted.LateIn, r.lateTotal ? lateText(r) : '') + '</td>' +
           '<td>' + cell(r, 'ot', r.otHours, r.accepted.Overtime) + '</td>' +
           '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') +
@@ -4380,6 +4396,9 @@
                 (r.dayOffHours ? ' <button class="btn secondary small" type="button" data-attpay-dayoff="' + esc(r.employeeId) + '" style="padding:2px 8px;">Pay as overtime</button>' : '')) : '') + '</td>' +
           '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-goto-absent]'), function (b) {
+      b.addEventListener('click', function () { absState.month = d.month; showPayrollSubTab('attendance'); showAttendancePanel_('absent'); loadAbsences_(); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-accept]'), function (b) {
       b.addEventListener('click', function () { acceptAttendancePay_([b.getAttribute('data-attpay-accept')], b); });
     });
@@ -4408,7 +4427,7 @@
     var fixTd = function (date) { return '<td><button class="btn secondary small" type="button" data-attpay-open="' + esc(date) + '">Open</button></td>'; };
     if (kind === 'absent') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Why</th><th>Days</th>';
-      body = r.absent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.why) + '</td><td>' + a.days + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
+      body = r.absent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.why) + (a.why === 'No clock-in' ? (a.checked ? ' <span style="color:var(--good);">✓ checked</span>' : ' <span style="color:var(--warning);">not checked (Absent Management)</span>') : '') + '</td><td>' + a.days + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'late') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Shift start</th><th style="text-align:left;">Clocked in</th><th>Minutes late</th>';
       body = r.late.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td>' + a.min + '</td>' + fixTd(a.date) + '</tr>'; }).join('') +
@@ -6228,6 +6247,121 @@
         weekdays: days.join(','), timetable: document.getElementById('ssn-tt').value, note: document.getElementById('ssn-note').value }, ab, 'Period shift added');
     });
   }
+
+  // ---------------- Absent management (SETUP §93) ----------------
+  var absState = { data: null, month: null, filter: 'check', dept: '', search: '' };
+  function absDefaultMonth_() {   // the clock-ins period that holds today (20th-19th)
+    var t = new Date(), y = t.getFullYear(), m = t.getMonth() + 1;
+    if (t.getDate() >= 20) { m++; if (m > 12) { m = 1; y++; } }
+    return y + '-' + (m < 10 ? '0' : '') + m;
+  }
+  function loadAbsences_() {
+    var st = document.getElementById('abs-status');
+    if (!absState.month) absState.month = absDefaultMonth_();
+    flashStatus(st, 'Loading absent days…', 'save-status', 0);
+    return callApi('getAbsences', { month: absState.month }).then(function (res) {
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
+      flashStatus(st, '', 'save-status', 0);
+      absState.data = res; renderAbsences_();
+    }).catch(function () { flashStatus(st, 'Network error', 'save-status err', 6000); });
+  }
+  function absShown_() {
+    var d = absState.data, q = absState.search.toLowerCase();
+    return d.rows.filter(function (x) { return (!absState.filter || x.status === absState.filter) && (!absState.dept || x.department === absState.dept) && (!q || x.name.toLowerCase().indexOf(q) !== -1); });
+  }
+  function renderAbsences_() {
+    var d = absState.data; if (!d) return;
+    var ms = document.getElementById('abs-month'), base = absDefaultMonth_(), opts = [];
+    for (var i = -3; i <= 1; i++) { var y = Number(base.slice(0, 4)), m = Number(base.slice(5)) + i; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } opts.push(y + '-' + (m < 10 ? '0' : '') + m); }
+    if (opts.indexOf(d.month) === -1) opts.push(d.month);
+    ms.innerHTML = opts.map(function (o) { return '<option value="' + o + '"' + (o === d.month ? ' selected' : '') + '>' + esc(monthLabel(o)) + ' pay</option>'; }).join('');
+    var depts = {}; d.rows.forEach(function (x) { depts[x.department] = 1; });
+    var ds = document.getElementById('abs-dept');
+    ds.innerHTML = '<option value="">All departments</option>' + Object.keys(depts).sort().map(function (n) { return '<option' + (n === absState.dept ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    document.getElementById('abs-note').innerHTML = 'Clock-ins from <strong>' + esc(attPayDate_(d.from)) + '</strong> to <strong>' + esc(attPayDate_(d.to)) + '</strong>' + (d.today < d.to ? ' (so far, up to today)' : '') + '.';
+    var c = { check: 0, confirmed: 0, leave: 0 }, people = {};
+    d.rows.forEach(function (x) { if (!absState.dept || x.department === absState.dept) { c[x.status]++; if (x.status === 'check') people[x.employeeId] = 1; } });
+    var tile = function (k, name, val, cap, color) { return '<button type="button" class="kpi-card" data-abs-tile="' + k + '" style="--dot:' + color + ';' + (absState.filter === k ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + name + '</span></div><div class="big">' + val + '</div><div class="cap">' + cap + '</div></button>'; };
+    var tEl = document.getElementById('abs-tiles');
+    tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' +
+      tile('check', 'To check', c.check, c.check ? Object.keys(people).length + ' people; their Absent deduction waits for this' : 'Nothing waiting', c.check ? 'var(--critical)' : 'var(--good)') +
+      tile('confirmed', 'Confirmed absent', c.confirmed, 'Will be deducted when Absent is accepted', 'var(--warning)') +
+      tile('leave', 'Changed to leave', c.leave, 'Leave added here (sick note etc.)', 'var(--brand)') +
+      tile('', 'All absent days', c.check + c.confirmed + c.leave, 'Click to show everything', 'var(--text-muted)') + '</div>';
+    Array.prototype.forEach.call(tEl.querySelectorAll('[data-abs-tile]'), function (b) { b.addEventListener('click', function () { absState.filter = b.getAttribute('data-abs-tile'); renderAbsences_(); }); });
+    var rows = absShown_(), wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var stat = function (x) {
+      if (x.status === 'check') return '<strong style="color:var(--critical);">To check</strong>';
+      if (x.status === 'confirmed') return '<span style="color:var(--warning); font-weight:600;">Absent</span> <span style="font-size:11px; color:var(--text-muted);">' + esc(x.by) + ' ' + esc(x.at.slice(5, 16)) + '</span>';
+      return '<span style="color:var(--brand); font-weight:600;">' + esc(x.leaveType || 'Leave') + '</span> <span style="font-size:11px; color:var(--text-muted);">' + esc(x.by) + ' ' + esc(x.at.slice(5, 16)) + '</span>' +
+        (x.deductionAccepted ? '<div style="font-size:11px; color:var(--critical);">Absent already accepted in Pay Adjustments: delete and accept again</div>' : '');
+    };
+    document.getElementById('abs-table').innerHTML = '<thead><tr><th style="text-align:left;">Date</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift</th><th style="text-align:left;">Status</th><th></th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (x) {
+        var key = esc(x.employeeId + '|' + x.date);
+        return '<tr><td style="text-align:left; white-space:nowrap;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(attPayDate_(x.date)) + '</td>' +
+          '<td style="text-align:left;"><button type="button" class="linklike" data-abs-person="' + esc(x.empCode) + '" data-abs-date="' + esc(x.date) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;" title="Open their days (add a missed clock-in there)">' + esc(x.name) + '</button></td>' +
+          '<td style="text-align:left;">' + esc(x.department) + '</td><td style="text-align:left;">' + esc(x.shift) + '</td><td style="text-align:left; font-size:13px;">' + stat(x) + '</td>' +
+          '<td style="white-space:nowrap;">' + (x.status === 'check' ? '<button class="btn small" type="button" data-abs-confirm="' + key + '">Confirm absent</button> ' : '') +
+          (x.status === 'confirmed' ? '<button class="btn secondary small" type="button" data-abs-undo="' + key + '">Undo</button> ' : '') +
+          (x.status !== 'leave' ? '<button class="btn secondary small" type="button" data-abs-leave="' + key + '">Add leave</button>' : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" style="text-align:left;">' + (absState.filter === 'check' ? 'Nothing to check. ' : '') + 'No absent days here.</td></tr>') + '</tbody>';
+    var bulk = document.getElementById('abs-confirm-all'), toCheck = rows.filter(function (x) { return x.status === 'check'; });
+    bulk.style.display = toCheck.length > 1 ? '' : 'none'; bulk.textContent = 'Confirm all ' + toCheck.length + ' shown as absent';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-abs-confirm]'), function (b) { b.addEventListener('click', function () { absCall_({ op: 'confirm', items: b.getAttribute('data-abs-confirm') }, b, 'Confirmed absent'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-abs-undo]'), function (b) { b.addEventListener('click', function () { absCall_({ op: 'undo', items: b.getAttribute('data-abs-undo') }, b, 'Back to check'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-abs-leave]'), function (b) { b.addEventListener('click', function () { openAbsLeave_(b.getAttribute('data-abs-leave')); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-abs-person]'), function (b) { b.addEventListener('click', function () { openAttendancePerson_(b.getAttribute('data-abs-person'), b.getAttribute('data-abs-date')); }); });
+  }
+  function absCall_(params, btn, okText, after) {
+    var st = document.getElementById('abs-status'), label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    flashStatus(st, 'Saving…', 'save-status', 0);
+    return callApi('reviewAbsence', Object.assign({ month: absState.month }, params)).then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return res; }
+      absState.data = res; renderAbsences_();
+      flashStatus(document.getElementById('abs-status'), res.warning || okText, res.warning ? 'save-status err' : 'save-status ok', res.warning ? 20000 : 3500);
+      if (res.warning) alert(res.warning);
+      return res;
+    }).catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } flashStatus(st, 'Network error', 'save-status err', 6000); });
+  }
+  function openAbsLeave_(key) {
+    var d = absState.data, k = key.split('|'), x = d.rows.filter(function (r) { return r.employeeId === k[0] && r.date === k[1]; })[0]; if (!x) return;
+    document.getElementById('casual-weeks-title').textContent = 'Add leave — ' + x.name + ', ' + attPayDate_(x.date);
+    document.getElementById('casual-weeks-sub').textContent = 'The day becomes leave and is no longer absent (not deducted). Captured like + Capture leave, so it shows in Leave Management.';
+    document.getElementById('casual-weeks-body').innerHTML = '<div class="toolbar" style="flex-wrap:wrap;">' +
+      '<select id="absl-type">' + d.types.map(function (t) { return '<option' + (/sick/i.test(t) ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
+      '<label style="font-size:13px;"><input type="checkbox" id="absl-half"> Half day</label>' +
+      '<select id="absl-mgr"><option value="">— signed off by (Management) —</option>' + d.managers.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select>' +
+      '<input type="text" id="absl-note" placeholder="Note, e.g. sick note brought in on 5 Nov" maxlength="250" style="min-width:260px;"></div>' +
+      '<div class="toolbar"><button class="btn small" type="button" id="absl-save">Add leave</button><span class="save-status" id="absl-status"></span></div>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
+    document.getElementById('absl-save').addEventListener('click', function () {
+      var b = this, st = document.getElementById('absl-status');
+      b.disabled = true; b.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
+      callApi('reviewAbsence', { month: absState.month, op: 'leave', items: key, type: document.getElementById('absl-type').value, halfDay: document.getElementById('absl-half').checked ? '1' : '',
+        approvedBy: document.getElementById('absl-mgr').value, note: document.getElementById('absl-note').value }).then(function (res) {
+        b.disabled = false; b.textContent = 'Add leave';
+        if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
+        document.getElementById('casual-weeks-modal').classList.remove('active');
+        absState.data = res; renderAbsences_();
+        flashStatus(document.getElementById('abs-status'), res.warning || 'Leave added', res.warning ? 'save-status err' : 'save-status ok', res.warning ? 20000 : 3500);
+        if (res.warning) alert(res.warning);
+      }).catch(function () { b.disabled = false; b.textContent = 'Add leave'; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    });
+  }
+  (function () {
+    var m = document.getElementById('abs-month'); if (m) m.addEventListener('change', function () { absState.month = m.value; loadAbsences_(); });
+    var dd = document.getElementById('abs-dept'); if (dd) dd.addEventListener('change', function () { absState.dept = dd.value; renderAbsences_(); });
+    var se = document.getElementById('abs-search'); if (se) se.addEventListener('input', function () { absState.search = se.value; renderAbsences_(); });
+    var bulk = document.getElementById('abs-confirm-all');
+    if (bulk) bulk.addEventListener('click', function () {
+      var items = absShown_().filter(function (x) { return x.status === 'check'; });
+      if (!items.length || !confirm('Confirm ' + items.length + ' days as absent? Only do this if you checked there are no sick notes or other leave for them.')) return;
+      absCall_({ op: 'confirm', items: items.map(function (x) { return x.employeeId + '|' + x.date; }).join(',') }, bulk, items.length + ' days confirmed absent');
+    });
+  })();
 
   // ---------------- December planner (SETUP §89) ----------------
   var dpState = { data: null, year: null, onlyShort: false };
