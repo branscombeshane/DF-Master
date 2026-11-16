@@ -39,6 +39,11 @@
     } catch (e) { tok = null; }
     window.__payslipToken = tok;
     if (tok) document.documentElement.classList.add('public-payslip');
+    /* §91: a December leave link (?leave=TOKEN) opens just that person's leave request page */
+    var lt = null;
+    try { var lq = new URLSearchParams(location.search).get('leave') || ''; if (!tok && re.test(lq)) lt = lq; } catch (e2) { lt = null; }
+    window.__leaveToken = lt;
+    if (lt) document.documentElement.classList.add('public-leave');
   })();
 </script>
 <style>
@@ -753,6 +758,26 @@
      shell — just that one payslip. See the PUBLIC PAYSLIP block near the end. */
   html.public-payslip #login-screen, html.public-payslip #group-picker-screen, html.public-payslip #app { display: none !important; }
   html.public-payslip #payslip-modal { background: var(--page); }
+  /* §91 public leave request page */
+  html.public-leave #login-screen, html.public-leave #group-picker-screen, html.public-leave #app { display: none !important; }
+  #leave-public { max-width: 560px; margin: 0 auto; padding: 18px 14px 40px; }
+  #leave-public h1 { font-size: 20px; margin: 4px 0 2px; }
+  #leave-public .lp-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 14px; }
+  #leave-public .lp-bal { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  #leave-public .lp-bal div { border: 1px solid var(--gridline); border-radius: 10px; padding: 10px 12px; background: var(--card); font-size: 12px; color: var(--text-secondary); }
+  #leave-public .lp-bal b { display: block; font-size: 22px; color: var(--text-primary); }
+  #leave-public .lp-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  #leave-public .lp-wd { text-align: center; font-size: 11px; color: var(--text-muted); padding: 2px 0; }
+  #leave-public .lp-day { min-height: 46px; border-radius: 8px; border: 1px solid var(--gridline); background: var(--card); font-size: 15px; font-weight: 600; padding: 4px 0; text-align: center; color: var(--text-primary); }
+  #leave-public .lp-day small { display: block; font-size: 9px; font-weight: 500; color: var(--text-muted); line-height: 1.1; }
+  #leave-public button.lp-day { cursor: pointer; font-family: inherit; }
+  #leave-public .lp-day.no { background: var(--surface-1); color: var(--text-muted); border-style: dashed; }
+  #leave-public .lp-day.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  #leave-public .lp-day.on small { color: #fff; }
+  #leave-public .lp-day.ok { background: color-mix(in srgb, var(--good) 30%, transparent); }
+  #leave-public .lp-month { grid-column: 1 / -1; font-weight: 700; font-size: 13px; margin: 10px 0 2px; }
+  #leave-public .lp-bar { position: sticky; bottom: 0; background: var(--page); padding: 12px 0 4px; border-top: 1px solid var(--gridline); margin-top: 14px; }
+  #leave-public .lp-msg { font-size: 13px; margin: 8px 0; }
   html.public-payslip #payslip-close-btn { display: none; }
   #payslip-content .public-payslip-note { margin-top: 16px; font-size: 11px; color: var(--text-muted); text-align: center; }
   .wa-box { border: 1px solid var(--gridline); border-radius: 8px; padding: 10px 12px; margin: 10px 0; font-size: 13px; background: var(--surface-1); }
@@ -1624,7 +1649,19 @@
           <div id="dp-note" style="margin:0 0 10px; font-size:12px; color:var(--text-muted);"></div>
           <div id="dp-tiles"></div>
           <div id="dp-board" style="overflow-x:auto; border:1px solid var(--border); border-radius:10px;"></div>
-          <div style="margin-top:8px; font-size:12px; color:var(--text-muted);"><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--good) 22%, transparent);"></span> covered &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--warning) 28%, transparent);"></span> 1–2 short &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--critical) 24%, transparent);"></span> 3 or more short &nbsp; Each cell: booked / needed. A dot means someone set the number by hand.</div>
+          <div style="margin-top:8px; font-size:12px; color:var(--text-muted);"><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--good) 22%, transparent);"></span> covered &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--warning) 28%, transparent);"></span> 1–2 short &nbsp; <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:color-mix(in srgb, var(--critical) 24%, transparent);"></span> 3 or more short &nbsp; Each cell: booked / needed. A dot means someone set the number by hand. <span style="color:var(--warning); font-weight:700;">?2</span> = two booked people have asked for leave that day (not decided yet).</div>
+          <div id="lr-wrap" style="margin-top:26px;">
+            <h2 style="font-size:17px;">Leave requests from staff (WhatsApp)</h2>
+            <p class="panel-sub">Each person gets a WhatsApp with a private link showing their leave days left and a calendar from 1 December to 8 January. They tick the days they want (only days they work, never more than they have left) until the deadline. Requests show on the board above as <strong>?</strong>. Approve all or some of the days (signed off by a manager, like captured leave) or decline with a reason; the person sees the answer on the same link. Approved days become Annual Leave.</p>
+            <div id="lr-head" style="margin:0 0 10px;"></div>
+            <div id="lr-tiles"></div>
+            <div class="toolbar">
+              <input type="search" id="lr-search" placeholder="Search name or department" style="max-width:240px;">
+              <button class="btn small" type="button" id="lr-send-btn">Send WhatsApp to ticked</button>
+              <span class="save-status" id="lr-status"></span>
+            </div>
+            <div style="overflow-x:auto;"><table class="data-table" id="lr-table"></table></div>
+          </div>
         </div>
         <div class="panel" data-attpanel="link">
           <h2>Attendance — BioTime link-up</h2>
@@ -2040,7 +2077,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.173-dec-planner-shifts';
+  var FRONTEND_BUILD = '2026-11-16.174-leave-requests';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2062,7 +2099,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getLeaveRequests: true, getLeaveRequestLink: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -6182,12 +6219,12 @@
     document.getElementById('atts-seasons').innerHTML = '<thead><tr><th style="text-align:left;">Department</th><th style="text-align:left;">Dates</th><th style="text-align:left;">Days</th><th style="text-align:left;">Shift time</th><th style="text-align:left;">Note</th><th></th></tr></thead><tbody>' +
       (rows || (ed ? '' : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">None.</td></tr>')) + add + '</tbody>';
     Array.prototype.forEach.call(document.querySelectorAll('[data-season-del]'), function (b) {
-      b.addEventListener('click', function () { if (confirm('Remove this period shift?')) attsCall_('saveShiftSeason', 'deleteAttSetting', { id: b.getAttribute('data-season-del'), remove: '1' }, b, 'Removed'); });
+      b.addEventListener('click', function () { if (confirm('Remove this period shift?')) attsCall_('saveShiftSeason', { id: b.getAttribute('data-season-del'), remove: '1' }, b, 'Removed'); });
     });
     var ab = document.getElementById('ssn-add');
     if (ab) ab.addEventListener('click', function () {
       var days = Array.prototype.filter.call(document.querySelectorAll('[data-ssn-day]'), function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-ssn-day'); });
-      attsCall_('saveShiftSeason', 'deleteAttSetting', { department: document.getElementById('ssn-dept').value, from: document.getElementById('ssn-from').value, to: document.getElementById('ssn-to').value,
+      attsCall_('saveShiftSeason', { department: document.getElementById('ssn-dept').value, from: document.getElementById('ssn-from').value, to: document.getElementById('ssn-to').value,
         weekdays: days.join(','), timetable: document.getElementById('ssn-tt').value, note: document.getElementById('ssn-note').value }, ab, 'Period shift added');
     });
   }
@@ -6202,6 +6239,7 @@
       if (!res || !res.ok) { flashStatus(status, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
       flashStatus(status, '', 'save-status', 0);
       dpState.data = res; dpState.year = res.year; renderDecPlan_();
+      loadLeaveReqs_();
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
   function dpColor_(c) {
@@ -6241,7 +6279,7 @@
     var cell = function (dt, dep) {
       var c = d.cells[dt + '|' + dep];
       return '<td data-dp-cell="' + esc(dt + '|' + dep) + '" style="cursor:pointer; text-align:center; padding:4px 2px; font-size:12px; white-space:nowrap; background:' + dpColor_(c) + ';">' +
-        (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '')) + '</td>';
+        (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '') + (c.asked ? '<div style="color:var(--warning); font-weight:700; font-size:11px;" title="Asked for leave, not decided">?' + c.asked + '</div>' : '')) + '</td>';
     };
     document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--surface-2, #fff); z-index:2; text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
       '<tr><td style="position:sticky; left:0; background:var(--surface-2, #fff); text-align:left; font-weight:700;">All</td>' + d.dates.map(function (dt) { var t = d.totals[dt]; return '<td style="text-align:center; font-size:12px; font-weight:700; padding:4px 2px; background:' + dpColor_({ short: t.short, closed: d.closed.indexOf(dt.slice(5)) !== -1 }) + ';">' + (d.closed.indexOf(dt.slice(5)) !== -1 ? '–' : t.booked + '/' + t.required) + '</td>'; }).join('') + '</tr>' +
@@ -6261,6 +6299,7 @@
       '<button class="btn small" type="button" id="dp-save">Save</button>' + (c.override ? '<button class="btn secondary small" type="button" id="dp-reset">Use the estimate (' + c.estimate + ')</button>' : '') + '<span class="save-status" id="dp-cell-status"></span></div>';
     var list = function (title, arr, fmt) { return '<h3 style="font-size:13px; margin:12px 0 4px;">' + title + ' (' + arr.length + ')</h3>' + (arr.length ? '<div style="font-size:13px; line-height:1.6;">' + arr.map(fmt).join('<br>') + '</div>' : '<div class="hint" style="margin:0;">None.</div>'); };
     document.getElementById('casual-weeks-body').innerHTML =
+      ((c.askedList || []).length ? list('Asked for leave (not decided yet)' + (c.shortIfAll > c.short ? ' — if all approved: ' + c.shortIfAll + ' short' : ''), c.askedList, function (x) { return esc(x.name); }) : '') +
       list('Booked', c.bookedList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; }) +
       list('On leave', c.leaveList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
       list('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
@@ -6277,6 +6316,183 @@
     document.getElementById('dp-save').addEventListener('click', function () { save(document.getElementById('dp-req').value, this); });
     var rs = document.getElementById('dp-reset'); if (rs) rs.addEventListener('click', function () { save('', this); });
   }
+
+  // ---------------- December leave requests on WhatsApp (SETUP §91) ----------------
+  var lrState = { data: null, filter: '', search: '', ticked: {}, tplChecked: false };
+  var LR_TPL_TEXT_ = 'Hi {{1}}, we are planning December leave. You have {{2}} annual leave days left this year (unused leave is lost on 31 December). Tap the button to choose the days you would like off between 1 December and 8 January. Please choose by {{3}}.';
+  function loadLeaveReqs_() {
+    var st = document.getElementById('lr-status'); if (!st) return Promise.resolve();
+    flashStatus(st, 'Loading leave requests…', 'save-status', 0);
+    var params = { year: dpState.year }; if (!lrState.tplChecked) params.checkTemplate = '1';
+    return callApi('getLeaveRequests', params).then(function (res) {
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
+      flashStatus(st, '', 'save-status', 0);
+      if (params.checkTemplate) { lrState.tpl = res.template; lrState.tplChecked = true; }
+      lrState.data = res; renderLeaveReqs_();
+    }).catch(function () { flashStatus(st, 'Network error', 'save-status err', 6000); });
+  }
+  function lrShortDates_(arr) {
+    if (!arr.length) return '';
+    var mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], runs = [];
+    arr.forEach(function (d) { var l = runs[runs.length - 1]; if (l && attdShiftDate_(l[1], 1) === d) l[1] = d; else runs.push([d, d]); });
+    var lab = function (d) { return Number(d.slice(8)) + ' ' + mon[Number(d.slice(5, 7)) - 1]; };
+    return runs.map(function (r) { return r[0] === r[1] ? lab(r[0]) : lab(r[0]) + '–' + lab(r[1]); }).join(', ');
+  }
+  function lrKind_(x) {
+    if (x.status === 'Requested') return 'asked';
+    if (x.status === 'Approved') return 'approved';
+    if (x.status === 'Declined') return 'declined';
+    if (!x.phoneOk) return 'nophone';
+    if (x.sendStatus === 'Sent') return x.views ? 'opened' : 'sent';
+    if (x.sendStatus === 'Failed') return 'failed';
+    return 'notsent';
+  }
+  function renderLeaveReqs_() {
+    var d = lrState.data; if (!d) return;
+    var tpl = lrState.tpl || d.template || {}, head = document.getElementById('lr-head');
+    var tplLine = !tpl.tokenSet ? '<span style="color:var(--critical);">WhatsApp is not connected (no access token), so use <strong>Copy link</strong> / <strong>WhatsApp</strong> per person.</span>'
+      : tpl.status === 'APPROVED' ? '<span style="color:var(--good);">WhatsApp template <strong>' + esc(tpl.name) + '</strong> is approved: Send works.</span>'
+      : '<span style="color:var(--warning);">WhatsApp template <strong>' + esc(tpl.name) + '</strong> ' + (tpl.found ? 'is ' + esc(tpl.status) : 'does not exist yet') + ', so Send will not work yet. Until Meta approves it, use <strong>WhatsApp</strong> per person (opens WhatsApp on this device with the message and their link).</span>' +
+        ' <details style="display:inline;"><summary style="cursor:pointer; color:var(--brand); display:inline;">How to create it</summary><div class="wa-box" style="margin-top:6px;">Meta Business Manager → WhatsApp Manager → Message templates → Create: category <strong>Utility</strong>, name <strong>' + esc(tpl.name) + '</strong>, language English.<br>Body: <em>' + esc(LR_TPL_TEXT_) + '</em><br>Samples: {{1}} Thabo, {{2}} 7, {{3}} Friday 20 November.<br>Button: <strong>Visit website</strong>, text "Choose my days", URL type <strong>Dynamic</strong>: <code>https://master.dailyfruit.co.za/?leave={{1}}</code> (sample: https://master.dailyfruit.co.za/?leave=abc).</div></details>';
+    head.innerHTML = '<div style="font-size:13px; line-height:1.6;">Deadline: <strong>' + esc(d.deadline) + '</strong>' + (d.today > d.deadline ? ' <span style="color:var(--critical);">(closed: staff can no longer change their requests)</span>' : '') +
+      (d.canSetDeadline ? ' <input type="date" id="lr-deadline" value="' + esc(d.deadline) + '" style="padding:4px 6px; border-radius:6px; border:1px solid var(--border);"> <button class="btn secondary small" type="button" id="lr-deadline-save">Change</button>' : '') +
+      '<br>' + tplLine + '</div>';
+    var ds = document.getElementById('lr-deadline-save');
+    if (ds) ds.addEventListener('click', function () { lrCall_('setLeaveRequestDeadline', { deadline: document.getElementById('lr-deadline').value }, ds, 'Deadline changed'); });
+    var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, approved: 0, declined: 0 };
+    d.people.forEach(function (x) { counts[lrKind_(x)]++; });
+    var tiles = [['notsent', 'Not sent yet', 'var(--text-muted)'], ['sent', 'Sent, not opened', 'var(--warning)'], ['opened', 'Opened, nothing asked', 'var(--brand)'], ['asked', 'Asked: to decide', 'var(--warning)'],
+      ['approved', 'Approved', 'var(--good)'], ['declined', 'Declined', 'var(--critical)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
+    var tEl = document.getElementById('lr-tiles');
+    tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' + tiles.map(function (t) {
+      return '<button type="button" class="kpi-card" data-lr-tile="' + t[0] + '" style="--dot:' + t[2] + ';' + (lrState.filter === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + t[1] + '</span></div><div class="big">' + counts[t[0]] + '</div><div class="cap">' + (lrState.filter === t[0] ? 'Showing only these; click again for everyone' : 'Click to show them') + '</div></button>';
+    }).join('') + '</div>';
+    Array.prototype.forEach.call(tEl.querySelectorAll('[data-lr-tile]'), function (b) { b.addEventListener('click', function () { var k = b.getAttribute('data-lr-tile'); lrState.filter = lrState.filter === k ? '' : k; renderLeaveReqs_(); }); });
+    var q = lrState.search.toLowerCase();
+    var rows = d.people.filter(function (x) { return (!lrState.filter || lrKind_(x) === lrState.filter) && (!q || (x.name + ' ' + x.department).toLowerCase().indexOf(q) !== -1); });
+    var sendable = function (x) { return x.phoneOk && !x.status; };
+    var statusCell = function (x) {
+      var k = lrKind_(x);
+      if (k === 'asked') return '<strong style="color:var(--warning);">Asked</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.submittedAt.slice(0, 16)) + '</span>';
+      if (k === 'approved') return '<strong style="color:var(--good);">Approved</strong> ' + esc(lrShortDates_(x.approvedDates)) + ' <span style="color:var(--text-muted); font-size:12px;">by ' + esc(x.decidedBy) + '</span>';
+      if (k === 'declined') return '<strong style="color:var(--critical);">Declined</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.decisionNote) + '</span>';
+      if (k === 'nophone') return '<span style="color:var(--critical);">No cell number</span>';
+      if (k === 'failed') return '<span style="color:var(--critical);" title="' + esc(x.sendError) + '">Send failed</span>';
+      if (k === 'opened') return 'Opened ' + x.views + '×, nothing asked yet';
+      if (k === 'sent') return 'Sent ' + esc(x.sentAt.slice(5, 16));
+      return '<span style="color:var(--text-muted);">Not sent</span>';
+    };
+    document.getElementById('lr-table').innerHTML = '<thead><tr><th><input type="checkbox" id="lr-all" title="Tick everyone shown who can be sent to"></th><th style="text-align:left;">Employee</th><th>Left ' + d.year + '</th><th>' + (d.year + 1) + '</th><th style="text-align:left;">Asked for</th><th style="text-align:left;">Status</th><th></th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (x) {
+        return '<tr><td>' + (sendable(x) ? '<input type="checkbox" data-lr-tick="' + esc(x.employeeId) + '"' + (lrState.ticked[x.employeeId] ? ' checked' : '') + '>' : '') + '</td>' +
+          '<td style="text-align:left;">' + esc(x.name) + '<div style="font-size:11px; color:var(--text-muted);">' + esc(x.department) + (x.phone ? ' · ' + esc(x.phone) : '') + '</div></td>' +
+          '<td>' + x.left + (x.firstYear ? '<div style="font-size:10px; color:var(--text-muted);">first year</div>' : '') + '</td><td>' + x.leftNext + '</td>' +
+          '<td style="text-align:left; font-size:12px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px;">' + statusCell(x) + '</td>' +
+          '<td style="white-space:nowrap;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : '') +
+          (/Approved|Declined/.test(x.status) ? '<button class="btn secondary small" type="button" data-lr-reopen="' + esc(x.employeeId) + '">Reopen</button> ' : '') +
+          '<button class="btn secondary small" type="button" data-lr-wa="' + esc(x.employeeId) + '" title="Open WhatsApp on this device with the message and their private link">WhatsApp</button> ' +
+          '<button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button></td></tr>';
+      }).join('') : '<tr><td colspan="7" style="text-align:left;">Nobody here.</td></tr>') + '</tbody>';
+    var tickedN = function () { return Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; }).length; };
+    var sb = document.getElementById('lr-send-btn');
+    var setSendLabel = function () { var n = tickedN(); sb.textContent = n ? 'Send WhatsApp to ' + n + ' ticked' : 'Send WhatsApp to ticked'; sb.disabled = !n; };
+    setSendLabel();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-tick]'), function (c) { c.addEventListener('change', function () { lrState.ticked[c.getAttribute('data-lr-tick')] = c.checked; setSendLabel(); }); });
+    document.getElementById('lr-all').addEventListener('change', function () {
+      var on = this.checked; rows.forEach(function (x) { if (sendable(x)) lrState.ticked[x.employeeId] = on; }); renderLeaveReqs_();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-decide]'), function (b) { b.addEventListener('click', function () { openLeaveReqDecide_(b.getAttribute('data-lr-decide')); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-reopen]'), function (b) { b.addEventListener('click', function () { if (confirm('Reopen this request so it can be decided again (and the person can change it before the deadline)?')) lrCall_('reopenLeaveRequest', { employeeId: b.getAttribute('data-lr-reopen') }, b, 'Reopened'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-copy],[data-lr-wa]'), function (b) {
+      b.addEventListener('click', function () {
+        var wa = b.hasAttribute('data-lr-wa'), id = b.getAttribute(wa ? 'data-lr-wa' : 'data-lr-copy'), label = b.textContent;
+        b.disabled = true; b.textContent = '…';
+        callApi('getLeaveRequestLink', { employeeId: id, year: d.year }).then(function (res) {
+          b.disabled = false; b.textContent = label;
+          if (!res || !res.ok) { flashStatus(document.getElementById('lr-status'), (res && res.error) || 'Could not make the link', 'save-status err', 8000); return; }
+          var msg = 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
+          if (wa) {
+            if (!res.phone) { flashStatus(document.getElementById('lr-status'), res.name + ' has no valid cell number: use Copy link.', 'save-status err', 8000); return; }
+            window.open('https://wa.me/' + res.phone + '?text=' + encodeURIComponent(msg), '_blank');
+          } else {
+            var done = function () { flashStatus(document.getElementById('lr-status'), 'Message with ' + res.name + '\'s link copied', 'save-status ok', 4000); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(msg).then(done, function () { window.prompt('Copy this message:', msg); });
+            else window.prompt('Copy this message:', msg);
+          }
+          if (!lrState.data.people.some(function (x) { return x.employeeId === id && x.hasLink; })) loadLeaveReqs_();
+        }).catch(function () { b.disabled = false; b.textContent = label; flashStatus(document.getElementById('lr-status'), 'Network error', 'save-status err', 6000); });
+      });
+    });
+  }
+  function lrCall_(action, params, btn, okText) {
+    var st = document.getElementById('lr-status'), label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    flashStatus(st, 'Saving…', 'save-status', 0);
+    return callApi(action, Object.assign({ year: dpState.year }, params)).then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return false; }
+      lrState.data = res; renderLeaveReqs_(); flashStatus(document.getElementById('lr-status'), okText, 'save-status ok', 3500);
+      if (action === 'decideLeaveRequest' || action === 'reopenLeaveRequest') loadDecPlan_(dpState.year);
+      return true;
+    }).catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } flashStatus(st, 'Network error', 'save-status err', 6000); return false; });
+  }
+  function openLeaveReqDecide_(id) {
+    var d = lrState.data, x = d.people.filter(function (p) { return p.employeeId === id; })[0]; if (!x) return;
+    document.getElementById('casual-weeks-title').textContent = 'Leave request — ' + x.name;
+    document.getElementById('casual-weeks-sub').innerHTML = esc(x.department) + '. Left: ' + x.left + ' days in ' + d.year + ', ' + x.leftNext + ' in ' + (d.year + 1) + '. Asked on ' + esc(x.submittedAt.slice(0, 16)) + '. Untick days you do not approve; check cover on the board first.';
+    var wdn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    document.getElementById('casual-weeks-body').innerHTML = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">' + x.dates.map(function (dt) {
+      var c = dpState.data && dpState.data.cells[dt + '|' + x.department];
+      return '<label style="border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-size:13px;"><input type="checkbox" data-lr-day="' + dt + '" checked> ' + wdn[new Date(dt + 'T00:00:00Z').getUTCDay()] + ' ' + Number(dt.slice(8)) + '/' + Number(dt.slice(5, 7)) +
+        (c ? '<div style="font-size:11px; color:' + (c.shortIfAll > 0 ? 'var(--critical)' : 'var(--text-muted)') + ';">' + x.department + ': ' + c.booked + '/' + c.required + (c.asked ? ', ' + c.asked + ' asked' : '') + '</div>' : '') + '</label>';
+    }).join('') + '</div>' +
+      '<div class="toolbar" style="flex-wrap:wrap;"><label style="font-size:13px;">Signed off by</label><select id="lr-mgr"><option value="">— manager —</option>' + d.managers.map(function (m) { return '<option>' + esc(m.name) + '</option>'; }).join('') + '</select>' +
+      '<input type="text" id="lr-note" placeholder="Note (required to decline; the employee sees it)" style="min-width:260px;"></div>' +
+      '<div class="toolbar"><button class="btn small" type="button" id="lr-approve">Approve ticked days</button><button class="btn secondary small" type="button" id="lr-decline">Decline all</button><span class="save-status" id="lr-dec-status"></span></div>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
+    var go = function (decision, btn) {
+      var days = Array.prototype.filter.call(document.querySelectorAll('[data-lr-day]'), function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-lr-day'); });
+      var st = document.getElementById('lr-dec-status'), label = btn.textContent;
+      if (decision === 'approve' && !days.length) { flashStatus(st, 'Tick at least one day, or decline.', 'save-status err', 6000); return; }
+      btn.disabled = true; btn.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
+      callApi('decideLeaveRequest', { year: d.year, employeeId: id, decision: decision, dates: days.join(','), approvedBy: document.getElementById('lr-mgr').value, note: document.getElementById('lr-note').value }).then(function (res) {
+        btn.disabled = false; btn.textContent = label;
+        if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
+        document.getElementById('casual-weeks-modal').classList.remove('active');
+        lrState.data = res; renderLeaveReqs_(); loadDecPlan_(dpState.year);
+        flashStatus(document.getElementById('lr-status'), decision === 'approve' ? 'Approved: ' + days.length + ' day(s) captured as Annual Leave' : 'Declined', 'save-status ok', 4000);
+      }).catch(function () { btn.disabled = false; btn.textContent = label; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    };
+    document.getElementById('lr-approve').addEventListener('click', function () { go('approve', this); });
+    document.getElementById('lr-decline').addEventListener('click', function () { go('decline', this); });
+  }
+  (function () {
+    var s = document.getElementById('lr-search');
+    if (s) s.addEventListener('input', function () { lrState.search = s.value; renderLeaveReqs_(); });
+    var sb = document.getElementById('lr-send-btn');
+    if (sb) sb.addEventListener('click', function () {
+      var ids = Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; });
+      if (!ids.length || !confirm('Send the December leave WhatsApp to ' + ids.length + ' people?')) return;
+      var st = document.getElementById('lr-status'), sent = 0, failed = [], i = 0;
+      sb.disabled = true;
+      var next = function () {
+        if (i >= ids.length) {
+          sb.disabled = false; lrState.ticked = {};
+          loadLeaveReqs_().then(function () { flashStatus(document.getElementById('lr-status'), 'Sent ' + sent + (failed.length ? '; not sent: ' + failed.join('; ') : ''), failed.length ? 'save-status err' : 'save-status ok', failed.length ? 20000 : 5000); });
+          return;
+        }
+        var chunk = ids.slice(i, i + 30); i += 30;
+        sb.textContent = 'Sending ' + Math.min(i, ids.length) + ' of ' + ids.length + '…';
+        flashStatus(st, 'Sending ' + Math.min(i, ids.length) + ' of ' + ids.length + '…', 'save-status', 0);
+        callApi('sendLeaveRequestWhatsapp', { year: dpState.year, employeeIds: chunk.join(',') }).then(function (res) {
+          if (!res || !res.ok) { failed.push((res && res.error) || 'error'); i = ids.length; return next(); }
+          sent += res.sent; res.results.forEach(function (r) { if (r.status !== 'sent') failed.push(r.name + ': ' + r.error); });
+          next();
+        }).catch(function () { failed.push('network error'); i = ids.length; next(); });
+      };
+      next();
+    });
+  })();
 
   (function () {
     var dy = document.getElementById('dp-year');
@@ -12204,6 +12420,96 @@
         dl.style.display = 'none';
         content.innerHTML = '<p class="error-text" style="text-align:center; padding:24px 8px;">Network error — please check your connection and try again.</p>';
       });
+    })();
+  }
+
+  // ================= PUBLIC LEAVE REQUEST (§91, opened from the WhatsApp link) =================
+  // No login: the long random token in the link is the key; the server only returns this person's own leave.
+  if (window.__leaveToken) {
+    (function () {
+      var root = document.createElement('div'); root.id = 'leave-public'; document.body.appendChild(root);
+      var st = { data: null, pick: {}, msg: '', msgBad: false, busy: false };
+      var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      // the same count the office uses (Leave Taken): days in a row form one leave; public holidays never count;
+      // in a run that has weekdays only the weekdays count
+      var cost = function (dates) {
+        var hol = st.data.holidays || {}, out = {}, runs = [];
+        dates.slice().sort().forEach(function (d) { var l = runs[runs.length - 1]; if (l && attdShiftDate_(l[l.length - 1], 1) === d && d.slice(0, 4) === l[0].slice(0, 4)) l.push(d); else runs.push([d]); });
+        runs.forEach(function (r) {
+          var all = r.filter(function (d) { return !hol[d]; }), wk = all.filter(function (d) { var w = new Date(d + 'T00:00:00Z').getUTCDay(); return w !== 0 && w !== 6; });
+          var y = r[0].slice(0, 4); out[y] = (out[y] || 0) + (r.length === 1 ? all.length : (wk.length ? wk.length : all.length));
+        });
+        return out;
+      };
+      var picked = function () { return Object.keys(st.pick).filter(function (k) { return st.pick[k]; }).sort(); };
+      var render = function () {
+        var d = st.data;
+        if (!d) { root.innerHTML = '<p class="hint" style="text-align:center; padding:40px 0;">Loading…</p>'; return; }
+        if (!d.ok) { root.innerHTML = '<p class="error-text" style="text-align:center; padding:40px 8px;">' + esc(d.error || 'This link does not work.') + '</p>'; return; }
+        var y1 = String(d.year), y2 = String(d.nextYear), c = cost(picked()), decided = d.status === 'Approved' || d.status === 'Declined';
+        var approved = {}; (d.approvedDates || []).forEach(function (x) { approved[x] = true; });
+        var h = '<div style="font-size:12px; color:var(--text-muted);">' + esc(d.company) + '</div><h1>December leave — ' + esc(d.name) + '</h1>' +
+          '<div class="lp-sub">' + esc(d.department) + '. Choose the days you would like off between 1 December and 8 January. ' + (d.open ? 'You can change your choice until <strong>' + esc(d.deadlineLabel || d.deadline) + '</strong>.' : '') + '</div>' +
+          '<div class="lp-bal"><div><b>' + d.left + '</b>days left in ' + y1 + (d.firstYear ? ' (built up so far this year)' : '') + '<br>Unused leave is lost on 31 December.</div><div><b>' + d.leftNext + '</b>days for ' + y2 + '<br>For the days from 1 January.</div></div>';
+        if (d.status === 'Approved') h += '<div class="wa-box" style="border-color:var(--good);"><strong>Approved:</strong> ' + d.approvedDates.length + ' day(s), marked green below.' + (d.decisionNote ? ' ' + esc(d.decisionNote) : '') + (d.approvedDates.length < d.requested.length ? ' Days you asked for that are not green were not approved.' : '') + '</div>';
+        else if (d.status === 'Declined') h += '<div class="wa-box bad"><strong>Not approved:</strong> ' + esc(d.decisionNote) + '</div>';
+        else if (!d.open) h += '<div class="wa-box warn">Requests closed on ' + esc(d.deadline) + '. ' + (d.requested.length ? 'Your request is with HR.' : 'Speak to HR if you need leave.') + '</div>';
+        else if (d.status === 'Requested') h += '<div class="wa-box">Your request was received' + (d.submittedAt ? ' (' + esc(d.submittedAt.slice(0, 16)) + ')' : '') + '. HR will let you know. You can still change it until ' + esc(d.deadlineLabel || d.deadline) + '.</div>';
+        if (d.noShift) h += '<div class="hint" style="font-size:12px;">You have no shift on file, so Monday to Friday is shown as your work days.</div>';
+        // calendar: weeks Monday to Sunday
+        var first = d.days[0].date, start = first; while (new Date(start + 'T00:00:00Z').getUTCDay() !== 1) start = attdShiftDate_(start, -1);
+        var byDate = {}; d.days.forEach(function (x) { byDate[x.date] = x; });
+        h += '<div class="lp-cal">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (w) { return '<div class="lp-wd">' + w + '</div>'; }).join('');
+        var lastMonth = '';
+        for (var dt = start; dt <= d.days[d.days.length - 1].date || new Date(dt + 'T00:00:00Z').getUTCDay() !== 1; dt = attdShiftDate_(dt, 1)) {
+          var x = byDate[dt], mo = dt.slice(0, 7);
+          if (new Date(dt + 'T00:00:00Z').getUTCDay() === 1 && x && mo !== lastMonth) { h += '<div class="lp-month">' + MON[Number(dt.slice(5, 7)) - 1] + ' ' + dt.slice(0, 4) + '</div>'; lastMonth = mo; }
+          if (!x) { h += '<div></div>'; continue; }
+          lastMonth = mo;
+          var why = x.closed ? 'closed' : x.holiday ? 'holiday' : x.leave ? 'on leave' : !x.work ? 'off' : '';
+          var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1].slice(0, 3) : '');
+          if (approved[dt]) h += '<div class="lp-day ok">' + num + '<small>approved</small></div>';
+          else if (x.can && d.open) h += '<button type="button" class="lp-day' + (st.pick[dt] ? ' on' : '') + '" data-lp="' + dt + '">' + num + '<small>' + (st.pick[dt] ? 'leave' : 'work') + '</small></button>';
+          else h += '<div class="lp-day' + (st.pick[dt] ? ' on' : ' no') + '">' + num + '<small>' + (st.pick[dt] ? 'asked' : why || 'work') + '</small></div>';
+        }
+        h += '</div>';
+        if (d.open) {
+          h += '<div class="lp-bar"><div style="font-size:14px;">Chosen: <strong>' + (c[y1] || 0) + '</strong> of ' + d.left + ' days in ' + y1 + (c[y2] ? ', <strong>' + c[y2] + '</strong> of ' + d.leftNext + ' in ' + y2 : '') + '</div>' +
+            (st.msg ? '<div class="lp-msg" style="color:' + (st.msgBad ? 'var(--critical)' : 'var(--good)') + ';">' + esc(st.msg) + '</div>' : '') +
+            '<div style="display:flex; gap:8px; margin-top:8px;"><button class="btn" type="button" id="lp-send" style="flex:1;"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Sending…' : (d.status === 'Requested' ? 'Send my changes' : 'Send my request')) + '</button>' +
+            (picked().length ? '<button class="btn secondary" type="button" id="lp-clear">Clear</button>' : '') + '</div>' +
+            '<div class="hint" style="font-size:11px; margin-top:6px;">Weekends between leave days and public holidays are not counted. Leave is only final once HR approves it.</div></div>';
+        }
+        h += '<p style="margin-top:16px; font-size:11px; color:var(--text-muted); text-align:center;">This is your private link — please don\'t share it.</p>';
+        root.innerHTML = h;
+        Array.prototype.forEach.call(root.querySelectorAll('[data-lp]'), function (b) {
+          b.addEventListener('click', function () {
+            var dd = b.getAttribute('data-lp');
+            if (!st.pick[dd]) {
+              var test = picked().concat([dd]), cc = cost(test), yy = dd.slice(0, 4), lim = yy === y1 ? d.left : d.leftNext;
+              if ((cc[yy] || 0) > lim) { st.msg = 'You only have ' + lim + ' day' + (lim === 1 ? '' : 's') + ' for ' + yy + '.'; st.msgBad = true; render(); return; }
+            }
+            st.pick[dd] = !st.pick[dd]; st.msg = ''; render();
+          });
+        });
+        var cl = document.getElementById('lp-clear'); if (cl) cl.addEventListener('click', function () { st.pick = {}; st.msg = ''; render(); });
+        var sb = document.getElementById('lp-send');
+        if (sb) sb.addEventListener('click', function () {
+          st.busy = true; st.msg = ''; render();
+          callApi('submitLeaveRequest', { lt: window.__leaveToken, dates: picked().join(',') }).then(function (res) {
+            st.busy = false;
+            if (!res || !res.ok) { st.msg = (res && res.error) || 'Could not send.'; st.msgBad = true; render(); return; }
+            st.data = res; st.pick = {}; res.requested.forEach(function (x) { st.pick[x] = true; });
+            st.msg = res.requested.length ? 'Sent. HR will let you know.' : 'Sent: you are not asking for any leave.'; st.msgBad = false; render();
+          }).catch(function () { st.busy = false; st.msg = 'Network error — check your connection and try again.'; st.msgBad = true; render(); });
+        });
+      };
+      render();
+      callApi('getLeaveRequestForm', { lt: window.__leaveToken }).then(function (res) {
+        st.data = res || { ok: false, error: 'Could not load.' };
+        if (res && res.ok) res.requested.forEach(function (x) { st.pick[x] = true; });
+        render();
+      }).catch(function () { st.data = { ok: false, error: 'Network error — check your connection and try again.' }; render(); });
     })();
   }
 
