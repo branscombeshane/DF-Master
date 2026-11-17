@@ -2094,7 +2094,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.199-leave-list-fit';
+  var FRONTEND_BUILD = '2026-11-17.200-negative-balance-finalize';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6730,7 +6730,7 @@
         return out;
       };
       var render = function () {
-        var c = cost(), over1 = (c[y1] || 0) > res.left, over2 = (c[y2] || 0) > res.leftNext;
+        var c = cost(), over1 = (c[y1] || 0) > 0 && c[y1] > res.left, over2 = (c[y2] || 0) > 0 && c[y2] > res.leftNext;   // §116 nothing ticked is never over, even below zero
         var added = Object.keys(pick).filter(function (k) { return pick[k] && !asked[k]; }).length, removed = res.asked.filter(function (k) { return !pick[k]; }).length;
         sub.innerHTML = esc(x.department) + '. Left: <strong>' + res.left + '</strong> days in ' + y1 + ', <strong>' + res.leftNext + '</strong> in ' + y2 + (manual ? '. No request from them: tick the days to give (shown as "added"). ' : '. Asked on ' + esc(x.submittedAt.slice(0, 16)) + ' for ' + res.asked.length + ' day(s). ') +
           'Tick or untick days to change them; each day shows ' + esc(x.department) + '\'s cover (booked / needed).';
