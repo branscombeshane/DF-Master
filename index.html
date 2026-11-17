@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.188-leave-whole-days';
+  var FRONTEND_BUILD = '2026-11-17.189-left-after-leave';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6466,8 +6466,16 @@
       '<button class="btn small" type="button" id="dp-save">Save</button>' + (c.override ? '<button class="btn secondary small" type="button" id="dp-reset">Use the estimate (' + c.estimate + ')</button>' : '') + '<span class="save-status" id="dp-cell-status"></span></div>';
     var list = function (title, arr, fmt) { return '<h3 style="font-size:13px; margin:12px 0 4px;">' + title + ' (' + arr.length + ')</h3>' + (arr.length ? '<div style="font-size:13px; line-height:1.6;">' + arr.map(fmt).join('<br>') + '</div>' : '<div class="hint" style="margin:0;">None.</div>'); };
     document.getElementById('casual-weeks-body').innerHTML =
-      ((c.askedList || []).length ? list('Asked for leave (not decided yet)' + (c.shortIfAll > c.short ? ' — if all approved: ' + c.shortIfAll + ' short' : ''), c.askedList, function (x) { return esc(x.name); }) : '') +
-      list('Booked', c.bookedList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; }) +
+      ((c.askedList || []).length ? (function () {
+        // §104: who is left working if every request for this day is approved
+        var askedNames = {}; c.askedList.forEach(function (x) { askedNames[x.name] = true; });
+        var stay = c.bookedList.filter(function (x) { return !askedNames[x.name]; }), diff = stay.length - c.required;
+        return '<div style="margin:12px 0 0; padding:10px 12px; border-radius:8px; font-size:14px; background:color-mix(in srgb, ' + (diff < 0 ? 'var(--critical)' : diff === 0 ? 'var(--warning)' : 'var(--good)') + ' 14%, transparent);">' +
+          'If all requests are approved: <strong>' + stay.length + ' left working</strong> of ' + c.required + ' needed — <strong>' + (diff < 0 ? (-diff) + ' short' : diff === 0 ? 'exactly enough' : diff + ' spare') + '</strong>.</div>' +
+          list('Asked for leave (not decided yet)', c.askedList, function (x) { return esc(x.name); }) +
+          list('Left working if all approved', stay, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; });
+      })() : '') +
+      list('Booked' + ((c.askedList || []).length ? ' now (before any leave is approved)' : ''), c.bookedList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; }) +
       list('On leave', c.leaveList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
       list('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
     document.getElementById('casual-weeks-modal').classList.add('active');
