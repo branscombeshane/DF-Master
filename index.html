@@ -1673,6 +1673,7 @@
             <div class="toolbar">
               <input type="search" id="lr-search" placeholder="Search name or department" style="max-width:240px;">
               <button class="btn small" type="button" id="lr-send-btn">Send WhatsApp to ticked</button>
+              <button class="btn small" type="button" id="lr-roster-btn" style="display:none;">Send roster to ticked</button>
               <span class="save-status" id="lr-status"></span>
             </div>
             <div style="overflow-x:auto;"><table class="data-table" id="lr-table"></table></div>
@@ -2092,7 +2093,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.191-leave-change-days';
+  var FRONTEND_BUILD = '2026-11-17.192-finalize-roster';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2114,7 +2115,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -6427,8 +6428,18 @@
     var tEl = document.getElementById('dp-tiles');
     tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' +
       tile('short', 'Short', shortCells, shortCells ? shortPeople + ' people-days short; click to show only those departments' : 'Every day covered', shortCells ? 'var(--critical)' : 'var(--good)') +
-      tile('leave', 'On leave in the period', Object.keys(leaveNames).length, 'People with approved leave; click for the list', 'var(--brand)') + '</div>';
+      tile('leave', 'On leave in the period', Object.keys(leaveNames).length, 'People with approved leave; click for the list', 'var(--brand)') +
+      tile('final', 'Finalized', (d.finalState ? d.finalState.done + ' of ' + d.finalState.total : '–'), d.finalState && d.finalState.allFinal ? 'Every day is final: send the roster below' : (dpState.onlyOpen ? 'Showing only departments with open days; click for all' : 'Days x departments signed off; click to show only open ones'), d.finalState && d.finalState.allFinal ? 'var(--good)' : 'var(--warning)') + '</div>' +
+      '<div class="toolbar" style="margin:-4px 0 10px;"><button class="btn secondary small" type="button" id="dp-final-all">Finalize all days with no open requests</button>' +
+      '<span style="font-size:12px; color:var(--text-muted);">A finalized day shows ✓; click a day to finalize it, its whole department or the whole day. Leave cannot be approved on a finalized day.</span></div>';
     tEl.querySelector('[data-dp-tile="short"]').addEventListener('click', function () { dpState.onlyShort = !dpState.onlyShort; renderDecPlan_(); });
+    tEl.querySelector('[data-dp-tile="final"]').addEventListener('click', function () { dpState.onlyOpen = !dpState.onlyOpen; renderDecPlan_(); });
+    document.getElementById('dp-final-all').addEventListener('click', function () {
+      var items = []; d.dates.forEach(function (dt) { d.departments.forEach(function (dep) { var c = d.cells[dt + '|' + dep]; if (!c.final && !c.asked) items.push(dt + '|' + dep); }); });
+      if (!items.length) { flashStatus(document.getElementById('dp-status'), 'Nothing to finalize: open days still have leave requests to decide.', 'save-status err', 6000); return; }
+      if (!confirm('Finalize ' + items.length + ' day(s) that have no open leave requests?')) return;
+      dpFinal_(items, '1', this);
+    });
     tEl.querySelector('[data-dp-tile="leave"]').addEventListener('click', function () {
       document.getElementById('casual-weeks-title').textContent = 'On leave, 1 Dec – 8 Jan';
       document.getElementById('casual-weeks-sub').textContent = 'Days of approved leave in the planner period per person.';
@@ -6438,14 +6449,15 @@
       document.getElementById('casual-weeks-modal').classList.add('active');
     });
     var wdn = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'], hol = {}; d.holidays.forEach(function (h) { hol[h.date] = h.name; });
-    var depts = d.departments.filter(function (dep) { return !dpState.onlyShort || d.dates.some(function (dt) { return d.cells[dt + '|' + dep].short > 0; }); });
+    var depts = d.departments.filter(function (dep) { return (!dpState.onlyShort || d.dates.some(function (dt) { return d.cells[dt + '|' + dep].short > 0; })) && (!dpState.onlyOpen || d.dates.some(function (dt) { return !d.cells[dt + '|' + dep].final; })); });
     var th = function (dt) {
       var w = new Date(dt + 'T00:00:00Z').getUTCDay(), closed = d.closed.indexOf(dt.slice(5)) !== -1;
       return '<th title="' + esc(dt + (hol[dt] ? ' · ' + hol[dt] : '') + (closed ? ' · closed' : '')) + '" style="min-width:44px; padding:4px 2px; text-align:center; font-size:11px;' + (w === 0 || w === 6 ? 'color:var(--text-muted);' : '') + (hol[dt] ? 'background:color-mix(in srgb, var(--brand) 14%, transparent);' : '') + '">' + wdn[w] + '<br>' + Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(dt.slice(5, 7)) - 1] : '') + '</th>';
     };
     var cell = function (dt, dep) {
       var c = d.cells[dt + '|' + dep];
-      return '<td data-dp-cell="' + esc(dt + '|' + dep) + '" style="cursor:pointer; text-align:center; padding:4px 2px; font-size:12px; white-space:nowrap; background:' + dpColor_(c) + ';">' +
+      return '<td data-dp-cell="' + esc(dt + '|' + dep) + '" style="cursor:pointer; text-align:center; padding:4px 2px; font-size:12px; white-space:nowrap; position:relative; background:' + dpColor_(c) + ';' + (c.final && !c.closed ? 'box-shadow:inset 0 0 0 2px var(--good);' : '') + '"' + (c.final && !c.closed ? ' title="Finalized by ' + esc(c.finalBy) + '"' : '') + '>' +
+        (c.final && !c.closed ? '<span style="position:absolute; top:0; right:2px; font-size:10px; color:var(--good); font-weight:700;">✓</span>' : '') +
         (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '') + (c.asked ? '<div style="color:var(--warning); font-weight:700; font-size:11px;" title="Asked for leave, not decided">?' + c.asked + '</div>' : '')) + '</td>';
     };
     document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--surface-2, #fff); z-index:2; text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
@@ -6490,8 +6502,47 @@
     };
     document.getElementById('dp-save').addEventListener('click', function () { save(document.getElementById('dp-req').value, this); });
     var rs = document.getElementById('dp-reset'); if (rs) rs.addEventListener('click', function () { save('', this); });
+    // §107 finalize this day / the whole department / the whole day
+    if (!c.closed) {
+      var fb = document.createElement('div'); fb.className = 'toolbar'; fb.style.margin = '10px 0 0';
+      fb.innerHTML = (c.final ? '<span style="color:var(--good); font-weight:700;">✓ Finalized' + (c.finalBy ? ' by ' + esc(c.finalBy) : '') + '</span><button class="btn secondary small" type="button" id="dp-unfinal">Unfinalize</button>'
+          : '<button class="btn small" type="button" id="dp-final-one"' + (c.asked ? ' disabled title="Decide the open leave requests first"' : '') + '>Mark finalized</button>') +
+        '<button class="btn secondary small" type="button" id="dp-final-dept">Finalize all ' + esc(dept) + ' days</button>' +
+        '<button class="btn secondary small" type="button" id="dp-final-day">Finalize ' + esc(date) + ' for all departments</button>';
+      document.getElementById('casual-weeks-sub').appendChild(fb);
+      var reopen = function () { openDecPlanCell_(date, dept); };
+      var one = document.getElementById('dp-final-one'); if (one) one.addEventListener('click', function () { dpFinal_([date + '|' + dept], '1', this, reopen); });
+      var un = document.getElementById('dp-unfinal'); if (un) un.addEventListener('click', function () { dpFinal_([date + '|' + dept], '0', this, reopen); });
+      document.getElementById('dp-final-dept').addEventListener('click', function () {
+        var items = d.dates.filter(function (dt) { var x = d.cells[dt + '|' + dept]; return !x.final && !x.asked; }).map(function (dt) { return dt + '|' + dept; });
+        var skipped = d.dates.filter(function (dt) { var x = d.cells[dt + '|' + dept]; return !x.final && x.asked; }).length;
+        if (!items.length) { flashStatus(document.getElementById('dp-cell-status'), skipped ? skipped + ' day(s) still have leave requests to decide.' : 'All ' + dept + ' days are already final.', 'save-status err', 6000); return; }
+        if (!confirm('Finalize ' + items.length + ' ' + dept + ' day(s)?' + (skipped ? ' ' + skipped + ' day(s) with open leave requests are left out.' : ''))) return;
+        dpFinal_(items, '1', this, reopen);
+      });
+      document.getElementById('dp-final-day').addEventListener('click', function () {
+        var items = d.departments.filter(function (dep) { var x = d.cells[date + '|' + dep]; return !x.final && !x.asked; }).map(function (dep) { return date + '|' + dep; });
+        var skipped = d.departments.filter(function (dep) { var x = d.cells[date + '|' + dep]; return !x.final && x.asked; }).length;
+        if (!items.length) { flashStatus(document.getElementById('dp-cell-status'), skipped ? skipped + ' department(s) still have leave requests to decide that day.' : 'That day is already final everywhere.', 'save-status err', 6000); return; }
+        if (!confirm('Finalize ' + date + ' for ' + items.length + ' department(s)?' + (skipped ? ' ' + skipped + ' with open leave requests are left out.' : ''))) return;
+        dpFinal_(items, '1', this, reopen);
+      });
+    }
   }
 
+  // §107 mark days finalized / unfinalized
+  function dpFinal_(items, on, btn, after) {
+    var label = btn ? btn.textContent : '', st = document.getElementById('dp-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    flashStatus(st, 'Saving…', 'save-status', 0);
+    return callApi('setDecPlanFinal', { year: dpState.year, items: items.join(','), final: on }).then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+      dpState.data = res; renderDecPlan_(); loadLeaveReqs_();
+      flashStatus(document.getElementById('dp-status'), on === '1' ? items.length + ' day(s) finalized' : 'Unfinalized', 'save-status ok', 3500);
+      if (after) after();
+    }).catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } flashStatus(st, 'Network error', 'save-status err', 6000); });
+  }
   // ---------------- December leave requests on WhatsApp (SETUP §91) ----------------
   var lrState = { data: null, filter: '', search: '', ticked: {}, tplChecked: false };
   var LR_TPL_TEXT_ = 'Hi {{1}}, we are planning December leave. You have {{2}} annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your 2027 leave. Tap the button below to choose the days you would like off between 1 December and 8 January. Please choose by {{3}}. Thank you.';
@@ -6502,7 +6553,7 @@
     return callApi('getLeaveRequests', params).then(function (res) {
       if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 8000); return; }
       flashStatus(st, '', 'save-status', 0);
-      if (params.checkTemplate) { lrState.tpl = res.template; lrState.tplChecked = true; }
+      if (params.checkTemplate) { lrState.tpl = res.template; lrState.rtpl = res.rosterTemplate; lrState.tplChecked = true; }
       lrState.data = res; renderLeaveReqs_();
     }).catch(function () { flashStatus(st, 'Network error', 'save-status err', 6000); });
   }
@@ -6529,9 +6580,14 @@
       : tpl.status === 'APPROVED' ? '<span style="color:var(--good);">WhatsApp template <strong>' + esc(tpl.name) + '</strong> is approved: Send works.</span>'
       : '<span style="color:var(--warning);">WhatsApp template <strong>' + esc(tpl.name) + '</strong> ' + (tpl.found ? 'is ' + esc(tpl.status) : 'does not exist yet') + ', so Send will not work yet. Until Meta approves it, use <strong>WhatsApp</strong> per person (opens WhatsApp on this device with the message and their link).</span>' +
         ' <details style="display:inline;"><summary style="cursor:pointer; color:var(--brand); display:inline;">How to create it</summary><div class="wa-box" style="margin-top:6px;">Meta Business Manager → WhatsApp Manager → Message templates → Create: category <strong>Utility</strong>, name <strong>' + esc(tpl.name) + '</strong>, language English.<br>Body: <em>' + esc(LR_TPL_TEXT_) + '</em><br>Samples: {{1}} Thabo, {{2}} 7, {{3}} Friday 20 November.<br>Button: <strong>Visit website</strong>, text "Choose my days", URL type <strong>Dynamic</strong>: <code>https://master.dailyfruit.co.za/?leave={{1}}</code> (sample: https://master.dailyfruit.co.za/?leave=abc).</div></details>';
+    var fs = d.finalState || { done: 0, total: 0 }, rt = lrState.rtpl || d.rosterTemplate || {};
+    var rosterLine = fs.allFinal
+      ? '<br><strong style="color:var(--good);">Every day is finalized: send the roster.</strong> ' + (rt.status === 'APPROVED' ? 'Template <strong>' + esc(rt.name) + '</strong> is approved.' : '<span style="color:var(--warning);">Template <strong>' + esc(rt.name || 'december_roster') + '</strong> ' + (rt.found ? 'is ' + esc(rt.status) : 'does not exist yet') + ': use <strong>WhatsApp</strong> per person until Meta approves it.</span>') +
+        ' <details style="display:inline;"><summary style="cursor:pointer; color:var(--brand); display:inline;">Roster template</summary><div class="wa-box" style="margin-top:6px;">Meta → Message templates → Create: Utility, name <strong>december_roster</strong>, English. Body: <em>Hi {{1}}, the December roster is final. Tap the button below to see the days you work between 1 December and 8 January, with your shift times and approved leave. Thank you.</em> Sample {{1}}: Thabo. Button: Visit website, "See my days", Dynamic URL <code>https://master.dailyfruit.co.za/?leave={{1}}</code>.</div></details>'
+      : '<br>Roster: <strong>' + fs.done + ' of ' + fs.total + '</strong> days finalized; the roster WhatsApp can go out once every day is final.';
     head.innerHTML = '<div style="font-size:13px; line-height:1.6;">Deadline: <strong>' + esc(d.deadline) + '</strong>' + (d.today > d.deadline ? ' <span style="color:var(--critical);">(closed: staff can no longer change their requests)</span>' : '') +
       (d.canSetDeadline ? ' <input type="date" id="lr-deadline" value="' + esc(d.deadline) + '" style="padding:4px 6px; border-radius:6px; border:1px solid var(--border);"> <button class="btn secondary small" type="button" id="lr-deadline-save">Change</button>' : '') +
-      '<br>' + tplLine + '</div>';
+      '<br>' + tplLine + rosterLine + '</div>';
     var ds = document.getElementById('lr-deadline-save');
     if (ds) ds.addEventListener('click', function () { lrCall_('setLeaveRequestDeadline', { deadline: document.getElementById('lr-deadline').value }, ds, 'Deadline changed'); });
     var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, approved: 0, declined: 0 };
@@ -6545,7 +6601,8 @@
     Array.prototype.forEach.call(tEl.querySelectorAll('[data-lr-tile]'), function (b) { b.addEventListener('click', function () { var k = b.getAttribute('data-lr-tile'); lrState.filter = lrState.filter === k ? '' : k; renderLeaveReqs_(); }); });
     var q = lrState.search.toLowerCase();
     var rows = d.people.filter(function (x) { return (!lrState.filter || lrKind_(x) === lrState.filter) && (!q || (x.name + ' ' + x.department).toLowerCase().indexOf(q) !== -1); });
-    var sendable = function (x) { return x.phoneOk && !x.status; };
+    var rosterOn = !!(d.finalState && d.finalState.allFinal);   // §107 once every day is final: the roster goes to everyone
+    var sendable = function (x) { return x.phoneOk && (rosterOn || !x.status); };
     var statusCell = function (x) {
       var k = lrKind_(x);
       if (k === 'asked') return '<strong style="color:var(--warning);">Asked</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.submittedAt.slice(0, 16)) + '</span>';
@@ -6560,6 +6617,10 @@
       if (k === 'sent') return 'Sent ' + esc(x.sentAt.slice(5, 16));
       return '<span style="color:var(--text-muted);">Not sent</span>';
     };
+    var statusCellBase = statusCell;
+    statusCell = function (x) {
+      return statusCellBase(x) + (x.rosterStatus ? '<div style="font-size:11px; color:' + (x.rosterStatus === 'Sent' ? 'var(--good)' : 'var(--critical)') + ';"' + (x.rosterError ? ' title="' + esc(x.rosterError) + '"' : '') + '>Roster ' + esc(x.rosterStatus.toLowerCase()) + ' ' + esc(x.rosterSentAt.slice(5, 16)) + '</div>' : '');
+    };
     document.getElementById('lr-table').innerHTML = '<thead><tr><th><input type="checkbox" id="lr-all" title="Tick everyone shown who can be sent to"></th><th style="text-align:left;">Employee</th><th>Left ' + d.year + '</th><th>' + (d.year + 1) + '</th><th style="text-align:left;">Asked for</th><th style="text-align:left;">Status</th><th></th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (x) {
         return '<tr><td>' + (sendable(x) ? '<input type="checkbox" data-lr-tick="' + esc(x.employeeId) + '"' + (lrState.ticked[x.employeeId] ? ' checked' : '') + '>' : '') + '</td>' +
@@ -6573,7 +6634,9 @@
       }).join('') : '<tr><td colspan="7" style="text-align:left;">Nobody here.</td></tr>') + '</tbody>';
     var tickedN = function () { return Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; }).length; };
     var sb = document.getElementById('lr-send-btn');
-    var setSendLabel = function () { var n = tickedN(); sb.textContent = n ? 'Send WhatsApp to ' + n + ' ticked' : 'Send WhatsApp to ticked'; sb.disabled = !n; };
+    var rb = document.getElementById('lr-roster-btn');
+    sb.style.display = rosterOn ? 'none' : ''; rb.style.display = rosterOn ? '' : 'none';
+    var setSendLabel = function () { var n = tickedN(); sb.textContent = n ? 'Send WhatsApp to ' + n + ' ticked' : 'Send WhatsApp to ticked'; sb.disabled = !n; rb.textContent = n ? 'Send roster to ' + n + ' ticked' : 'Send roster to ticked'; rb.disabled = !n; };
     setSendLabel();
     Array.prototype.forEach.call(document.querySelectorAll('[data-lr-tick]'), function (c) { c.addEventListener('change', function () { lrState.ticked[c.getAttribute('data-lr-tick')] = c.checked; setSendLabel(); }); });
     document.getElementById('lr-all').addEventListener('change', function () {
@@ -6588,7 +6651,9 @@
         callApi('getLeaveRequestLink', { employeeId: id, year: d.year }).then(function (res) {
           b.disabled = false; b.textContent = label;
           if (!res || !res.ok) { flashStatus(document.getElementById('lr-status'), (res && res.error) || 'Could not make the link', 'save-status err', 8000); return; }
-          var msg = 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your ' + (d.year + 1) + ' leave. Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
+          var msg = (lrState.data.finalState && lrState.data.finalState.allFinal)
+            ? 'Hi ' + res.firstName + ', the December roster is final. See the days you work between 1 December and 8 January, with your shift times and approved leave, here: ' + res.url
+            : 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your ' + (d.year + 1) + ' leave. Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
           if (wa) {
             if (!res.phone) { flashStatus(document.getElementById('lr-status'), res.name + ' has no valid cell number: use Copy link.', 'save-status err', 8000); return; }
             window.open('https://wa.me/' + res.phone + '?text=' + encodeURIComponent(msg), '_blank');
@@ -6705,10 +6770,9 @@
   (function () {
     var s = document.getElementById('lr-search');
     if (s) s.addEventListener('input', function () { lrState.search = s.value; renderLeaveReqs_(); });
-    var sb = document.getElementById('lr-send-btn');
-    if (sb) sb.addEventListener('click', function () {
+    var sendTicked_ = function (sb, action, what) {
       var ids = Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; });
-      if (!ids.length || !confirm('Send the December leave WhatsApp to ' + ids.length + ' people?')) return;
+      if (!ids.length || !confirm('Send the ' + what + ' WhatsApp to ' + ids.length + ' people?')) return;
       var st = document.getElementById('lr-status'), sent = 0, failed = [], i = 0;
       sb.disabled = true;
       var next = function () {
@@ -6720,14 +6784,18 @@
         var chunk = ids.slice(i, i + 30); i += 30;
         sb.textContent = 'Sending ' + Math.min(i, ids.length) + ' of ' + ids.length + '…';
         flashStatus(st, 'Sending ' + Math.min(i, ids.length) + ' of ' + ids.length + '…', 'save-status', 0);
-        callApi('sendLeaveRequestWhatsapp', { year: dpState.year, employeeIds: chunk.join(',') }).then(function (res) {
+        callApi(action, { year: dpState.year, employeeIds: chunk.join(',') }).then(function (res) {
           if (!res || !res.ok) { failed.push((res && res.error) || 'error'); i = ids.length; return next(); }
           sent += res.sent; res.results.forEach(function (r) { if (r.status !== 'sent') failed.push(r.name + ': ' + r.error); });
           next();
         }).catch(function () { failed.push('network error'); i = ids.length; next(); });
       };
       next();
-    });
+    };
+    var sb = document.getElementById('lr-send-btn');
+    if (sb) sb.addEventListener('click', function () { sendTicked_(sb, 'sendLeaveRequestWhatsapp', 'December leave'); });
+    var rb = document.getElementById('lr-roster-btn');   // §107
+    if (rb) rb.addEventListener('click', function () { sendTicked_(rb, 'sendRosterWhatsapp', 'final December roster'); });
   })();
 
   (function () {
@@ -12684,10 +12752,34 @@
         return out;
       };
       var picked = function () { return Object.keys(st.pick).filter(function (k) { return st.pick[k]; }).sort(); };
+      // §107: once every day is finalized, the link shows the person's final days
+      var rosterHtml = function (d) {
+        var ok = {}; (d.approvedDates || []).forEach(function (x) { ok[x] = true; });
+        var first = d.days[0].date, start = first; while (new Date(start + 'T00:00:00Z').getUTCDay() !== 1) start = attdShiftDate_(start, -1);
+        var byDate = {}; d.days.forEach(function (x) { byDate[x.date] = x; });
+        var nWork = 0, nLeave = 0;
+        var cal = '<div class="lp-cal">' + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (w) { return '<div class="lp-wd">' + w + '</div>'; }).join('');
+        for (var dt = start; dt <= d.days[d.days.length - 1].date || new Date(dt + 'T00:00:00Z').getUTCDay() !== 1; dt = attdShiftDate_(dt, 1)) {
+          var x = byDate[dt]; if (!x) { cal += '<div></div>'; continue; }
+          var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1].slice(0, 3) : '');
+          if (x.closed) cal += '<div class="lp-day no">' + num + '<small>closed</small></div>';
+          else if (ok[dt] || x.leave) { nLeave++; cal += '<div class="lp-day ok">' + num + '<small>leave</small></div>'; }
+          else if (x.holTeam || (x.work && !x.holiday)) { nWork++; cal += '<div class="lp-day" style="border:2px solid var(--brand);">' + num + '<small>' + esc(x.shift || 'work') + (x.holTeam ? ' (holiday team)' : '') + '</small></div>'; }
+          else if (x.holiday) cal += '<div class="lp-day no">' + num + '<small>holiday</small></div>';
+          else cal += '<div class="lp-day no">' + num + '<small>off</small></div>';
+        }
+        cal += '</div>';
+        return '<div style="font-size:12px; color:var(--text-muted);">' + esc(d.company) + '</div><h1>December roster — ' + esc(d.name) + '</h1>' +
+          '<div class="lp-sub">' + esc(d.department) + '. This is final: the days you work between 1 December and 8 January, with your shift times, and your approved leave. Speak to HR if something is wrong.</div>' +
+          '<div class="lp-bal"><div><b>' + nWork + '</b>days you work</div><div><b>' + nLeave + '</b>days of leave</div></div>' + cal +
+          '<div style="font-size:12px; color:var(--text-muted); margin-top:10px;"><span style="color:var(--brand); font-weight:700;">Orange border</span> = you work (shift times shown) · <span style="color:var(--good); font-weight:700;">green</span> = leave · grey = off, public holiday or closed.</div>' +
+          '<p style="margin-top:16px; font-size:11px; color:var(--text-muted); text-align:center;">This is your private link — please don\'t share it.</p>';
+      };
       var render = function () {
         var d = st.data;
         if (!d) { root.innerHTML = '<p class="hint" style="text-align:center; padding:40px 0;">Loading…</p>'; return; }
         if (!d.ok) { root.innerHTML = '<p class="error-text" style="text-align:center; padding:40px 8px;">' + esc(d.error || 'This link does not work.') + '</p>'; return; }
+        if (d.rosterFinal) { root.innerHTML = rosterHtml(d); return; }   // §107 the final roster replaces the request form
         var y1 = String(d.year), y2 = String(d.nextYear), c = cost(picked()), decided = d.status === 'Approved' || d.status === 'Declined';
         var approved = {}; (d.approvedDates || []).forEach(function (x) { approved[x] = true; });
         var h = '<div style="font-size:12px; color:var(--text-muted);">' + esc(d.company) + '</div><h1>December leave — ' + esc(d.name) + '</h1>' +
