@@ -1671,7 +1671,8 @@
             <div id="lr-head" style="margin:0 0 10px;"></div>
             <div id="lr-tiles"></div>
             <div class="toolbar">
-              <input type="search" id="lr-search" placeholder="Search name or department" style="max-width:240px;">
+              <select id="lr-dept" style="max-width:200px;"><option value="">All departments</option></select>
+              <input type="search" id="lr-search" placeholder="Search name" style="max-width:200px;">
               <button class="btn small" type="button" id="lr-send-btn">Send WhatsApp to ticked</button>
               <button class="btn small" type="button" id="lr-roster-btn" style="display:none;">Send roster to ticked</button>
               <span class="save-status" id="lr-status"></span>
@@ -2093,7 +2094,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.198-planner-no-directors';
+  var FRONTEND_BUILD = '2026-11-17.199-leave-list-fit';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6560,7 +6561,7 @@
     }).catch(function () { if (btn) { btn.disabled = false; btn.textContent = label; } flashStatus(st, 'Network error', 'save-status err', 6000); });
   }
   // ---------------- December leave requests on WhatsApp (SETUP §91) ----------------
-  var lrState = { data: null, filter: '', search: '', ticked: {}, tplChecked: false };
+  var lrState = { data: null, filter: '', search: '', dept: '', ticked: {}, tplChecked: false };
   var LR_TPL_TEXT_ = 'Hi {{1}}, we are planning December leave. You have {{2}} annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your 2027 leave. Tap the button below to choose the days you would like off between 1 December and 8 January. Please choose by {{3}}. Thank you.';
   function loadLeaveReqs_() {
     var st = document.getElementById('lr-status'); if (!st) return Promise.resolve();
@@ -6608,7 +6609,13 @@
     var ds = document.getElementById('lr-deadline-save');
     if (ds) ds.addEventListener('click', function () { lrCall_('setLeaveRequestDeadline', { deadline: document.getElementById('lr-deadline').value }, ds, 'Deadline changed'); });
     var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, progress: 0, approved: 0, declined: 0 };
-    d.people.forEach(function (x) { counts[lrKind_(x)]++; });
+    // §114 department drop-down (Shane): the tiles and the list follow the chosen department
+    var dSel = document.getElementById('lr-dept'), deptNames = {};
+    d.people.forEach(function (x) { deptNames[x.department] = true; });
+    if (lrState.dept && !deptNames[lrState.dept]) lrState.dept = '';
+    if (dSel) dSel.innerHTML = '<option value="">All departments</option>' + Object.keys(deptNames).sort().map(function (n) { return '<option' + (n === lrState.dept ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    var inDept = function (x) { return !lrState.dept || x.department === lrState.dept; };
+    d.people.forEach(function (x) { if (inDept(x)) counts[lrKind_(x)]++; });
     var tiles = [['notsent', 'Not sent yet', 'var(--text-muted)'], ['sent', 'Sent, not opened', 'var(--warning)'], ['opened', 'Opened, nothing asked', 'var(--brand)'], ['asked', 'Asked: not started', 'var(--warning)'],
       ['progress', 'In progress', 'var(--brand)'], ['approved', 'Finalized', 'var(--good)'], ['declined', 'Finalized: no leave', 'var(--text-muted)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
     var tEl = document.getElementById('lr-tiles');
@@ -6617,7 +6624,7 @@
     }).join('') + '</div>';
     Array.prototype.forEach.call(tEl.querySelectorAll('[data-lr-tile]'), function (b) { b.addEventListener('click', function () { var k = b.getAttribute('data-lr-tile'); lrState.filter = lrState.filter === k ? '' : k; renderLeaveReqs_(); }); });
     var q = lrState.search.toLowerCase();
-    var rows = d.people.filter(function (x) { return (!lrState.filter || lrKind_(x) === lrState.filter) && (!q || (x.name + ' ' + x.department).toLowerCase().indexOf(q) !== -1); });
+    var rows = d.people.filter(function (x) { return inDept(x) && (!lrState.filter || lrKind_(x) === lrState.filter) && (!q || x.name.toLowerCase().indexOf(q) !== -1); });
     var rosterOn = !!(d.finalState && d.finalState.allFinal);   // §107 once every day is final: the roster goes to everyone
     var sendable = function (x) { return x.phoneOk && (rosterOn || !x.status); };
     var statusCell = function (x) {
@@ -6644,11 +6651,11 @@
         return '<tr><td>' + (sendable(x) ? '<input type="checkbox" data-lr-tick="' + esc(x.employeeId) + '"' + (lrState.ticked[x.employeeId] ? ' checked' : '') + '>' : '') + '</td>' +
           '<td style="text-align:left;">' + esc(x.name) + '<div style="font-size:11px; color:var(--text-muted);">' + esc(x.department) + (x.phone ? ' · ' + esc(x.phone) : '') + '</div></td>' +
           '<td>' + x.left + (x.firstYear ? '<div style="font-size:10px; color:var(--text-muted);">first year</div>' : '') + '</td><td>' + x.leftNext + '</td>' +
-          '<td style="text-align:left; font-size:12px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px;">' + statusCell(x) + '</td>' +
-          '<td style="white-space:nowrap;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : x.status === 'In progress' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Continue</button> ' : !x.status ? '<button class="btn secondary small" type="button" data-lr-decide="' + esc(x.employeeId) + '" data-lr-manual="1" title="For staff who did not or could not use the link: pick their days here">Allocate leave</button> ' : '') +
+          '<td style="text-align:left; font-size:12px; white-space:normal; min-width:120px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px; white-space:normal; min-width:160px;">' + statusCell(x) + '</td>' +
+          '<td style="white-space:normal; text-align:right;"><div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; max-width:260px; margin-left:auto;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : x.status === 'In progress' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Continue</button> ' : !x.status ? '<button class="btn secondary small" type="button" data-lr-decide="' + esc(x.employeeId) + '" data-lr-manual="1" title="For staff who did not or could not use the link: pick their days here">Allocate leave</button> ' : '') +
           (/Approved|Declined/.test(x.status) ? '<button class="btn secondary small" type="button" data-lr-reopen="' + esc(x.employeeId) + '">Reopen</button> ' : '') +
           '<button class="btn secondary small" type="button" data-lr-wa="' + esc(x.employeeId) + '" title="Open WhatsApp on this device with the message and their private link">WhatsApp</button> ' +
-          '<button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button></td></tr>';
+          '<button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button></div></td></tr>';   // §115 wraps instead of side-scrolling
       }).join('') : '<tr><td colspan="7" style="text-align:left;">Nobody here.</td></tr>') + '</tbody>';
     var tickedN = function () { return Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; }).length; };
     var sb = document.getElementById('lr-send-btn');
@@ -6790,6 +6797,8 @@
   (function () {
     var s = document.getElementById('lr-search');
     if (s) s.addEventListener('input', function () { lrState.search = s.value; renderLeaveReqs_(); });
+    var ldp = document.getElementById('lr-dept');
+    if (ldp) ldp.addEventListener('change', function () { lrState.dept = ldp.value; lrState.ticked = {}; renderLeaveReqs_(); });   // ticks cleared so Send never goes to people out of view
     var sendTicked_ = function (sb, action, what) {
       var ids = Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; });
       if (!ids.length || !confirm('Send the ' + what + ' WhatsApp to ' + ids.length + ' people?')) return;
