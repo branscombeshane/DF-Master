@@ -2093,7 +2093,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.195-leave-balance-unpaid';
+  var FRONTEND_BUILD = '2026-11-17.196-planner-sticky-col';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6431,7 +6431,7 @@
       tile('leave', 'On leave in the period', Object.keys(leaveNames).length, 'People with approved leave; click for the list', 'var(--brand)') +
       tile('final', 'Finalized', (d.finalState ? d.finalState.done + ' of ' + d.finalState.total : '–'), d.finalState && d.finalState.allFinal ? 'Every day is final: send the roster below' : (dpState.onlyOpen ? 'Showing only departments with open days; click for all' : 'Days x departments signed off; click to show only open ones'), d.finalState && d.finalState.allFinal ? 'var(--good)' : 'var(--warning)') + '</div>' +
       '<div class="toolbar" style="margin:-4px 0 10px;"><button class="btn secondary small" type="button" id="dp-final-all">Finalize all days with no open requests</button>' +
-      '<span style="font-size:12px; color:var(--text-muted);">A finalized day shows ✓; click a day to finalize it, its whole department or the whole day. Leave cannot be approved on a finalized day.</span></div>';
+      '<span style="font-size:12px; color:var(--text-muted);">A finalized day shows ✓; click a day to mark it finalized. Leave cannot be approved on a finalized day.</span></div>';
     tEl.querySelector('[data-dp-tile="short"]').addEventListener('click', function () { dpState.onlyShort = !dpState.onlyShort; renderDecPlan_(); });
     tEl.querySelector('[data-dp-tile="final"]').addEventListener('click', function () { dpState.onlyOpen = !dpState.onlyOpen; renderDecPlan_(); });
     document.getElementById('dp-final-all').addEventListener('click', function () {
@@ -6460,9 +6460,9 @@
         (c.final && !c.closed ? '<span style="position:absolute; top:0; right:2px; font-size:10px; color:var(--good); font-weight:700;">✓</span>' : '') +
         (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '') + (c.asked ? '<div style="color:var(--warning); font-weight:700; font-size:11px;" title="Asked for leave, not decided">?' + c.asked + '</div>' : '')) + '</td>';
     };
-    document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--surface-2, #fff); z-index:2; text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
-      '<tr><td style="position:sticky; left:0; background:var(--surface-2, #fff); text-align:left; font-weight:700;">All</td>' + d.dates.map(function (dt) { var t = d.totals[dt]; return '<td style="text-align:center; font-size:12px; font-weight:700; padding:4px 2px; background:' + dpColor_({ short: t.short, closed: d.closed.indexOf(dt.slice(5)) !== -1 }) + ';">' + (d.closed.indexOf(dt.slice(5)) !== -1 ? '–' : t.booked + '/' + t.required) + '</td>'; }).join('') + '</tr>' +
-      depts.map(function (dep) { return '<tr><td style="position:sticky; left:0; background:var(--surface-2, #fff); text-align:left; white-space:nowrap;">' + esc(dep) + '</td>' + d.dates.map(function (dt) { return cell(dt, dep); }).join('') + '</tr>'; }).join('') +
+    document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--card, #fff); z-index:4; box-shadow:2px 0 0 var(--gridline); text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
+      '<tr><td style="position:sticky; left:0; z-index:3; background:var(--card, #fff); box-shadow:2px 0 0 var(--gridline); text-align:left; font-weight:700;">All</td>' + d.dates.map(function (dt) { var t = d.totals[dt]; return '<td style="text-align:center; font-size:12px; font-weight:700; padding:4px 2px; background:' + dpColor_({ short: t.short, closed: d.closed.indexOf(dt.slice(5)) !== -1 }) + ';">' + (d.closed.indexOf(dt.slice(5)) !== -1 ? '–' : t.booked + '/' + t.required) + '</td>'; }).join('') + '</tr>' +
+      depts.map(function (dep) { return '<tr><td style="position:sticky; left:0; z-index:3; background:var(--card, #fff); box-shadow:2px 0 0 var(--gridline); text-align:left; white-space:nowrap;">' + esc(dep) + '</td>' + d.dates.map(function (dt) { return cell(dt, dep); }).join('') + '</tr>'; }).join('') +
       (depts.length ? '' : '<tr><td colspan="' + (d.dates.length + 1) + '" style="text-align:left;">No shortfalls.</td></tr>') + '</tbody></table>';
     Array.prototype.forEach.call(document.querySelectorAll('[data-dp-cell]'), function (td) {
       td.addEventListener('click', function () { var k = td.getAttribute('data-dp-cell').split('|'); openDecPlanCell_(k[0], k.slice(1).join('|')); });
