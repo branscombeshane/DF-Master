@@ -2093,7 +2093,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.196-planner-sticky-col';
+  var FRONTEND_BUILD = '2026-11-17.198-planner-no-directors';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2115,7 +2115,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -6487,7 +6487,7 @@
           list('Asked for leave (not decided yet)', c.askedList, function (x) { return esc(x.name); }) +
           list('Left working if all approved', stay, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; });
       })() : '') +
-      list('Booked' + ((c.askedList || []).length ? ' now (before any leave is approved)' : ''), c.bookedList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; }) +
+      list('Booked' + ((c.askedList || []).length ? ' now (before any leave is approved)' : ''), c.bookedList, function (x) { return esc(x.name) + ' <span style="color:' + (x.extra ? 'var(--brand)' : 'var(--text-muted)') + ';">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>' + (x.extra && !c.final ? ' <button class="btn secondary small" type="button" data-dp-unextra="' + esc(x.employeeId) + '" style="padding:2px 8px; font-size:11px;">Remove</button>' : ''); }) +
       list('On leave', c.leaveList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
       list('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
     document.getElementById('casual-weeks-modal').classList.add('active');
@@ -6502,6 +6502,38 @@
     };
     document.getElementById('dp-save').addEventListener('click', function () { save(document.getElementById('dp-req').value, this); });
     var rs = document.getElementById('dp-reset'); if (rs) rs.addEventListener('click', function () { save('', this); });
+    // §112 add someone who is off that day to work here (only when the day is short)
+    var extraCall = function (id, remove, btn) {
+      var st = document.getElementById('dp-cell-status'), label = btn.textContent;
+      btn.disabled = true; btn.textContent = remove ? 'Removing…' : 'Adding…'; flashStatus(st, 'Saving…', 'save-status', 0);
+      callApi('setDecPlanExtra', { year: d.year, date: date, department: dept, employeeId: id, remove: remove ? '1' : '' }).then(function (res) {
+        if (!res || !res.ok) { btn.disabled = false; btn.textContent = label; flashStatus(document.getElementById('dp-cell-status'), (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+        dpState.data = res; renderDecPlan_(); openDecPlanCell_(date, dept);
+        flashStatus(document.getElementById('dp-cell-status'), remove ? 'Removed' : 'Added', 'save-status ok', 3000);
+      }).catch(function () { btn.disabled = false; btn.textContent = label; flashStatus(document.getElementById('dp-cell-status'), 'Network error', 'save-status err', 6000); });
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dp-unextra]'), function (b) { b.addEventListener('click', function () { extraCall(b.getAttribute('data-dp-unextra'), true, b); }); });
+    if (!c.closed && c.short > 0) {
+      var own = [], other = [];
+      d.departments.forEach(function (dep) { (d.cells[date + '|' + dep].offList || []).forEach(function (o) { if (o.canExtra) (dep === dept ? own : other).push({ id: o.employeeId, label: o.name + (dep === dept ? '' : ' (' + dep + ')') }); }); });
+      var sortL = function (a, b) { return a.label.localeCompare(b.label); }; own.sort(sortL); other.sort(sortL);
+      var ab = document.createElement('div'); ab.style.margin = '12px 0 0'; ab.style.padding = '10px 12px'; ab.style.borderRadius = '8px'; ab.style.background = 'color-mix(in srgb, var(--critical) 8%, transparent)';
+      ab.innerHTML = '<div style="font-size:13px; font-weight:700; margin-bottom:6px;">Add someone to work this day (' + c.short + ' short)</div>' +
+        (c.final ? '<div class="hint" style="margin:0;">This day is finalized: unfinalize it first.</div>' : c.holiday ? '<div class="hint" style="margin:0;">Public holiday: plan who works it in Daily Attendance (Plan who works).</div>' : (own.length + other.length) ?
+          '<div class="toolbar" style="margin:0; flex-wrap:wrap;"><select id="dp-extra-emp" style="min-width:220px;"><option value="">— someone who is off that day —</option>' +
+          (own.length ? '<optgroup label="' + esc(dept) + '">' + own.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>' : '') +
+          (other.length ? '<optgroup label="Other departments">' + other.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>' : '') +
+          '</select><button class="btn small" type="button" id="dp-extra-add">Add to work</button></div>' +
+          '<div class="hint" style="margin:6px 0 0;">It stays their day off in attendance: hours worked are paid as day-off overtime (Pay Adjustments &gt; From clock-ins &gt; Pay as overtime) and not coming in is not an Absent deduction. Their roster shows it as a work day.</div>'
+          : '<div class="hint" style="margin:0;">Nobody in the company is off that day.</div>');
+      document.getElementById('casual-weeks-sub').appendChild(ab);
+      var addB = document.getElementById('dp-extra-add');
+      if (addB) addB.addEventListener('click', function () {
+        var id = document.getElementById('dp-extra-emp').value;
+        if (!id) { flashStatus(document.getElementById('dp-cell-status'), 'Pick who works.', 'save-status err', 5000); return; }
+        extraCall(id, false, addB);
+      });
+    }
     // §107 finalize this day / the whole department / the whole day
     if (!c.closed) {
       var fb = document.createElement('div'); fb.className = 'toolbar'; fb.style.margin = '10px 0 0';
@@ -6676,8 +6708,8 @@
     callApi('getLeaveRequestDays', { employeeId: id, year: d.year }).then(function (res) {
       if (!res || !res.ok) { sub.textContent = (res && res.error) || 'Could not load their days.'; body.innerHTML = ''; return; }
       var asked = {}; res.asked.forEach(function (a) { asked[a] = true; });
-      var pick = {}; (res.draft || res.asked).forEach(function (a) { pick[a] = true; });   // §108 continue from the saved draft
       var byDate = {}; res.days.forEach(function (dd) { byDate[dd.date] = dd; });
+      var pick = {}; (res.draft || res.asked).forEach(function (a) { var dd = byDate[a]; if (dd && dd.work && !dd.extra) pick[a] = true; });   // §108 continue from the saved draft; §112 never an off day
       var wdn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       var y1 = String(d.year), y2 = String(d.year + 1);
       // the same count as the office (Leave Taken): days in a row are one leave, holidays never count, weekdays only in a run with weekdays
@@ -6702,20 +6734,20 @@
           var dd = byDate[dt];
           if (!dd) { h += '<div></div>'; continue; }
           var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1] : '');
-          var can = !dd.holiday && !dd.closed && !dd.leave;   // §108: off days may be ticked too
+          var can = dd.work && !dd.extra && !dd.holiday && !dd.closed && !dd.leave;   // §112: work days only (off days are not leave days)
           var cell = dpState.data && dpState.data.cells[dt + '|' + x.department];
           var cover = cell && !cell.closed ? '<div style="font-size:10px; color:' + (cell.shortIfAll > 0 ? 'var(--critical)' : 'var(--text-muted)') + ';">' + cell.booked + '/' + cell.required + '</div>' : '';
           if (!can) {
-            var why = dd.closed ? 'closed' : dd.holiday ? 'holiday' : 'on leave';
+            var why = dd.closed ? 'closed' : dd.holiday ? 'holiday' : dd.leave ? 'on leave' : dd.extra ? 'extra work' : 'off';
             h += '<div style="border:1px dashed var(--gridline); border-radius:8px; padding:4px; text-align:center; color:var(--text-muted); font-size:12px; background:var(--surface-1);">' + num + '<div style="font-size:10px;">' + why + '</div></div>';
             continue;
           }
           var on = !!pick[dt], was = !!asked[dt];
-          var tag = on && was ? 'asked' : on && !was ? 'added' : !on && was ? 'not approved' : (dd.work ? 'work' : 'off');
+          var tag = on && was ? 'asked' : on && !was ? 'added' : !on && was ? 'not approved' : 'work';
           var style = on && was ? 'border:2px solid var(--brand); background:color-mix(in srgb, var(--brand) 14%, transparent);'
             : on && !was ? 'border:2px solid var(--good); background:color-mix(in srgb, var(--good) 22%, transparent);'
             : !on && was ? 'border:2px dashed var(--critical); background:color-mix(in srgb, var(--critical) 8%, transparent); text-decoration:line-through;'
-            : (dd.work ? 'border:1px solid var(--gridline); background:var(--card);' : 'border:1px dashed var(--gridline); background:var(--surface-1); color:var(--text-muted);');
+            : 'border:1px solid var(--gridline); background:var(--card);';
           h += '<button type="button" data-lr-cal="' + dt + '" style="' + style + ' border-radius:8px; padding:4px; text-align:center; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--text-primary);">' + num +
             '<div style="font-size:10px; font-weight:600; text-decoration:none; color:' + (tag === 'added' ? 'var(--good)' : tag === 'not approved' ? 'var(--critical)' : tag === 'asked' ? 'var(--brand)' : 'var(--text-muted)') + ';">' + tag + '</div>' + cover + '</button>';
         }
@@ -12765,7 +12797,7 @@
           var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1].slice(0, 3) : '');
           if (x.closed) cal += '<div class="lp-day no">' + num + '<small>closed</small></div>';
           else if (ok[dt] || x.leave) { nLeave++; cal += '<div class="lp-day ok">' + num + '<small>leave</small></div>'; }
-          else if (x.holTeam || (x.work && !x.holiday)) { nWork++; cal += '<div class="lp-day" style="border:2px solid var(--brand);">' + num + '<small>' + esc(x.shift || 'work') + (x.holTeam ? ' (holiday team)' : '') + '</small></div>'; }
+          else if (x.holTeam || (x.work && !x.holiday)) { nWork++; cal += '<div class="lp-day" style="border:2px solid var(--brand);">' + num + '<small>' + esc(x.shift || 'work') + (x.holTeam ? ' (holiday team)' : x.extra ? ' (extra day)' : '') + '</small></div>'; }
           else if (x.holiday) cal += '<div class="lp-day no">' + num + '<small>holiday</small></div>';
           else cal += '<div class="lp-day no">' + num + '<small>off</small></div>';
         }
