@@ -2092,7 +2092,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-16.186-faster-attendance';
+  var FRONTEND_BUILD = '2026-11-17.187-leavers-attendance';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6675,8 +6675,8 @@
 
   // ---------------- Attendance: daily view + shifts (SETUP §60) ----------------
   var attdState = { data: null, date: null, filter: 'scheduled', search: '', dept: '' };
-  var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', 'no-clock-in': 'No clock-in', 'holiday-worked': 'Clocked in (not planned)', 'holiday-absent': 'Absent: holiday team (warning)', off: 'Off', 'worked-off': 'Worked on day off' };
-  var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', 'no-clock-in': 'var(--warning)', 'holiday-worked': 'var(--warning)', 'holiday-absent': 'var(--critical)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)' };
+  var ATTD_LABEL = { present: 'Present', 'in': 'In', 'not-in': 'Not in yet', 'not-started': 'Not started', absent: 'Absent', leave: 'On leave', holiday: 'Public holiday', 'no-clock-out': 'No clock-out', 'no-clock-in': 'No clock-in', 'holiday-worked': 'Clocked in (not planned)', 'holiday-absent': 'Absent: holiday team (warning)', off: 'Off', 'worked-off': 'Worked on day off', left: 'Left (discharged)' };
+  var ATTD_COLOR = { present: 'var(--good)', 'in': 'var(--good)', 'not-in': 'var(--warning)', 'not-started': 'var(--text-muted)', absent: 'var(--critical)', leave: 'var(--brand)', holiday: 'var(--brand)', 'no-clock-out': 'var(--warning)', 'no-clock-in': 'var(--warning)', 'holiday-worked': 'var(--warning)', 'holiday-absent': 'var(--critical)', off: 'var(--text-muted)', 'worked-off': 'var(--brand)', left: 'var(--text-muted)' };
   function attdShiftDate_(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
   function loadAttendanceDay_(date, quiet) {
     if (!hasSection('payroll')) return Promise.resolve();
@@ -6768,7 +6768,8 @@
     var table = document.getElementById('attd-table');
     table.innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late (min)</th><th>Early (min)</th><th title="Clocked out more than 30 minutes after the shift end, in half hours; on a planned public holiday every hour worked">Overtime (h)</th><th style="text-align:left;">Status</th></tr></thead><tbody>' +
       (list.length ? list.map(function (r) {
-        return '<tr><td style="text-align:left;"><button type="button" data-attd-person="' + esc(r.empCode) + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(r.name) + '</button></td>' +
+        return '<tr><td style="text-align:left;"><button type="button" data-attd-person="' + esc(r.empCode) + '"' + (r.leftOn ? ' data-attd-left="' + esc(r.leftOn) + '"' : '') + ' style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + esc(r.name) + '</button>' +
+          (r.leftOn ? ' <span style="font-size:10px; padding:1px 6px; border-radius:999px; background:color-mix(in srgb, var(--critical) 12%, transparent); color:var(--critical); white-space:nowrap;" title="Discharged: shown up to their last day">left ' + esc(r.leftOn.slice(8) + '/' + r.leftOn.slice(5, 7)) + '</span>' : '') + '</td>' +
           '<td style="text-align:left;">' + esc(r.department) + '</td><td style="text-align:left;">' + (r.start ? esc(r.start + '–' + r.end) + (r.holidayPlanned ? ' <span class="hint" style="margin:0;">holiday team</span>' : '') : '<span class="hint" style="margin:0;">' + (r.holiday ? 'holiday' : 'off') + '</span>') +
             (r.dayAs ? '<div class="hint" style="margin:0; font-size:11px;">' + esc(r.dayAs) + '</div>' : '') + '</td>' +
           '<td>' + esc(r.arrived) + '</td><td>' + esc(r.left) + '</td><td>' + attdHrs_(r.hours) + '</td>' +
@@ -6777,7 +6778,8 @@
           '<td style="text-align:left;">' + attdChip_(r) + '</td></tr>';
       }).join('') : '<tr><td colspan="10" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
     Array.prototype.forEach.call(table.querySelectorAll('[data-attd-person]'), function (b) {
-      b.addEventListener('click', function () { openAttendancePerson_(b.getAttribute('data-attd-person')); });
+      // §102: someone who left: their last 31 days up to the last day
+      b.addEventListener('click', function () { var lo = b.getAttribute('data-attd-left'); openAttendancePerson_(b.getAttribute('data-attd-person'), '', lo ? { to: lo, days: 31 } : null); });
     });
   }
   function openHolidayPlan_() {
@@ -6813,10 +6815,11 @@
       }).catch(function () { btn.disabled = false; btn.textContent = 'Save holiday team'; flashStatus(st, 'Network error', 'save-status err', 6000); });
     });
   }
-  function openAttendancePerson_(code, focusDate) {
+  function openAttendancePerson_(code, focusDate, range) {
     var status = document.getElementById('attd-status');
     flashStatus(status, 'Loading…', 'save-status', 0);
-    var params = { empCode: code, days: 14 };
+    var params = { empCode: code, days: range && range.days ? range.days : 14 };
+    if (range && range.to) params.to = range.to;
     attdState.focusDate = focusDate || '';
     if (focusDate) {   // show the 14 days around that date (up to a week after it, never past today)
       var t = new Date(focusDate + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 6);
@@ -6837,7 +6840,7 @@
     var otTot = res.days.reduce(function (t, x) { return t + (x.otMin || 0); }, 0);
     var otH = function (m) { return m ? String(Math.round(m / 60 * 100) / 100) : ''; };
     var focus = attdState.focusDate || '';
-    document.getElementById('casual-weeks-title').textContent = pp.name + (focus ? ' — 14 days to ' + res.days[0].date : ' — last 14 days');
+    document.getElementById('casual-weeks-title').textContent = pp.name + (pp.leftOn ? ' — left ' + pp.leftOn + ' — ' + res.days.length + ' days to ' + res.days[0].date : focus ? ' — ' + res.days.length + ' days to ' + res.days[0].date : ' — last ' + res.days.length + ' days');
     document.getElementById('casual-weeks-sub').innerHTML = esc(pp.department) + ' · BioTime #' + esc(pp.empCode) + ' · late ' + late + '×, absent ' + abs + '×' + (otTot ? ', overtime ' + otH(otTot) + ' h' : '') +
       '<div class="toolbar" style="margin-top:10px;"><label style="font-size:13px; font-weight:600;">Shift</label><select id="attp-shift" style="max-width:340px;">' +
       res.shifts.map(function (n) { return '<option' + (n === res.currentShift ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
