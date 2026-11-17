@@ -2093,7 +2093,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.194-allocate-leave';
+  var FRONTEND_BUILD = '2026-11-17.195-leave-balance-unpaid';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7190,9 +7190,15 @@
   function leaveCaptureDays_() {
     var from = document.getElementById('lc-from').value, to = document.getElementById('lc-to').value || from, half = document.getElementById('lc-half').checked;
     var n = leaveWorkdays_(from, to);
-    document.getElementById('lc-days').textContent = !from ? '' : (half ? 'Half a day.' : n + ' weekday' + (n === 1 ? '' : 's') + ' (public holidays are left out when counted).');
+    // §110 show the annual leave left for the chosen employee
+    var d = leaveState.data || {}, typed = (document.getElementById('lc-emp').value || '').trim();
+    var e = (d.employees || []).filter(function (x) { return typed === x.name + ' — ' + (x.department || 'no department') || typed.toLowerCase() === x.name.toLowerCase(); })[0];
+    var P = e && (d.people || []).filter(function (x) { return x.employeeId === e.id; })[0];
+    var annual = /annual/i.test(document.getElementById('lc-type').value || '');
+    document.getElementById('lc-days').textContent = (!from ? '' : (half ? 'Half a day.' : n + ' weekday' + (n === 1 ? '' : 's') + ' (public holidays are left out when counted).')) +
+      (annual && P ? ' Annual leave left: ' + P.annualLeft + ' day' + (P.annualLeft === 1 ? '' : 's') + (from && !half && n > P.annualLeft ? ': the days over it can only be saved as Unpaid Leave.' : '.') : '');
   }
-  function saveLeaveCapture_() {
+  function saveLeaveCapture_(splitUnpaid) {
     var d = leaveState.data, err = document.getElementById('lc-error'), btn = document.getElementById('lc-save');
     var typed = document.getElementById('lc-emp').value.trim();
     var e = (d.employees || []).filter(function (x) { return typed === x.name + ' — ' + (x.department || 'no department') || typed.toLowerCase() === x.name.toLowerCase(); })[0];
@@ -7204,12 +7210,18 @@
     err.textContent = '';
     btn.disabled = true; btn.textContent = 'Saving…';
     callApi('captureLeave', { employeeId: e.id, type: document.getElementById('lc-type').value, from: from, to: to, halfDay: document.getElementById('lc-half').checked ? '1' : '',
-      approvedBy: mgr, note: document.getElementById('lc-note').value.trim(), year: from.slice(0, 4) }).then(function (res) {
+      approvedBy: mgr, note: document.getElementById('lc-note').value.trim(), year: from.slice(0, 4), splitUnpaid: splitUnpaid ? '1' : '' }).then(function (res) {
       btn.disabled = false; btn.textContent = 'Save leave';
+      // §110: more than the balance: offer the rest as Unpaid Leave (deducted through Pay Adjustments → From clock-ins)
+      if (res && res.overBalance) {
+        if (confirm(res.error + '\n\nSave ' + (res.annualDays ? res.annualDays + ' day(s) as Annual Leave and ' : '') + res.unpaidDays + ' day(s) as Unpaid Leave instead?\nUnpaid days are deducted from pay (Pay Adjustments → From clock-ins, as absent days).')) saveLeaveCapture_(true);
+        else err.textContent = res.error + ' Not saved.';
+        return;
+      }
       if (!res || !res.ok) { err.textContent = (res && res.error) || 'Could not save'; return; }
       document.getElementById('leave-cap-modal').classList.remove('active');
       leaveState.data = res; leaveState.year = res.year; renderLeaveTaken_();
-      flashStatus(document.getElementById('leave-status'), 'Saved: ' + res.saved.name + ', ' + res.saved.type + ' ' + res.saved.from + (res.saved.to !== res.saved.from ? ' to ' + res.saved.to : '') + ' (signed off by ' + res.saved.approvedBy + ')', 'save-status ok', 6000);
+      flashStatus(document.getElementById('leave-status'), 'Saved: ' + res.saved.name + ', ' + (res.saved.split ? res.saved.split.annual + ' day(s) Annual + ' + res.saved.split.unpaid + ' day(s) Unpaid Leave' : res.saved.type) + ' ' + res.saved.from + (res.saved.to !== res.saved.from ? ' to ' + res.saved.to : '') + ' (signed off by ' + res.saved.approvedBy + ')', 'save-status ok', 8000);
     }).catch(function () { btn.disabled = false; btn.textContent = 'Save leave'; err.textContent = 'Network error'; });
   }
   (function () {
@@ -7228,7 +7240,8 @@
     var lcCancel = document.getElementById('lc-cancel');
     if (lcCancel) lcCancel.addEventListener('click', function () { document.getElementById('leave-cap-modal').classList.remove('active'); });
     var lcSave = document.getElementById('lc-save');
-    if (lcSave) lcSave.addEventListener('click', saveLeaveCapture_);
+    if (lcSave) lcSave.addEventListener('click', function () { saveLeaveCapture_(false); });
+    ['lc-emp', 'lc-type'].forEach(function (idn) { var el = document.getElementById(idn); if (el) { el.addEventListener('change', leaveCaptureDays_); el.addEventListener('input', leaveCaptureDays_); } });   // §110 balance line
   })();
 
   // ---------------- Attendance: BioTime link-up (SETUP §58) ----------------
