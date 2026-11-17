@@ -2093,7 +2093,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.192-finalize-roster';
+  var FRONTEND_BUILD = '2026-11-17.193-leave-in-progress';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6506,27 +6506,11 @@
     if (!c.closed) {
       var fb = document.createElement('div'); fb.className = 'toolbar'; fb.style.margin = '10px 0 0';
       fb.innerHTML = (c.final ? '<span style="color:var(--good); font-weight:700;">✓ Finalized' + (c.finalBy ? ' by ' + esc(c.finalBy) : '') + '</span><button class="btn secondary small" type="button" id="dp-unfinal">Unfinalize</button>'
-          : '<button class="btn small" type="button" id="dp-final-one"' + (c.asked ? ' disabled title="Decide the open leave requests first"' : '') + '>Mark finalized</button>') +
-        '<button class="btn secondary small" type="button" id="dp-final-dept">Finalize all ' + esc(dept) + ' days</button>' +
-        '<button class="btn secondary small" type="button" id="dp-final-day">Finalize ' + esc(date) + ' for all departments</button>';
+          : '<button class="btn small" type="button" id="dp-final-one"' + (c.asked ? ' disabled title="Decide the open leave requests first"' : '') + '>Mark finalized</button>');   // §108: only Mark finalized / Unfinalize here (Shane)
       document.getElementById('casual-weeks-sub').appendChild(fb);
       var reopen = function () { openDecPlanCell_(date, dept); };
       var one = document.getElementById('dp-final-one'); if (one) one.addEventListener('click', function () { dpFinal_([date + '|' + dept], '1', this, reopen); });
       var un = document.getElementById('dp-unfinal'); if (un) un.addEventListener('click', function () { dpFinal_([date + '|' + dept], '0', this, reopen); });
-      document.getElementById('dp-final-dept').addEventListener('click', function () {
-        var items = d.dates.filter(function (dt) { var x = d.cells[dt + '|' + dept]; return !x.final && !x.asked; }).map(function (dt) { return dt + '|' + dept; });
-        var skipped = d.dates.filter(function (dt) { var x = d.cells[dt + '|' + dept]; return !x.final && x.asked; }).length;
-        if (!items.length) { flashStatus(document.getElementById('dp-cell-status'), skipped ? skipped + ' day(s) still have leave requests to decide.' : 'All ' + dept + ' days are already final.', 'save-status err', 6000); return; }
-        if (!confirm('Finalize ' + items.length + ' ' + dept + ' day(s)?' + (skipped ? ' ' + skipped + ' day(s) with open leave requests are left out.' : ''))) return;
-        dpFinal_(items, '1', this, reopen);
-      });
-      document.getElementById('dp-final-day').addEventListener('click', function () {
-        var items = d.departments.filter(function (dep) { var x = d.cells[date + '|' + dep]; return !x.final && !x.asked; }).map(function (dep) { return date + '|' + dep; });
-        var skipped = d.departments.filter(function (dep) { var x = d.cells[date + '|' + dep]; return !x.final && x.asked; }).length;
-        if (!items.length) { flashStatus(document.getElementById('dp-cell-status'), skipped ? skipped + ' department(s) still have leave requests to decide that day.' : 'That day is already final everywhere.', 'save-status err', 6000); return; }
-        if (!confirm('Finalize ' + date + ' for ' + items.length + ' department(s)?' + (skipped ? ' ' + skipped + ' with open leave requests are left out.' : ''))) return;
-        dpFinal_(items, '1', this, reopen);
-      });
     }
   }
 
@@ -6566,6 +6550,7 @@
   }
   function lrKind_(x) {
     if (x.status === 'Requested') return 'asked';
+    if (x.status === 'In progress') return 'progress';
     if (x.status === 'Approved') return 'approved';
     if (x.status === 'Declined') return 'declined';
     if (!x.phoneOk) return 'nophone';
@@ -6590,10 +6575,10 @@
       '<br>' + tplLine + rosterLine + '</div>';
     var ds = document.getElementById('lr-deadline-save');
     if (ds) ds.addEventListener('click', function () { lrCall_('setLeaveRequestDeadline', { deadline: document.getElementById('lr-deadline').value }, ds, 'Deadline changed'); });
-    var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, approved: 0, declined: 0 };
+    var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, progress: 0, approved: 0, declined: 0 };
     d.people.forEach(function (x) { counts[lrKind_(x)]++; });
-    var tiles = [['notsent', 'Not sent yet', 'var(--text-muted)'], ['sent', 'Sent, not opened', 'var(--warning)'], ['opened', 'Opened, nothing asked', 'var(--brand)'], ['asked', 'Asked: to decide', 'var(--warning)'],
-      ['approved', 'Approved', 'var(--good)'], ['declined', 'Declined', 'var(--critical)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
+    var tiles = [['notsent', 'Not sent yet', 'var(--text-muted)'], ['sent', 'Sent, not opened', 'var(--warning)'], ['opened', 'Opened, nothing asked', 'var(--brand)'], ['asked', 'Asked: not started', 'var(--warning)'],
+      ['progress', 'In progress', 'var(--brand)'], ['approved', 'Finalized', 'var(--good)'], ['declined', 'Finalized: no leave', 'var(--text-muted)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
     var tEl = document.getElementById('lr-tiles');
     tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' + tiles.map(function (t) {
       return '<button type="button" class="kpi-card" data-lr-tile="' + t[0] + '" style="--dot:' + t[2] + ';' + (lrState.filter === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + t[1] + '</span></div><div class="big">' + counts[t[0]] + '</div><div class="cap">' + (lrState.filter === t[0] ? 'Showing only these; click again for everyone' : 'Click to show them') + '</div></button>';
@@ -6606,11 +6591,12 @@
     var statusCell = function (x) {
       var k = lrKind_(x);
       if (k === 'asked') return '<strong style="color:var(--warning);">Asked</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.submittedAt.slice(0, 16)) + '</span>';
+      if (k === 'progress') return '<strong style="color:var(--brand);">In progress</strong> ' + esc(lrShortDates_(x.draftDates || [])) + ' <span style="color:var(--text-muted); font-size:12px;">' + esc(x.decidedBy) + ' ' + esc(x.decidedAt.slice(5, 16)) + '</span>';
       if (k === 'approved') {
         var chg = x.approvedDates.join() !== x.dates.join();   // §106 days changed by management
-        return '<strong style="color:var(--good);">Approved</strong> ' + esc(lrShortDates_(x.approvedDates)) + (chg ? ' <span style="color:var(--warning); font-weight:700; font-size:12px;" title="Asked for: ' + esc(lrShortDates_(x.dates)) + '">changed</span>' : '') + ' <span style="color:var(--text-muted); font-size:12px;">by ' + esc(x.decidedBy) + '</span>';
+        return '<strong style="color:var(--good);">Finalized</strong> ' + esc(lrShortDates_(x.approvedDates)) + (chg ? ' <span style="color:var(--warning); font-weight:700; font-size:12px;" title="Asked for: ' + esc(lrShortDates_(x.dates)) + '">changed</span>' : '') + ' <span style="color:var(--text-muted); font-size:12px;">by ' + esc(x.decidedBy) + '</span>';
       }
-      if (k === 'declined') return '<strong style="color:var(--critical);">Declined</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.decisionNote) + '</span>';
+      if (k === 'declined') return '<strong style="color:var(--text-muted);">Finalized: no leave</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.decisionNote) + '</span>';
       if (k === 'nophone') return '<span style="color:var(--critical);">No cell number</span>';
       if (k === 'failed') return '<span style="color:var(--critical);" title="' + esc(x.sendError) + '">Send failed</span>';
       if (k === 'opened') return 'Opened ' + x.views + '×, nothing asked yet';
@@ -6627,7 +6613,7 @@
           '<td style="text-align:left;">' + esc(x.name) + '<div style="font-size:11px; color:var(--text-muted);">' + esc(x.department) + (x.phone ? ' · ' + esc(x.phone) : '') + '</div></td>' +
           '<td>' + x.left + (x.firstYear ? '<div style="font-size:10px; color:var(--text-muted);">first year</div>' : '') + '</td><td>' + x.leftNext + '</td>' +
           '<td style="text-align:left; font-size:12px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px;">' + statusCell(x) + '</td>' +
-          '<td style="white-space:nowrap;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : '') +
+          '<td style="white-space:nowrap;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : x.status === 'In progress' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Continue</button> ' : '') +
           (/Approved|Declined/.test(x.status) ? '<button class="btn secondary small" type="button" data-lr-reopen="' + esc(x.employeeId) + '">Reopen</button> ' : '') +
           '<button class="btn secondary small" type="button" data-lr-wa="' + esc(x.employeeId) + '" title="Open WhatsApp on this device with the message and their private link">WhatsApp</button> ' +
           '<button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button></td></tr>';
@@ -6690,7 +6676,7 @@
     callApi('getLeaveRequestDays', { employeeId: id, year: d.year }).then(function (res) {
       if (!res || !res.ok) { sub.textContent = (res && res.error) || 'Could not load their days.'; body.innerHTML = ''; return; }
       var asked = {}; res.asked.forEach(function (a) { asked[a] = true; });
-      var pick = {}; res.asked.forEach(function (a) { pick[a] = true; });
+      var pick = {}; (res.draft || res.asked).forEach(function (a) { pick[a] = true; });   // §108 continue from the saved draft
       var byDate = {}; res.days.forEach(function (dd) { byDate[dd.date] = dd; });
       var wdn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       var y1 = String(d.year), y2 = String(d.year + 1);
@@ -6716,20 +6702,20 @@
           var dd = byDate[dt];
           if (!dd) { h += '<div></div>'; continue; }
           var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1] : '');
-          var can = dd.work && !dd.holiday && !dd.closed && !dd.leave && (dd.can || asked[dt]);
+          var can = !dd.holiday && !dd.closed && !dd.leave;   // §108: off days may be ticked too
           var cell = dpState.data && dpState.data.cells[dt + '|' + x.department];
           var cover = cell && !cell.closed ? '<div style="font-size:10px; color:' + (cell.shortIfAll > 0 ? 'var(--critical)' : 'var(--text-muted)') + ';">' + cell.booked + '/' + cell.required + '</div>' : '';
           if (!can) {
-            var why = dd.closed ? 'closed' : dd.holiday ? 'holiday' : dd.leave ? 'on leave' : 'off';
+            var why = dd.closed ? 'closed' : dd.holiday ? 'holiday' : 'on leave';
             h += '<div style="border:1px dashed var(--gridline); border-radius:8px; padding:4px; text-align:center; color:var(--text-muted); font-size:12px; background:var(--surface-1);">' + num + '<div style="font-size:10px;">' + why + '</div></div>';
             continue;
           }
           var on = !!pick[dt], was = !!asked[dt];
-          var tag = on && was ? 'asked' : on && !was ? 'added' : !on && was ? 'not approved' : 'work';
+          var tag = on && was ? 'asked' : on && !was ? 'added' : !on && was ? 'not approved' : (dd.work ? 'work' : 'off');
           var style = on && was ? 'border:2px solid var(--brand); background:color-mix(in srgb, var(--brand) 14%, transparent);'
             : on && !was ? 'border:2px solid var(--good); background:color-mix(in srgb, var(--good) 22%, transparent);'
             : !on && was ? 'border:2px dashed var(--critical); background:color-mix(in srgb, var(--critical) 8%, transparent); text-decoration:line-through;'
-            : 'border:1px solid var(--gridline); background:var(--card);';
+            : (dd.work ? 'border:1px solid var(--gridline); background:var(--card);' : 'border:1px dashed var(--gridline); background:var(--surface-1); color:var(--text-muted);');
           h += '<button type="button" data-lr-cal="' + dt + '" style="' + style + ' border-radius:8px; padding:4px; text-align:center; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--text-primary);">' + num +
             '<div style="font-size:10px; font-weight:600; text-decoration:none; color:' + (tag === 'added' ? 'var(--good)' : tag === 'not approved' ? 'var(--critical)' : tag === 'asked' ? 'var(--brand)' : 'var(--text-muted)') + ';">' + tag + '</div>' + cover + '</button>';
         }
@@ -6741,26 +6727,28 @@
           ((over1 || over2) ? '<div style="color:var(--critical); font-size:13px;">More than they have left: untick days.</div>' : '') + '</div>';
         h += '<div class="toolbar" style="flex-wrap:wrap;"><label style="font-size:13px;">Signed off by</label><select id="lr-mgr"><option value="">— manager —</option>' + d.managers.map(function (m) { return '<option' + (m.name === (lrState.lastMgr || '') ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select>' +
           '<input type="text" id="lr-note" placeholder="Note (required to decline; the employee sees it)" style="min-width:260px;" value="' + esc(lrState.noteDraft || '') + '"></div>' +
-          '<div class="toolbar"><button class="btn small" type="button" id="lr-approve"' + (over1 || over2 ? ' disabled' : '') + '>Approve ticked days</button><button class="btn secondary small" type="button" id="lr-decline">Decline all</button><span class="save-status" id="lr-dec-status"></span></div>';
+          '<div class="toolbar"><button class="btn secondary small" type="button" id="lr-save"' + (over1 || over2 ? ' disabled' : '') + '>Save in progress</button><button class="btn small" type="button" id="lr-approve"' + (over1 || over2 ? ' disabled' : '') + '>Finalize</button><span class="save-status" id="lr-dec-status"></span></div>' +
+          '<div style="font-size:12px; color:var(--text-muted);"><strong>Save in progress</strong> keeps these days as a draft (nothing approved; the employee can no longer change the request). <strong>Finalize</strong> approves the ticked days as Annual Leave (needs the manager); with no days ticked it means no leave for this period.</div>' +
+          (res.status === 'In progress' ? '<div style="font-size:12px; color:var(--warning); margin-top:4px;">In progress: these are the days last saved.</div>' : '');
         body.innerHTML = h;
         Array.prototype.forEach.call(body.querySelectorAll('[data-lr-cal]'), function (b) {
           b.addEventListener('click', function () { var k = b.getAttribute('data-lr-cal'); lrState.lastMgr = document.getElementById('lr-mgr').value; lrState.noteDraft = document.getElementById('lr-note').value; pick[k] = !pick[k]; render(); });
         });
         document.getElementById('lr-approve').addEventListener('click', function () { go('approve', this); });
-        document.getElementById('lr-decline').addEventListener('click', function () { go('decline', this); });
+        document.getElementById('lr-save').addEventListener('click', function () { go('save', this); });
       };
       var go = function (decision, btn) {
         var days = Object.keys(pick).filter(function (k) { return pick[k]; }).sort();
         var st = document.getElementById('lr-dec-status'), label = btn.textContent;
-        if (decision === 'approve' && !days.length) { flashStatus(st, 'Tick at least one day, or decline.', 'save-status err', 6000); return; }
+        if (decision === 'approve' && !days.length && !confirm('No days are ticked: finalize as NO leave for ' + x.name + '?')) return;
         btn.disabled = true; btn.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
-        callApi('decideLeaveRequest', { year: d.year, employeeId: id, decision: decision, dates: days.join(','), approvedBy: document.getElementById('lr-mgr').value, note: document.getElementById('lr-note').value }).then(function (r2) {
+        callApi('decideLeaveRequest', { year: d.year, employeeId: id, decision: decision, dates: days.join(',') || ' ', approvedBy: document.getElementById('lr-mgr').value, note: document.getElementById('lr-note').value }).then(function (r2) {
           btn.disabled = false; btn.textContent = label;
           if (!r2 || !r2.ok) { flashStatus(st, (r2 && r2.error) || 'Could not save', 'save-status err', 9000); return; }
           lrState.noteDraft = '';
           document.getElementById('casual-weeks-modal').classList.remove('active');
           lrState.data = r2; renderLeaveReqs_(); loadDecPlan_(dpState.year);
-          flashStatus(document.getElementById('lr-status'), decision === 'approve' ? 'Approved: ' + days.length + ' day(s) captured as Annual Leave' : 'Declined', 'save-status ok', 4000);
+          flashStatus(document.getElementById('lr-status'), decision === 'save' ? 'Saved in progress: ' + days.length + ' day(s)' : days.length ? 'Finalized: ' + days.length + ' day(s) captured as Annual Leave' : 'Finalized: no leave', 'save-status ok', 4000);
         }).catch(function () { btn.disabled = false; btn.textContent = label; flashStatus(st, 'Network error', 'save-status err', 6000); });
       };
       lrState.noteDraft = '';
@@ -12788,6 +12776,7 @@
         if (d.status === 'Approved') h += '<div class="wa-box" style="border-color:var(--good);"><strong>Approved:</strong> ' + d.approvedDates.length + ' day(s), marked green below.' + (d.decisionNote ? ' ' + esc(d.decisionNote) : '') + (d.approvedDates.join() !== d.requested.join() ? ' Your days were changed: green days are your leave (marked "added by HR" where you did not ask for them); crossed-out days were not approved.' : '') + '</div>';
         else if (d.status === 'Declined') h += '<div class="wa-box bad"><strong>Not approved:</strong> ' + esc(d.decisionNote) + '</div>';
         else if (!d.open) h += '<div class="wa-box warn">Requests closed on ' + esc(d.deadline) + '. ' + (d.requested.length ? 'Your request is with HR.' : 'Speak to HR if you need leave.') + '</div>';
+        else if (d.status === 'In progress') h += '<div class="wa-box warn">HR is busy with your request. You will hear when it is final; speak to HR if something must change.</div>';
         else if (d.status === 'Requested') h += '<div class="wa-box">Your request was received' + (d.submittedAt ? ' (' + esc(d.submittedAt.slice(0, 16)) + ')' : '') + '. HR will let you know. You can still change it until ' + esc(d.deadlineLabel || d.deadline) + '.</div>';
         if (d.noShift) h += '<div class="hint" style="font-size:12px;">You have no shift on file, so Monday to Friday is shown as your work days.</div>';
         // calendar: weeks Monday to Sunday
