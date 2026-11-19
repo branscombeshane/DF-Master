@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.203-speed-log';
+  var FRONTEND_BUILD = '2026-11-19.204-speed-login-cache';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2539,7 +2539,7 @@
     if (r.err) return 'No answer (' + r.err + '): Google refused or the connection dropped';
     if (r.server === null) return 'Old server version (no timing)';
     var google = Math.max(0, r.total - r.server), other = Math.max(0, r.server - r.readMs - r.lockMs);
-    var parts = [['Google / network', google], ['waiting for another save', r.lockMs], ['reading sheets' + (r.top && r.top[0] ? ' (mostly ' + r.top[0][0] + ')' : ''), r.readMs], ['working it out', other]];
+    var parts = [['Google / network', google], ['waiting for another save', r.lockMs], ['reading sheets' + (r.top && r.top[0] ? ' (mostly ' + r.top[0][0] + (r.top[0][2] ? ', ' + Number(r.top[0][2]).toLocaleString('en-ZA') + ' rows' : '') + ')' : ''), r.readMs], ['working it out', other]];
     parts.sort(function (a, b) { return b[1] - a[1]; });
     return parts[0][0];
   }
@@ -2562,7 +2562,7 @@
       return '<tr><td style="text-align:left; white-space:nowrap;">' + esc(r.at.toTimeString().slice(0, 8)) + '</td><td style="text-align:left;">' + esc(perfLabel_(r.action)) + '</td>' +
         '<td style="font-weight:700;' + (r.total >= 5000 ? 'color:var(--critical);' : r.total >= 2500 ? 'color:var(--warning);' : '') + '">' + perfSec_(r.total) + '</td>' +
         '<td>' + (r.server === null ? '–' : perfSec_(Math.max(0, r.total - r.server))) + '</td><td>' + (r.server === null ? '–' : perfSec_(r.readMs) + ' <span style="color:var(--text-muted); font-size:11px;">(' + r.reads + ')</span>') + '</td><td>' + (r.server === null ? '–' : perfSec_(r.lockMs)) + '</td>' +
-        '<td style="text-align:left; font-size:12px;">' + esc(perfWhy_(r)) + '</td></tr>';
+        '<td style="text-align:left; font-size:12px; white-space:normal; min-width:200px;">' + esc(perfWhy_(r)) + '</td></tr>';
     };
     document.getElementById('casual-weeks-body').innerHTML =
       '<table class="data-table"><thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Screen / action</th><th>Total</th><th>Google / network</th><th>Reading sheets (how many)</th><th>Waiting for a save</th><th style="text-align:left;">Main reason</th></tr></thead><tbody>' +
@@ -2580,11 +2580,12 @@
         var by = {};
         res.entries.forEach(function (x) { var k = x.kind + '|' + x.action; var a = by[k] = by[k] || { kind: x.kind, action: x.action, n: 0, ms: 0, max: 0, rd: 0, lk: 0, top: {} }; a.n++; a.ms += x.ms; a.max = Math.max(a.max, x.ms); a.rd += x.readMs; a.lk += x.lockMs; (x.top || []).forEach(function (t) { a.top[t[0]] = (a.top[t[0]] || 0) + t[1]; }); });
         var agg = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.ms - a.ms; });
-        var topOf = function (a) { var k = Object.keys(a.top).sort(function (x, y) { return a.top[y] - a.top[x]; })[0]; return k ? k : ''; };
+        var rowsOf = {}; res.entries.forEach(function (x) { (x.top || []).forEach(function (t) { if (t[2]) rowsOf[t[0]] = Math.max(rowsOf[t[0]] || 0, t[2]); }); });
+        var topOf = function (a) { var k = Object.keys(a.top).sort(function (x, y) { return a.top[y] - a.top[x]; })[0]; return k ? k + (rowsOf[k] ? ' (' + rowsOf[k].toLocaleString('en-ZA') + ' rows)' : '') : ''; };
         document.getElementById('speed-all-body').innerHTML = res.entries.length
           ? '<h3 style="font-size:13px; margin:12px 0 4px;">Everyone, requests of ' + perfSec_(res.slowMs) + ' or more on the server, plus every BioTime / Sage push (last 6 hours, ' + res.entries.length + ')</h3>' +
             '<table class="data-table"><thead><tr><th style="text-align:left;">What</th><th>Times</th><th>Average</th><th>Slowest</th><th>Reading sheets</th><th>Waiting for a save</th><th style="text-align:left;">Biggest sheet</th></tr></thead><tbody>' +
-            agg.map(function (a) { return '<tr><td style="text-align:left;">' + (a.kind === 'push' ? 'Push: ' : '') + esc(perfLabel_(a.action)) + '</td><td>' + a.n + '</td><td>' + perfSec_(a.ms / a.n) + '</td><td>' + perfSec_(a.max) + '</td><td>' + perfSec_(a.rd / a.n) + '</td><td>' + perfSec_(a.lk / a.n) + '</td><td style="text-align:left; font-size:12px;">' + esc(topOf(a)) + '</td></tr>'; }).join('') + '</tbody></table>' +
+            agg.map(function (a) { return '<tr><td style="text-align:left;">' + (a.kind === 'push' ? 'Push: ' : '') + esc(perfLabel_(a.action)) + '</td><td>' + a.n + '</td><td>' + perfSec_(a.ms / a.n) + '</td><td>' + perfSec_(a.max) + '</td><td>' + perfSec_(a.rd / a.n) + '</td><td>' + perfSec_(a.lk / a.n) + '</td><td style="text-align:left; font-size:12px; white-space:normal;">' + esc(topOf(a)) + '</td></tr>'; }).join('') + '</tbody></table>' +
             '<p class="hint">Server time only (Google\'s own start-up is not in here; see this tab\'s table above for that).</p>'
           : '<p class="hint" style="margin-top:10px;">No slow requests in the last 6 hours: the server itself is quick, so slowness is Google / network (see the table above).</p>';
       }).catch(function () { b.disabled = false; flashStatus(st, 'Network error', 'save-status err', 6000); });
