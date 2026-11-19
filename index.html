@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.206-speed-csv';
+  var FRONTEND_BUILD = '2026-11-19.207-punch-archive';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2626,8 +2626,34 @@
       '<table class="data-table"><thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Screen / action</th><th>Total</th><th>Google / network</th><th>Reading sheets (how many)</th><th>Waiting for a save</th><th style="text-align:left;">Main reason</th></tr></thead><tbody>' +
       (rows.length ? rows.slice(0, 40).map(tr).join('') : '<tr><td colspan="7" style="text-align:left;">Nothing yet.</td></tr>') + '</tbody></table>' +
       '<div class="toolbar" style="margin-top:12px;"><button class="btn small" type="button" id="speed-all">Everyone\'s slow requests (last 6 hours)</button><button class="btn secondary small" type="button" id="speed-csv-tab">Download this tab (CSV)</button><button class="btn secondary small" type="button" id="speed-csv-all">Download everyone\'s (CSV)</button><span class="save-status" id="speed-status"></span></div><div id="speed-all-body"></div>' +
+      '<div style="margin-top:14px; padding:10px 12px; border:1px solid var(--border); border-radius:8px;"><strong style="font-size:13px;">Old BioTime clock-ins</strong> <span class="hint" style="margin:0;">The clock-ins sheet is most of the file. The app only uses recent ones; older ones can move to a separate archive spreadsheet (nothing is deleted).</span>' +
+      '<div class="toolbar" style="margin:6px 0 0;"><button class="btn secondary small" type="button" id="speed-arch-check">Check old clock-ins</button><span class="save-status" id="speed-arch-status"></span></div><div id="speed-arch-body" style="font-size:13px;"></div></div>' +
       '<p class="hint" style="margin-top:10px;"><strong>Google / network</strong> high = Google is slow to start the request or the connection is slow (nothing in our code changes that). <strong>Reading sheets</strong> high = a big sheet is read (named in Main reason): that one can be made faster. <strong>Waiting for a save</strong> high = someone else\'s save (or a BioTime / Sage push) was running; saves go one at a time.</p>';
     document.getElementById('casual-weeks-modal').classList.add('active');
+    // §124 old clock-ins: preview, then move to the archive file
+    var archShow = function (res) {
+      var body = document.getElementById('speed-arch-body');
+      body.innerHTML = (res.moved ? '<div style="color:var(--good); margin-top:6px;"><strong>' + res.moved.toLocaleString('en-ZA') + ' clock-ins moved</strong> to the archive file.</div>' : '') +
+        '<div style="margin-top:6px;">' + res.total.toLocaleString('en-ZA') + ' clock-ins in the working file' + (res.oldest ? ', oldest ' + esc(res.oldest) : '') + '. Kept: the last ' + res.keepDays + ' days (from ' + esc(res.cutoff) + ').' +
+        (res.old ? ' <strong>' + res.old.toLocaleString('en-ZA') + '</strong> are older.' : ' Nothing older to move.') + '</div>' +
+        (res.archiveUrl ? '<div style="margin-top:4px;"><a href="' + esc(res.archiveUrl) + '" target="_blank" rel="noopener">Open the archive file</a></div>' : '') +
+        (res.old ? '<div class="toolbar" style="margin:6px 0 0;"><button class="btn small" type="button" id="speed-arch-go">Move ' + res.old.toLocaleString('en-ZA') + ' old clock-ins to the archive</button></div>' : '');
+      var go = document.getElementById('speed-arch-go');
+      if (go) go.addEventListener('click', function () {
+        if (!confirm('Move ' + res.old + ' clock-ins from before ' + res.cutoff + ' to the archive spreadsheet?\n\nThey are copied there first and only then removed from the working file. Screens about dates before ' + res.cutoff + ' will no longer show clock-ins.')) return;
+        archCall(go, '');
+      });
+    };
+    var archCall = function (btn, preview) {
+      var st = document.getElementById('speed-arch-status'), label = btn.textContent;
+      btn.disabled = true; btn.textContent = preview ? 'Checking…' : 'Moving… (can take a minute)'; flashStatus(st, '', 'save-status', 0);
+      callApi('archivePunches', preview ? { preview: '1' } : {}).then(function (res) {
+        btn.disabled = false; btn.textContent = label;
+        if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not do it', 'save-status err', 8000); return; }
+        archShow(res);
+      }).catch(function () { btn.disabled = false; btn.textContent = label; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    };
+    document.getElementById('speed-arch-check').addEventListener('click', function () { archCall(this, '1'); });
     document.getElementById('speed-csv-tab').addEventListener('click', function () {
       perfCsvDownload_('speed-this-tab_' + perfStamp_() + '.csv',
         ['Time', 'Action', 'Total ms', 'Server ms', 'Google / network ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'No answer'].concat(PERF_TOP_HEAD_),
