@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.204-speed-login-cache';
+  var FRONTEND_BUILD = '2026-11-19.205-batch-reads';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2310,10 +2310,7 @@
     var loadingBtn = pendingLoadingButton;
     if (loadingBtn) beginButtonLoading_(loadingBtn);
     var busyToken = busyBegin_(action, params);
-    var perfT0 = Date.now();
-    return fetch(url, { method: 'GET', cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) { perfNote_(action, perfT0, res, ''); return res; }, function (err) { perfNote_(action, perfT0, null, (err && err.message) || 'network error'); throw err; })
+    return apiSend_(action, params, url)
       .then(function (res) {
         if (res && res.ok === false && /session expired/i.test(res.error || '')) {
           forceLogout();
@@ -2327,6 +2324,55 @@
         if (loadingBtn) endButtonLoading_(loadingBtn);
         busyEnd_(busyToken);
       });
+  }
+
+  // §122 Batching: read requests (get*/list*/sageStatus) that start within the same moment are sent together, at most
+  // API_BATCH_MAX_ per request, so Google starts a few executions instead of a dozen and the server reads each sheet
+  // once per batch. Every caller still gets exactly its own answer. Anything else (saves) goes straight out.
+  var API_BATCH_MAX_ = 4, API_BATCH_WAIT_MS_ = 15, apiQueue_ = [], apiQueueTimer_ = null;
+  function apiBatchable_(action) { return !!state.token && action !== 'batch' && (/^(get|list)[A-Z]/.test(action) || action === 'sageStatus'); }
+  function apiFetchJson_(url) { return fetch(url, { method: 'GET', cache: 'no-store' }).then(function (r) { return r.json(); }); }
+  function apiSend_(action, params, url) {
+    if (!apiBatchable_(action)) {
+      var t0 = Date.now();
+      return apiFetchJson_(url).then(function (res) { perfNote_(action, t0, res, ''); return res; }, function (err) { perfNote_(action, t0, null, (err && err.message) || 'network error'); throw err; });
+    }
+    // the same read already waiting in the queue (e.g. Financials asked twice while a company opens): one answer for both
+    var key = url.replace(/&_=\d+$/, ''), same = apiQueue_.filter(function (it) { return it.key === key; })[0];
+    if (same) return same.promise.then(function (res) { return JSON.parse(JSON.stringify(res)); });
+    var item = { action: action, params: params, url: url, key: key };
+    item.promise = new Promise(function (resolve, reject) { item.resolve = resolve; item.reject = reject; });
+    apiQueue_.push(item);
+    if (!apiQueueTimer_) apiQueueTimer_ = setTimeout(apiFlush_, API_BATCH_WAIT_MS_);
+    return item.promise;
+  }
+  function apiFlush_() {
+    apiQueueTimer_ = null;
+    var q = apiQueue_; apiQueue_ = [];
+    for (var i = 0; i < q.length; i += API_BATCH_MAX_) apiSendBatch_(q.slice(i, i + API_BATCH_MAX_));
+  }
+  function apiSendBatch_(items) {
+    var t0 = Date.now();
+    if (items.length === 1) {
+      var one = items[0];
+      apiFetchJson_(one.url).then(function (res) { perfNote_(one.action, t0, res, ''); one.resolve(res); }, function (err) { perfNote_(one.action, t0, null, (err && err.message) || 'network error'); one.reject(err); });
+      return;
+    }
+    var calls = items.map(function (it) { var pr = Object.assign({}, it.params); delete pr.token; return { action: it.action, params: pr }; });
+    var label = 'batch: ' + items.map(function (it) { return it.action; }).join(', ');
+    var url = WEB_APP_URL + '?action=batch&token=' + encodeURIComponent(state.token) + '&calls=' + encodeURIComponent(JSON.stringify(calls)) + '&_=' + Date.now();
+    apiFetchJson_(url).then(function (res) {
+      perfNote_(label, t0, res, '');
+      if (!res || !res.ok || !Array.isArray(res.results)) {
+        // e.g. session expired, or an old server without batch: answer every caller with the same reply
+        items.forEach(function (it) { it.resolve(res || { ok: false, error: 'No answer from the server.' }); });
+        return;
+      }
+      items.forEach(function (it, i) { it.resolve(res.results[i] || { ok: false, error: 'No answer from the server.' }); });
+    }, function (err) {
+      perfNote_(label, t0, null, (err && err.message) || 'network error');
+      items.forEach(function (it) { it.reject(err); });
+    });
   }
 
   // Wraps callApi() for the handful of payroll-mutating actions that can be
@@ -2546,6 +2592,7 @@
   function perfLabel_(a) {
     var m = { getAttendanceDay: 'Daily Attendance', getLeaveTaken: 'Leave Management', getDecPlanner: 'December Planner', getLeaveRequests: 'Leave requests', getAbsences: 'Absent Management',
       getPayrollAdjustments: 'Pay Adjustments', getPayroll: 'Roster', login: 'Log in', bootstrap: 'Start-up', getAttendanceSettings: 'Shifts & Holidays', getFinancialYear: 'Financials' };
+    if (/^batch: /.test(a)) return 'Together: ' + a.slice(7).split(', ').map(function (x) { return m[x] || x; }).join(', ');   // §122
     return m[a] || a;
   }
   function openSpeed_() {
