@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.210-leave-link-fast';
+  var FRONTEND_BUILD = '2026-11-19.211-rename-shift-time';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2117,7 +2117,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, renameTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -6382,7 +6382,7 @@
         '<td>' + (ed ? '<input type="time" data-tt-in value="' + esc(t.inT) + '" style="max-width:120px;">' : esc(t.inT)) + '</td>' +
         '<td>' + (ed ? '<input type="time" data-tt-out value="' + esc(t.outT) + '" style="max-width:120px;">' : esc(t.outT) + (t.outT <= t.inT ? ' (+1)' : '')) + '</td>' +
         '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + (isNew ? '' : (t.usedIn.length ? t.usedIn.length + ' shift' + (t.usedIn.length === 1 ? '' : 's') + ((t.alsoUsed || []).length ? ', ' + esc(t.alsoUsed.join(', ')) : '') : (t.alsoUsed || []).length ? esc(t.alsoUsed.join(', ')) : 'not used' + (ed ? ' <button class="btn secondary small" type="button" data-tt-del="' + esc(t.name) + '">Delete</button>' : ''))) + '</td>' +
-        '<td>' + (ed ? '<button class="btn small" type="button" data-tt-save="' + esc(key) + '">' + (isNew ? 'Add' : 'Save') + '</button>' : '') + '</td></tr>';
+        '<td style="white-space:nowrap;">' + (ed ? '<button class="btn small" type="button" data-tt-save="' + esc(key) + '">' + (isNew ? 'Add' : 'Save') + '</button>' + (isNew ? '' : ' <button class="btn secondary small" type="button" data-tt-rename="' + esc(t.name) + '">Rename</button>') : '') + '</td></tr>';
     };
     document.getElementById('atts-tt').innerHTML = '<thead><tr><th style="text-align:left;">Shift time</th><th>Start</th><th>End</th><th style="text-align:left;">Used in</th><th></th></tr></thead><tbody>' +
       d.timetables.map(function (t) { return ttRow(t, false); }).join('') + (ed ? ttRow({ inT: '', outT: '' }, true) : '') + '</tbody>';
@@ -6436,6 +6436,17 @@
     // §90 delete never-used shifts / shift times; list employees without a shift
     Array.prototype.forEach.call(document.querySelectorAll('[data-sh-del]'), function (b) {
       b.addEventListener('click', function () { if (confirm('Delete the shift "' + b.getAttribute('data-sh-del') + '"? Nobody has ever been on it.')) attsCall_('deleteAttSetting', { kind: 'shift', name: b.getAttribute('data-sh-del') }, b, 'Shift deleted'); });
+    });
+    // §128 rename a shift time everywhere it is used (Owner)
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tt-rename]'), function (b) {
+      b.addEventListener('click', function () {
+        var from = b.getAttribute('data-tt-rename');
+        var to = window.prompt('New name for the shift time ' + from + ' (it changes in every shift, holiday team and period shift that uses it; times stay the same):', from);
+        if (to === null) return;
+        to = to.trim().toUpperCase();
+        if (!to || to === from) return;
+        attsCall_('renameTimetable', { from: from, to: to }, b, from + ' renamed to ' + to);
+      });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-tt-del]'), function (b) {
       b.addEventListener('click', function () { if (confirm('Delete the shift time ' + b.getAttribute('data-tt-del') + '? No shift uses it.')) attsCall_('deleteAttSetting', { kind: 'timetable', name: b.getAttribute('data-tt-del') }, b, 'Shift time deleted'); });
@@ -7143,7 +7154,7 @@
       '<div class="toolbar" style="margin:10px 0 0;"><button class="btn" id="holplan-save" type="button">Save holiday team</button><span class="save-status" id="holplan-status"></span></div>';
     document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th>Works</th><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th style="text-align:left;">Shift time</th></tr></thead><tbody>' +
       people.map(function (r) {
-        var dflt = r.holidayPlanned ? r.timetable : (r.planDefault || r.normalTimetable || (d.timetables.indexOf('HOLIDAY SHIFT') !== -1 ? 'HOLIDAY SHIFT' : d.timetables[0]));
+        var dflt = r.holidayPlanned ? r.timetable : (r.planDefault || r.normalTimetable || (d.timetables.indexOf(d.holShiftTt || 'HOLIDAY SHIFT') !== -1 ? (d.holShiftTt || 'HOLIDAY SHIFT') : d.timetables[0]));
         return '<tr><td><input type="checkbox" data-holplan="' + esc(r.empCode) + '"' + (r.holidayPlanned ? ' checked' : '') + '></td><td style="text-align:left;">' + esc(r.name) + '</td><td style="text-align:left;">' + esc(r.department) + '</td>' +
           '<td style="text-align:left;"><select data-holplan-tt="' + esc(r.empCode) + '" style="font-size:12px; padding:5px 6px;">' + opts(dflt) + '</select></td></tr>';
       }).join('') + '</tbody></table>';
