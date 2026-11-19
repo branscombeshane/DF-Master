@@ -1183,6 +1183,7 @@
     <div class="topbar-right">
       <span class="who" id="who-label"></span>
       <button class="btn secondary small" id="switch-group-btn" style="display:none;">Switch company</button>
+      <button class="btn secondary small" id="speed-btn" style="display:none;" title="How long the app took, and why (Owner)">&#9201; <span id="speed-last">–</span></button>
       <button class="btn secondary small" id="account-btn">Password</button>
       <button class="btn secondary small" id="logout-btn">Log out</button>
     </div>
@@ -2094,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.202-advance-one-schedule';
+  var FRONTEND_BUILD = '2026-11-19.203-speed-log';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2309,8 +2310,10 @@
     var loadingBtn = pendingLoadingButton;
     if (loadingBtn) beginButtonLoading_(loadingBtn);
     var busyToken = busyBegin_(action, params);
+    var perfT0 = Date.now();
     return fetch(url, { method: 'GET', cache: 'no-store' })
       .then(function (r) { return r.json(); })
+      .then(function (res) { perfNote_(action, perfT0, res, ''); return res; }, function (err) { perfNote_(action, perfT0, null, (err && err.message) || 'network error'); throw err; })
       .then(function (res) {
         if (res && res.ok === false && /session expired/i.test(res.error || '')) {
           forceLogout();
@@ -2520,6 +2523,75 @@
     });
   }
 
+  // ---------------- Speed log (SETUP §120) ----------------
+  // Every request: round trip measured here, server time from the reply's _perf. Google / network = the difference.
+  var PERF_TAB_ = [];
+  function perfNote_(action, t0, res, err) {
+    var total = Date.now() - t0, p = res && res._perf;
+    PERF_TAB_.push({ at: new Date(), action: action, total: total, server: p ? p.ms : null, readMs: p ? p.readMs : 0, reads: p ? p.reads : 0, lockMs: p ? p.lockMs : 0, top: p ? p.top : [], err: err });
+    if (PERF_TAB_.length > 200) PERF_TAB_.shift();
+    var el = document.getElementById('speed-last');
+    if (el) { el.textContent = err ? 'failed' : (total / 1000).toFixed(1) + ' s'; el.style.color = err || total >= 5000 ? 'var(--critical)' : total >= 2500 ? 'var(--warning)' : ''; }
+  }
+  function perfSec_(ms) { return ms === null || ms === undefined ? '–' : (ms / 1000).toFixed(1) + ' s'; }
+  // the main reason for one request, in plain words
+  function perfWhy_(r) {
+    if (r.err) return 'No answer (' + r.err + '): Google refused or the connection dropped';
+    if (r.server === null) return 'Old server version (no timing)';
+    var google = Math.max(0, r.total - r.server), other = Math.max(0, r.server - r.readMs - r.lockMs);
+    var parts = [['Google / network', google], ['waiting for another save', r.lockMs], ['reading sheets' + (r.top && r.top[0] ? ' (mostly ' + r.top[0][0] + ')' : ''), r.readMs], ['working it out', other]];
+    parts.sort(function (a, b) { return b[1] - a[1]; });
+    return parts[0][0];
+  }
+  function perfLabel_(a) {
+    var m = { getAttendanceDay: 'Daily Attendance', getLeaveTaken: 'Leave Management', getDecPlanner: 'December Planner', getLeaveRequests: 'Leave requests', getAbsences: 'Absent Management',
+      getPayrollAdjustments: 'Pay Adjustments', getPayroll: 'Roster', login: 'Log in', bootstrap: 'Start-up', getAttendanceSettings: 'Shifts & Holidays', getFinancialYear: 'Financials' };
+    return m[a] || a;
+  }
+  function openSpeed_() {
+    document.getElementById('casual-weeks-title').textContent = 'Why is it slow?';
+    var rows = PERF_TAB_.slice().reverse(), done = rows.filter(function (r) { return !r.err && r.server !== null; });
+    var sum = function (f) { return done.reduce(function (t, r) { return t + f(r); }, 0); };
+    var tot = sum(function (r) { return r.total; }) || 1, g = sum(function (r) { return Math.max(0, r.total - r.server); }), rd = sum(function (r) { return r.readMs; }), lk = sum(function (r) { return r.lockMs; });
+    var pct = function (x) { return Math.round(x / tot * 100) + '%'; };
+    document.getElementById('casual-weeks-sub').innerHTML = done.length
+      ? 'This tab, last ' + done.length + ' requests: <strong>' + pct(g) + '</strong> Google / network (Google starting the request, queueing, the internet), <strong>' + pct(rd) + '</strong> reading the Google Sheet, <strong>' + pct(lk) + '</strong> waiting for another save to finish, <strong>' + pct(Math.max(0, tot - g - rd - lk)) + '</strong> working it out.' +
+        (rows.some(function (r) { return r.err; }) ? ' <strong style="color:var(--critical);">' + rows.filter(function (r) { return r.err; }).length + ' request(s) got no answer.</strong>' : '')
+      : 'Nothing measured in this tab yet. Click around, then open this again.';
+    var tr = function (r) {
+      return '<tr><td style="text-align:left; white-space:nowrap;">' + esc(r.at.toTimeString().slice(0, 8)) + '</td><td style="text-align:left;">' + esc(perfLabel_(r.action)) + '</td>' +
+        '<td style="font-weight:700;' + (r.total >= 5000 ? 'color:var(--critical);' : r.total >= 2500 ? 'color:var(--warning);' : '') + '">' + perfSec_(r.total) + '</td>' +
+        '<td>' + (r.server === null ? '–' : perfSec_(Math.max(0, r.total - r.server))) + '</td><td>' + (r.server === null ? '–' : perfSec_(r.readMs) + ' <span style="color:var(--text-muted); font-size:11px;">(' + r.reads + ')</span>') + '</td><td>' + (r.server === null ? '–' : perfSec_(r.lockMs)) + '</td>' +
+        '<td style="text-align:left; font-size:12px;">' + esc(perfWhy_(r)) + '</td></tr>';
+    };
+    document.getElementById('casual-weeks-body').innerHTML =
+      '<table class="data-table"><thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Screen / action</th><th>Total</th><th>Google / network</th><th>Reading sheets (how many)</th><th>Waiting for a save</th><th style="text-align:left;">Main reason</th></tr></thead><tbody>' +
+      (rows.length ? rows.slice(0, 40).map(tr).join('') : '<tr><td colspan="7" style="text-align:left;">Nothing yet.</td></tr>') + '</tbody></table>' +
+      '<div class="toolbar" style="margin-top:12px;"><button class="btn small" type="button" id="speed-all">Everyone\'s slow requests (last 6 hours)</button><span class="save-status" id="speed-status"></span></div><div id="speed-all-body"></div>' +
+      '<p class="hint" style="margin-top:10px;"><strong>Google / network</strong> high = Google is slow to start the request or the connection is slow (nothing in our code changes that). <strong>Reading sheets</strong> high = a big sheet is read (named in Main reason): that one can be made faster. <strong>Waiting for a save</strong> high = someone else\'s save (or a BioTime / Sage push) was running; saves go one at a time.</p>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
+    document.getElementById('speed-all').addEventListener('click', function () {
+      var b = this, st = document.getElementById('speed-status');
+      b.disabled = true; flashStatus(st, 'Loading…', 'save-status', 0);
+      callApi('getPerfLog', {}).then(function (res) {
+        b.disabled = false;
+        if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 6000); return; }
+        flashStatus(st, '', 'save-status', 0);
+        var by = {};
+        res.entries.forEach(function (x) { var k = x.kind + '|' + x.action; var a = by[k] = by[k] || { kind: x.kind, action: x.action, n: 0, ms: 0, max: 0, rd: 0, lk: 0, top: {} }; a.n++; a.ms += x.ms; a.max = Math.max(a.max, x.ms); a.rd += x.readMs; a.lk += x.lockMs; (x.top || []).forEach(function (t) { a.top[t[0]] = (a.top[t[0]] || 0) + t[1]; }); });
+        var agg = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.ms - a.ms; });
+        var topOf = function (a) { var k = Object.keys(a.top).sort(function (x, y) { return a.top[y] - a.top[x]; })[0]; return k ? k : ''; };
+        document.getElementById('speed-all-body').innerHTML = res.entries.length
+          ? '<h3 style="font-size:13px; margin:12px 0 4px;">Everyone, requests of ' + perfSec_(res.slowMs) + ' or more on the server, plus every BioTime / Sage push (last 6 hours, ' + res.entries.length + ')</h3>' +
+            '<table class="data-table"><thead><tr><th style="text-align:left;">What</th><th>Times</th><th>Average</th><th>Slowest</th><th>Reading sheets</th><th>Waiting for a save</th><th style="text-align:left;">Biggest sheet</th></tr></thead><tbody>' +
+            agg.map(function (a) { return '<tr><td style="text-align:left;">' + (a.kind === 'push' ? 'Push: ' : '') + esc(perfLabel_(a.action)) + '</td><td>' + a.n + '</td><td>' + perfSec_(a.ms / a.n) + '</td><td>' + perfSec_(a.max) + '</td><td>' + perfSec_(a.rd / a.n) + '</td><td>' + perfSec_(a.lk / a.n) + '</td><td style="text-align:left; font-size:12px;">' + esc(topOf(a)) + '</td></tr>'; }).join('') + '</tbody></table>' +
+            '<p class="hint">Server time only (Google\'s own start-up is not in here; see this tab\'s table above for that).</p>'
+          : '<p class="hint" style="margin-top:10px;">No slow requests in the last 6 hours: the server itself is quick, so slowness is Google / network (see the table above).</p>';
+      }).catch(function () { b.disabled = false; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    });
+  }
+  document.getElementById('speed-btn').addEventListener('click', openSpeed_);
+
   function forceLogout() {
     location.reload();
   }
@@ -2571,6 +2643,7 @@
     state.currentTaxYear = res.currentTaxYear || null;
     state.selectedMonth = state.selectedMonth || res.currentMonth;
     checkBuildMismatch(res.backendBuild);
+    document.getElementById('speed-btn').style.display = state.role === 'owner' ? '' : 'none';   // §120
   }
 
   // Narrows the "all" lists bootstrap sent down to just the currently
