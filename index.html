@@ -2094,7 +2094,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-17.200-negative-balance-finalize';
+  var FRONTEND_BUILD = '2026-11-19.201-leave-shift-days';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6723,9 +6723,8 @@
       var cost = function () {
         var out = {}, runs = [], hol = res.holidays || {};
         Object.keys(pick).filter(function (k) { return pick[k]; }).sort().forEach(function (dt) { var l = runs[runs.length - 1]; if (l && attdShiftDate_(l[l.length - 1], 1) === dt && dt.slice(0, 4) === l[0].slice(0, 4)) l.push(dt); else runs.push([dt]); });
-        runs.forEach(function (r) {
-          var all = r.filter(function (dt) { return !hol[dt]; }), wk = all.filter(function (dt) { var w = new Date(dt + 'T00:00:00Z').getUTCDay(); return w !== 0 && w !== 6; });
-          var yy = r[0].slice(0, 4); out[yy] = (out[yy] || 0) + (r.length === 1 ? all.length : (wk.length ? wk.length : all.length));
+        runs.forEach(function (r) {   // §118 only work days can be ticked: each one that is not a public holiday costs a day
+          var yy = r[0].slice(0, 4); out[yy] = (out[yy] || 0) + r.filter(function (dt) { return !hol[dt]; }).length;
         });
         return out;
       };
@@ -12787,9 +12786,8 @@
       var cost = function (dates) {
         var hol = st.data.holidays || {}, out = {}, runs = [];
         dates.slice().sort().forEach(function (d) { var l = runs[runs.length - 1]; if (l && attdShiftDate_(l[l.length - 1], 1) === d && d.slice(0, 4) === l[0].slice(0, 4)) l.push(d); else runs.push([d]); });
-        runs.forEach(function (r) {
-          var all = r.filter(function (d) { return !hol[d]; }), wk = all.filter(function (d) { var w = new Date(d + 'T00:00:00Z').getUTCDay(); return w !== 0 && w !== 6; });
-          var y = r[0].slice(0, 4); out[y] = (out[y] || 0) + (r.length === 1 ? all.length : (wk.length ? wk.length : all.length));
+        runs.forEach(function (r) {   // §118 only work days can be picked: each one that is not a public holiday costs a day
+          var y = r[0].slice(0, 4); out[y] = (out[y] || 0) + r.filter(function (d) { return !hol[d]; }).length;
         });
         return out;
       };
