@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.205-batch-reads';
+  var FRONTEND_BUILD = '2026-11-19.206-speed-csv';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2595,6 +2595,17 @@
     if (/^batch: /.test(a)) return 'Together: ' + a.slice(7).split(', ').map(function (x) { return m[x] || x; }).join(', ');   // §122
     return m[a] || a;
   }
+  // §123 CSV of the speed logs (Shane: "so I can send you the info properly")
+  function perfCsvDownload_(name, head, rows) {
+    var q = function (v) { v = v === null || v === undefined ? '' : String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var lines = [head.map(q).join(',')].concat(rows.map(function (r) { return r.map(q).join(','); }));
+    var blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  var PERF_TOP_HEAD_ = ['Sheet 1', 'Sheet 1 ms', 'Sheet 1 rows', 'Sheet 2', 'Sheet 2 ms', 'Sheet 2 rows', 'Sheet 3', 'Sheet 3 ms', 'Sheet 3 rows'];
+  function perfTopCols_(top) { var out = []; for (var i = 0; i < 3; i++) { var t = (top || [])[i] || []; out.push(t[0] || '', t[1] === undefined ? '' : t[1], t[2] === undefined ? '' : t[2]); } return out; }
+  function perfStamp_() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + '_' + ('0' + d.getHours()).slice(-2) + ('0' + d.getMinutes()).slice(-2); }
   function openSpeed_() {
     document.getElementById('casual-weeks-title').textContent = 'Why is it slow?';
     var rows = PERF_TAB_.slice().reverse(), done = rows.filter(function (r) { return !r.err && r.server !== null; });
@@ -2614,9 +2625,28 @@
     document.getElementById('casual-weeks-body').innerHTML =
       '<table class="data-table"><thead><tr><th style="text-align:left;">Time</th><th style="text-align:left;">Screen / action</th><th>Total</th><th>Google / network</th><th>Reading sheets (how many)</th><th>Waiting for a save</th><th style="text-align:left;">Main reason</th></tr></thead><tbody>' +
       (rows.length ? rows.slice(0, 40).map(tr).join('') : '<tr><td colspan="7" style="text-align:left;">Nothing yet.</td></tr>') + '</tbody></table>' +
-      '<div class="toolbar" style="margin-top:12px;"><button class="btn small" type="button" id="speed-all">Everyone\'s slow requests (last 6 hours)</button><span class="save-status" id="speed-status"></span></div><div id="speed-all-body"></div>' +
+      '<div class="toolbar" style="margin-top:12px;"><button class="btn small" type="button" id="speed-all">Everyone\'s slow requests (last 6 hours)</button><button class="btn secondary small" type="button" id="speed-csv-tab">Download this tab (CSV)</button><button class="btn secondary small" type="button" id="speed-csv-all">Download everyone\'s (CSV)</button><span class="save-status" id="speed-status"></span></div><div id="speed-all-body"></div>' +
       '<p class="hint" style="margin-top:10px;"><strong>Google / network</strong> high = Google is slow to start the request or the connection is slow (nothing in our code changes that). <strong>Reading sheets</strong> high = a big sheet is read (named in Main reason): that one can be made faster. <strong>Waiting for a save</strong> high = someone else\'s save (or a BioTime / Sage push) was running; saves go one at a time.</p>';
     document.getElementById('casual-weeks-modal').classList.add('active');
+    document.getElementById('speed-csv-tab').addEventListener('click', function () {
+      perfCsvDownload_('speed-this-tab_' + perfStamp_() + '.csv',
+        ['Time', 'Action', 'Total ms', 'Server ms', 'Google / network ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'No answer'].concat(PERF_TOP_HEAD_),
+        PERF_TAB_.map(function (r) {
+          return [r.at.toISOString(), r.action, r.total, r.server, r.server === null ? '' : Math.max(0, r.total - r.server), r.readMs, r.reads, r.lockMs, r.err || ''].concat(perfTopCols_(r.top));
+        }));
+    });
+    document.getElementById('speed-csv-all').addEventListener('click', function () {
+      var b = this, st = document.getElementById('speed-status');
+      b.disabled = true; flashStatus(st, 'Loading…', 'save-status', 0);
+      callApi('getPerfLog', {}).then(function (res) {
+        b.disabled = false;
+        if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 6000); return; }
+        flashStatus(st, res.entries.length + ' rows downloaded', 'save-status ok', 4000);
+        perfCsvDownload_('speed-everyone_' + perfStamp_() + '.csv',
+          ['Time', 'Kind', 'Action', 'Company', 'Server ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'Other ms', 'OK'].concat(PERF_TOP_HEAD_),
+          res.entries.map(function (x) { return [x.at, x.kind, x.action, x.group, x.ms, x.readMs, x.reads, x.lockMs, x.otherMs, x.ok ? 'yes' : 'no'].concat(perfTopCols_(x.top)); }));
+      }).catch(function () { b.disabled = false; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    });
     document.getElementById('speed-all').addEventListener('click', function () {
       var b = this, st = document.getElementById('speed-status');
       b.disabled = true; flashStatus(st, 'Loading…', 'save-status', 0);
