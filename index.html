@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.209-read-once';
+  var FRONTEND_BUILD = '2026-11-19.210-leave-link-fast';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2332,6 +2332,13 @@
   var API_BATCH_MAX_ = 4, API_BATCH_WAIT_MS_ = 15, apiQueue_ = [], apiQueueTimer_ = null;
   function apiBatchable_(action) { return !!state.token && action !== 'batch' && (/^(get|list)[A-Z]/.test(action) || action === 'sageStatus'); }
   function apiFetchJson_(url) { return fetch(url, { method: 'GET', cache: 'no-store' }).then(function (r) { return r.json(); }); }
+  // §127 reads only (never saves): no answer at all (Google turned the request away / the connection dropped) -> one
+  // more try 2 s later, with a fresh cache-buster. A save is never retried: it may have gone through.
+  function apiFetchReadJson_(url) {
+    return apiFetchJson_(url).catch(function (err) {
+      return new Promise(function (res) { setTimeout(res, 2000); }).then(function () { return apiFetchJson_(url.replace(/&_=\d+$/, '') + '&_=' + Date.now()); });
+    });
+  }
   function apiSend_(action, params, url) {
     if (!apiBatchable_(action)) {
       var t0 = Date.now();
@@ -2355,13 +2362,13 @@
     var t0 = Date.now();
     if (items.length === 1) {
       var one = items[0];
-      apiFetchJson_(one.url).then(function (res) { perfNote_(one.action, t0, res, ''); one.resolve(res); }, function (err) { perfNote_(one.action, t0, null, (err && err.message) || 'network error'); one.reject(err); });
+      apiFetchReadJson_(one.url).then(function (res) { perfNote_(one.action, t0, res, ''); one.resolve(res); }, function (err) { perfNote_(one.action, t0, null, (err && err.message) || 'network error'); one.reject(err); });
       return;
     }
     var calls = items.map(function (it) { var pr = Object.assign({}, it.params); delete pr.token; return { action: it.action, params: pr }; });
     var label = 'batch: ' + items.map(function (it) { return it.action; }).join(', ');
     var url = WEB_APP_URL + '?action=batch&token=' + encodeURIComponent(state.token) + '&calls=' + encodeURIComponent(JSON.stringify(calls)) + '&_=' + Date.now();
-    apiFetchJson_(url).then(function (res) {
+    apiFetchReadJson_(url).then(function (res) {
       perfNote_(label, t0, res, '');
       if (!res || !res.ok || !Array.isArray(res.results)) {
         // e.g. session expired, or an old server without batch: answer every caller with the same reply
