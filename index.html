@@ -2094,7 +2094,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.201-leave-shift-days';
+  var FRONTEND_BUILD = '2026-11-19.202-advance-one-schedule';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4582,7 +4582,7 @@
           var sched = dedAccounts_().filter(function (a) { return a.employeeId === b.employeeId && a.kind === 'advance' && a.status === 'active'; })[0];
           return '<button type="button" class="ded-card" style="border-left-color:var(--brand);" data-adv-open="' + esc(b.employeeId) + '">' +
             '<div class="d-name">' + esc(b.name) + '</div>' +
-            '<div class="d-sub" style="margin:0 0 6px;">Advance owed' + (sched ? ' &middot; ' + dedRand_(sched.monthly) + ' a month' : ' &middot; no repayment schedule') + '</div>' +
+            '<div class="d-sub" style="margin:0 0 6px;">Advance owed' + (sched ? ' &middot; ' + dedRand_(sched.monthly) + ' a month &middot; ' + sched.instalmentsLeft + (sched.instalmentsLeft === 1 ? ' payment' : ' payments') + ' left' : ' &middot; no repayment schedule') + '</div>' +
             '<div class="d-bal">' + dedRand_(b.balance) + '</div></button>';
         }).join('') + '</div>';
       Array.prototype.forEach.call(balWrap.querySelectorAll('[data-adv-open]'), function (btn) {
@@ -4846,7 +4846,8 @@
     if (!amount || amount <= 0) { flashStatus(statusEl, 'Enter an amount greater than 0.', 'save-status err', 4000); return; }
     var note = document.getElementById('adj-advance-note').value.trim();
     var monthlyRep = Number(document.getElementById('adj-advance-monthly').value) || 0;
-    if (monthlyRep < 0 || monthlyRep > amount) { flashStatus(statusEl, 'The monthly repayment cannot be more than the advance.', 'save-status err', 4000); return; }
+    var hasSched = dedAccounts_().some(function (a) { return a.employeeId === emp.id && a.kind === 'advance' && a.status === 'active'; });   // §119 then the server checks against all that is owed
+    if (monthlyRep < 0 || (!hasSched && monthlyRep > amount)) { flashStatus(statusEl, 'The monthly repayment cannot be more than the advance.', 'save-status err', 4000); return; }
     flashStatus(statusEl, 'Recording…', 'save-status', 0);
     var advParams = { employeeId: emp.id, amount: amount, note: note, month: state.selectedMonth };
     if (monthlyRep > 0) { advParams.monthly = monthlyRep; advParams.startMonth = document.getElementById('adj-advance-start').value || state.selectedMonth; }
@@ -4877,9 +4878,10 @@
   function renderDeductionAccounts_() {
     var wrap = document.getElementById('deduction-accounts-wrap');
     var all = dedAccounts_();
-    var active = all.filter(function (a) { return a.status === 'active'; });
+    // §119: an active advance schedule is shown once, on its Outstanding advances card (click it for the schedule)
+    var active = all.filter(function (a) { return a.status === 'active' && a.kind !== 'advance'; });
     var other = all.filter(function (a) { return a.status !== 'active'; });
-    if (!all.length) { wrap.innerHTML = ''; return; }
+    if (!active.length && !other.length) { wrap.innerHTML = ''; return; }
     var card = function (a) {
       return '<button type="button" class="ded-card ' + esc(a.status) + '" data-ded-open="' + esc(a.id) + '">' +
         '<div class="d-name">' + esc(a.name) + (a.employeeActive ? '' : ' <span class="status-badge locked" style="margin-left:4px;">Left</span>') + '</div>' +
@@ -4889,7 +4891,7 @@
           : '<div class="d-bal">' + dedRand_(a.total) + '</div><div class="d-sub">' + esc(dedStatusLabel_(a)) + (a.status === 'closed' ? ' with ' + dedRand_(a.balance) + ' unpaid' : ' &mdash; fully repaid') + '</div>') +
         '</button>';
     };
-    wrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Deduction accounts &amp; advance repayments</h3>' +
+    wrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Deduction accounts</h3>' +
       (active.length ? '<div class="ded-grid">' + active.map(card).join('') + '</div>' : '<p class="hint" style="margin:0 0 12px;">Nothing scheduled right now.</p>') +
       (other.length ? '<p style="margin:-6px 0 12px;"><button type="button" class="btn secondary small" id="ded-toggle-all">' + (dedShowAll ? 'Hide' : 'Show') + ' settled &amp; stopped (' + other.length + ')</button></p>' +
         (dedShowAll ? '<div class="ded-grid">' + other.map(card).join('') + '</div>' : '') : '');
