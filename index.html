@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-20.215-cache-keep';
+  var FRONTEND_BUILD = '2026-11-20.216-pkg-sunday';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4656,7 +4656,7 @@
       body = r.ot.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.holiday ? ' <span class="hint" style="margin:0;">' + esc(a.holiday) + ': all hours (from ' + esc(a.arrived) + ')</span>' : '') + '</td><td style="text-align:left;">' + esc(a.end) + '</td><td style="text-align:left;">' + esc(a.left) + '</td><td>' + (a.min / 60) + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'do') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th>Hours</th>';
-      body = r.dayOff.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.inPackage ? ' <span class="hint" style="margin:0;">Sunday in the drivers\' package: not overtime</span>' : '') + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.inPackage ? '<span style="color:var(--text-muted);">' + (a.packageMin / 60) + ' (0)</span>' : (a.min ? a.min / 60 : '')) + '</td>' + fixTd(a.date) + '</tr>'; }).join('') +
+      body = r.dayOff.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + (a.inPackage ? ' <span class="hint" style="margin:0;">Sunday in the drivers\' package: not overtime</span>' : '') + (a.packageUsedOn && a.packageUsedOn.length ? ' <span class="hint" style="margin:0;">2nd Sunday this month: the drivers\' package Sunday was ' + a.packageUsedOn.map(attPayDate_).map(esc).join(', ') + '</span>' : '') + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.inPackage ? '<span style="color:var(--text-muted);">' + (a.packageMin / 60) + ' (0)</span>' : (a.min ? a.min / 60 : '')) + '</td>' + fixTd(a.date) + '</tr>'; }).join('') +
         '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">No shift on these days. If they were meant to work, click Pay as overtime. If the shift is wrong, click Open and change it there.</td></tr>';
     } else if (kind === 'hw') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Holiday</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th>Hours</th><th style="text-align:left;">What to check</th>';
