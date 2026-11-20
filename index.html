@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-19.211-rename-shift-time';
+  var FRONTEND_BUILD = '2026-11-20.212-biotime-watch';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7506,6 +7506,10 @@
       ? 'Last data from the ' + esc(d.siteLabel || '') + ' BioTime: <strong>' + esc(casualStamp_(sync.at)) + '</strong> · ' + Number(d.punchesStored || 0).toLocaleString('en-ZA') + ' clock-ins stored.'
       : (d.keySet ? 'Nothing received from the ' + esc(d.siteLabel || '') + ' BioTime yet. Set up the sync on that site\'s BioTime PC (SETUP ' + (d.site === 'cpt' ? '§94' : '§58') + ').'
         : 'Not connected yet: the ' + (d.site === 'cpt' ? 'BIOTIME_INGEST_KEY_CPT' : 'BIOTIME_INGEST_KEY') + ' Script Property is not set. In Apps Script run <code>' + (d.site === 'cpt' ? 'biotimeCreateIngestKeyCpt' : 'biotimeCreateIngestKey') + '</code> once (SETUP ' + (d.site === 'cpt' ? '§94' : '§58') + ').');
+    // §129 the Owner sees whether the sync watch (email when a site goes quiet) is on
+    if (d.watch && d.keySet) syncEl.innerHTML += '<div style="font-size:12px; margin-top:4px; color:' + (d.watch.alerted ? 'var(--critical)' : 'var(--text-muted)') + ';">' +
+      (d.watch.on ? 'Sync watch on: ' + (d.watch.email ? esc(d.watch.email) : 'the owner') + ' gets an email if this BioTime sends nothing for ' + Math.round(d.watch.downMin / 60) + ' hours, and when it is back.' + (d.watch.alerted ? ' <strong>Alert sent: this site is not sending.</strong>' : '')
+        : 'Sync watch not on yet: it switches on at the Owner\'s next login.') + '</div>';
     var counts = { all: d.people.length, linked: 0, unlinked: 0, none: 0 };
     d.people.forEach(function (pp) { counts[attKind_(pp)]++; });
     var tile = function (key, name, n, cap, color) {
