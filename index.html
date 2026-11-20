@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-20.214-shared-cache';
+  var FRONTEND_BUILD = '2026-11-20.215-cache-keep';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2581,7 +2581,7 @@
   var PERF_TAB_ = [];
   function perfNote_(action, t0, res, err) {
     var total = Date.now() - t0, p = res && res._perf;
-    PERF_TAB_.push({ at: new Date(), action: action, total: total, server: p ? p.ms : null, readMs: p ? p.readMs : 0, reads: p ? p.reads : 0, lockMs: p ? p.lockMs : 0, top: p ? p.top : [], err: err });
+    PERF_TAB_.push({ at: new Date(), action: action, total: total, server: p ? p.ms : null, readMs: p ? p.readMs : 0, reads: p ? p.reads : 0, lockMs: p ? p.lockMs : 0, hits: p ? p.cacheHits || 0 : 0, locks: p ? p.locks || 0 : 0, top: p ? p.top : [], err: err });
     if (PERF_TAB_.length > 200) PERF_TAB_.shift();
     var el = document.getElementById('speed-last');
     if (el) { el.textContent = err ? 'failed' : (total / 1000).toFixed(1) + ' s'; el.style.color = err || total >= 5000 ? 'var(--critical)' : total >= 2500 ? 'var(--warning)' : ''; }
@@ -2663,9 +2663,9 @@
     document.getElementById('speed-arch-check').addEventListener('click', function () { archCall(this, '1'); });
     document.getElementById('speed-csv-tab').addEventListener('click', function () {
       perfCsvDownload_('speed-this-tab_' + perfStamp_() + '.csv',
-        ['Time', 'Action', 'Total ms', 'Server ms', 'Google / network ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'No answer'].concat(PERF_TOP_HEAD_),
+        ['Time', 'Action', 'Total ms', 'Server ms', 'Google / network ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'No answer', 'Shared cache hits', 'Save locks'].concat(PERF_TOP_HEAD_),
         PERF_TAB_.map(function (r) {
-          return [r.at.toISOString(), r.action, r.total, r.server, r.server === null ? '' : Math.max(0, r.total - r.server), r.readMs, r.reads, r.lockMs, r.err || ''].concat(perfTopCols_(r.top));
+          return [r.at.toISOString(), r.action, r.total, r.server, r.server === null ? '' : Math.max(0, r.total - r.server), r.readMs, r.reads, r.lockMs, r.err || '', r.hits, r.locks].concat(perfTopCols_(r.top));
         }));
     });
     document.getElementById('speed-csv-all').addEventListener('click', function () {
@@ -2676,8 +2676,8 @@
         if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not load', 'save-status err', 6000); return; }
         flashStatus(st, res.entries.length + ' rows downloaded', 'save-status ok', 4000);
         perfCsvDownload_('speed-everyone_' + perfStamp_() + '.csv',
-          ['Time', 'Kind', 'Action', 'Company', 'Server ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'Other ms', 'OK'].concat(PERF_TOP_HEAD_),
-          res.entries.map(function (x) { return [x.at, x.kind, x.action, x.group, x.ms, x.readMs, x.reads, x.lockMs, x.otherMs, x.ok ? 'yes' : 'no'].concat(perfTopCols_(x.top)); }));
+          ['Time', 'Kind', 'Action', 'Company', 'Server ms', 'Reading sheets ms', 'Sheet reads', 'Waiting for a save ms', 'Other ms', 'OK', 'Shared cache hits', 'Save locks'].concat(PERF_TOP_HEAD_),
+          res.entries.map(function (x) { return [x.at, x.kind, x.action, x.group, x.ms, x.readMs, x.reads, x.lockMs, x.otherMs, x.ok ? 'yes' : 'no', x.hits === undefined ? '' : x.hits, x.locks === undefined ? '' : x.locks].concat(perfTopCols_(x.top)); }));
       }).catch(function () { b.disabled = false; flashStatus(st, 'Network error', 'save-status err', 6000); });
     });
     document.getElementById('speed-all').addEventListener('click', function () {
