@@ -1312,6 +1312,7 @@
               <span class="save-status" id="attpay-status"></span>
             </div>
             <div id="attpay-note" style="margin:0 0 8px; font-size:12px; color:var(--text-muted); line-height:1.45;"></div>
+            <div class="toolbar" style="margin:0 0 8px;"><select id="attpay-dept" aria-label="Department" style="max-width:220px;"><option value="">All departments</option></select><input type="search" id="attpay-q" placeholder="Search name" aria-label="Search name" style="max-width:220px;"></div>
             <div style="overflow-x:auto;"><table class="data-table" id="attpay-table"></table></div>
           </div>
 
@@ -2095,7 +2096,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-21.220-ot-threshold';
+  var FRONTEND_BUILD = '2026-11-21.221-clockins-search';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4582,12 +4583,23 @@
     document.getElementById('attpay-title').textContent = 'From clock-ins (' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ')';
     document.getElementById('attpay-note').innerHTML = (d.complete ? '' : '<strong style="color:var(--warning);">This period runs to ' + esc(attPayDate_(d.to)) + ', so these are the figures so far.</strong> ') +
       'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
-      'Overtime (paid at ' + d.rules.otFactor + 'x' + (d.rules.otAboveThreshold ? ', 1x for staff earning above the BCEA earnings threshold' : '') + '): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off, or on a public holiday without being planned, are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Holiday team members who did not come are listed under <em>Check</em> for a warning; no pay is deducted. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
+      'Overtime (paid at ' + d.rules.otFactor + 'x): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off, or on a public holiday without being planned, are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Holiday team members who did not come are listed under <em>Check</em> for a warning; no pay is deducted. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
       (d.noShift ? ' ' + d.noShift + ' linked ' + (d.noShift === 1 ? 'person has' : 'people have') + ' no shift in this period, so nothing is worked out for them.' : '');
-    var pend = d.rows.filter(function (r) { return attPayPending_(r, d.rules); });
+    // §139: department drop-down + name search (Accept all takes only the people showing)
+    var deptSel = document.getElementById('attpay-dept'), qIn = document.getElementById('attpay-q');
+    var depts = d.rows.map(function (r) { return r.department || ''; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
+    if (attPayState.dept && depts.indexOf(attPayState.dept) === -1) attPayState.dept = '';
+    deptSel.innerHTML = '<option value="">All departments</option>' + depts.map(function (x) { return '<option' + (x === attPayState.dept ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+    if (qIn.value !== (attPayState.q || '')) qIn.value = attPayState.q || '';
+    deptSel.onchange = function () { attPayState.dept = deptSel.value; renderAttendancePay_(); };
+    qIn.oninput = function () { attPayState.q = qIn.value; renderAttendancePay_(); qIn.focus(); };
+    var qq = String(attPayState.q || '').trim().toLowerCase();
+    var shown = d.rows.filter(function (r) { return (!attPayState.dept || r.department === attPayState.dept) && (!qq || String(r.name).toLowerCase().indexOf(qq) !== -1); });
+    var filtered = shown.length !== d.rows.length;
+    var pend = shown.filter(function (r) { return attPayPending_(r, d.rules); });
     var allBtn = document.getElementById('attpay-all');
     allBtn.style.display = pend.length > 1 ? '' : 'none';
-    allBtn.textContent = 'Accept all (' + pend.length + ')';
+    allBtn.textContent = (filtered ? 'Accept all showing (' : 'Accept all (') + pend.length + ')';
     allBtn.disabled = false;
     allBtn.onclick = function () {
       if (!confirm('Add the clock-in adjustments for ' + pend.length + ' people to ' + monthLabel(d.month) + '?')) return;
@@ -4600,7 +4612,7 @@
     };
     var lateText = function (r) { return r.lateMin ? String(r.lateMin) : (r.lateTotal ? '<span style="color:var(--text-muted);">' + r.lateTotal + ' (under ' + d.rules.lateMinOver + ')</span>' : ''); };
     document.getElementById('attpay-table').innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Absent (days)</th><th>Late in (min)</th><th>Overtime (hours)</th><th style="text-align:left;">Check</th><th></th></tr></thead><tbody>' +
-      (d.rows.length ? d.rows.map(function (r) {
+      (shown.length ? shown.map(function (r) {
         var pending = attPayPending_(r, d.rules);
         return '<tr><td style="text-align:left;">' + esc(r.name) + '</td><td style="text-align:left;">' + esc(r.department) + '</td>' +
           '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + (r.absentUnchecked && !r.accepted.Absent ? '<div style="font-size:11px;"><button type="button" class="linklike" data-goto-absent="1" style="background:none;border:0;padding:0;font:inherit;color:var(--warning);text-decoration:underline;cursor:pointer;" title="Absent is only added once every absent day is checked">' + r.absentUnchecked + ' to check</button></div>' : '') + '</td>' +
@@ -4616,7 +4628,7 @@
               : cell(r, 'do', '', '', 'worked ' + r.dayOff.length + ' day' + (r.dayOff.length === 1 ? '' : 's') + ' off' + (r.dayOffHours ? ' (' + r.dayOffHours + ' h)' : '')) +
                 (r.dayOffHours ? ' <button class="btn secondary small" type="button" data-attpay-dayoff="' + esc(r.employeeId) + '" style="padding:2px 8px;">Pay as overtime</button>' : '')) : '') + '</td>' +
           '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
-      }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
+      }).join('') : '<tr><td colspan="7" style="text-align:left; color:var(--text-muted);">' + (d.rows.length ? 'Nobody matches the department / name search.' : d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') + '</td></tr>') + '</tbody>';
     Array.prototype.forEach.call(document.querySelectorAll('[data-goto-absent]'), function (b) {
       b.addEventListener('click', function () { absState.month = d.month; showPayrollSubTab('attendance'); showAttendancePanel_('absent'); loadAbsences_(); });
     });
@@ -4626,14 +4638,14 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-holwork]'), function (b) {
       b.addEventListener('click', function () {
         var rr = d.rows.filter(function (x) { return x.employeeId === b.getAttribute('data-attpay-holwork'); })[0];
-        if (!confirm('Pay ' + rr.name + ' ' + rr.holWorkHours + ' h worked on a public holiday (not planned) as overtime (' + d.rules.otFactor + 'x)?')) return;
+        if (!confirm('Pay ' + rr.name + ' ' + rr.holWorkHours + ' h worked on a public holiday (not planned) as overtime?')) return;
         acceptAttendancePay_([rr.employeeId], b, 'holiday');
       });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-dayoff]'), function (b) {
       b.addEventListener('click', function () {
         var rr = d.rows.filter(function (x) { return x.employeeId === b.getAttribute('data-attpay-dayoff'); })[0];
-        if (!confirm('Pay ' + rr.name + ' ' + rr.dayOffHours + ' h worked on days off as overtime (' + d.rules.otFactor + 'x)? Check the dates first if unsure.')) return;
+        if (!confirm('Pay ' + rr.name + ' ' + rr.dayOffHours + ' h worked on days off as overtime? Check the dates first if unsure.')) return;
         acceptAttendancePay_([rr.employeeId], b, 'dayoff');
       });
     });
