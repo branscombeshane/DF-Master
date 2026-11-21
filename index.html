@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-21.218-45-days';
+  var FRONTEND_BUILD = '2026-11-21.219-paid-off-days';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7200,10 +7200,24 @@
       document.getElementById('casual-weeks-modal').classList.add('active');
     }).catch(function () { flashStatus(status, 'Network error', 'save-status err', 6000); });
   }
+  // §137: hours worked on a day off / an unplanned public holiday count as overtime once paid with Pay as overtime
+  function attpOffMin_(x) { return x.status === 'worked-off' ? (x.dayOffMin || 0) : x.status === 'holiday-worked' ? (x.holWorkMin || 0) : 0; }
+  function attpOtCell_(x, otH) {
+    if (x.paidOt) return '<td style="font-weight:700; color:var(--good);" title="Paid as overtime' + (x.paidOt.by ? ' by ' + esc(x.paidOt.by) : '') + '">' + esc(String(x.paidOt.hours)) + '</td>';
+    var off = attpOffMin_(x);
+    if (off) return '<td style="color:var(--text-muted);" title="Not paid yet: Pay Adjustments > From clock-ins > Pay as overtime">' + otH(off) + '</td>';
+    return '<td' + (x.otMin ? ' style="font-weight:700; color:var(--good);" title="Left ' + esc(x.left) + ', ' + (x.afterMin || 0) + ' min after the shift end"' : '') + '>' + otH(x.otMin) + '</td>';
+  }
+  function attpStatus_(x) {
+    if (!x.paidOt) return attdChip_(x) + (attpOffMin_(x) ? '<div class="hint" style="margin:2px 0 0;">overtime, not paid yet</div>' : '');
+    return '<span style="display:inline-block; padding:2px 8px; border-radius:100px; font-size:11px; font-weight:700; white-space:nowrap; background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good);">' +
+      (x.status === 'holiday-worked' ? 'Public holiday: paid as overtime' : 'Day off: paid as overtime') + '</span>' +
+      '<div class="hint" style="margin:2px 0 0;">' + (x.paidOt.by ? 'approved by ' + esc(x.paidOt.by) : 'approved (name not recorded before 21 Nov)') + '</div>';
+  }
   function renderAttendancePerson_(res) {
     var pp = res.person, wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     var late = res.days.filter(function (x) { return x.lateMin > 0; }).length, abs = res.days.filter(function (x) { return x.status === 'absent'; }).length;
-    var otTot = res.days.reduce(function (t, x) { return t + (x.otMin || 0); }, 0);
+    var otTot = res.days.reduce(function (t, x) { return t + (x.otMin || 0) + (x.paidOt ? Math.round(x.paidOt.hours * 60) : 0); }, 0);   // §137 paid day-off / holiday hours count
     var otH = function (m) { return m ? String(Math.round(m / 60 * 100) / 100) : ''; };
     var focus = attdState.focusDate || '';
     document.getElementById('casual-weeks-title').textContent = pp.name + (pp.leftOn ? ' — left ' + pp.leftOn + ' — ' + res.days.length + ' days to ' + res.days[0].date : focus ? ' — ' + res.days.length + ' days to ' + res.days[0].date : ' — last ' + res.days.length + ' days');
@@ -7214,8 +7228,8 @@
       '<div class="hint" style="margin:4px 0 0;">Currently: ' + esc(res.currentShift || 'no shift') + (res.currentFrom ? ' since ' + esc(res.currentFrom) : '') + (res.currentTo ? ' until ' + esc(res.currentTo) : '') + '. Leave <em>to</em> empty for a permanent change; with a <em>to</em> date they go back to their usual shift afterwards.</div>';
     document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Day</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late In</th><th>Early Out</th><th title="Clocked out more than 30 minutes after the shift end, in half hours (the same rule as Pay Adjustments)">Overtime (h)</th><th style="text-align:left;">Status</th><th style="text-align:left;">All clock-ins</th></tr></thead><tbody>' +
       res.days.map(function (x) {
-        return '<tr' + (focus && x.date === focus ? ' style="background:color-mix(in srgb, var(--brand) 12%, transparent);"' : '') + '><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : 'off') + '</td>' +
-          '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td><td' + (x.otMin ? ' style="font-weight:700; color:var(--good);" title="Left ' + esc(x.left) + ', ' + (x.afterMin || 0) + ' min after the shift end"' : '') + '>' + otH(x.otMin) + '</td><td style="text-align:left;">' + attdChip_(x) + '</td>' +
+        return '<tr' + (focus && x.date === focus ? ' style="background:color-mix(in srgb, var(--brand) 12%, transparent);"' : '') + '><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : x.holiday ? '<span style="color:var(--brand); font-weight:600;">' + esc(x.holiday) + '</span>' : 'off') + '</td>' +
+          '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td>' + attpOtCell_(x, otH) + '<td style="text-align:left;">' + attpStatus_(x) + '</td>' +
           '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + esc(x.punches.join(', ')) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<h3 style="font-size:14px; margin:18px 0 6px;">Add a missed clock-in or clock-out</h3>' +
