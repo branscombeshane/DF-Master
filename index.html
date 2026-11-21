@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-21.219-paid-off-days';
+  var FRONTEND_BUILD = '2026-11-21.220-ot-threshold';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4528,6 +4528,8 @@
   };
   // Overtime is paid at 1.5x the hourly rate (§79); Code.gs has the same OVERTIME_RATE_MULTIPLIER.
   var OVERTIME_RATE_MULTIPLIER = 1.5;
+  // §138: staff above the BCEA earnings threshold get 1x; the server sends each employee's factor (never to HR)
+  function otFactorOf_(emp) { return emp && emp.otFactor ? emp.otFactor : OVERTIME_RATE_MULTIPLIER; }
   var ADJ_TYPE_SIGN = {
     Commission: '+', Bonus: '+', Overtime: '+', Other: '+', TravelAllowance: '+', OtherAllowance: '+',
     Absent: '−', LateIn: '−', Deduction: '−', AdvanceGiven: '+', AdvanceRepayment: '−'
@@ -4580,7 +4582,7 @@
     document.getElementById('attpay-title').textContent = 'From clock-ins (' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ')';
     document.getElementById('attpay-note').innerHTML = (d.complete ? '' : '<strong style="color:var(--warning);">This period runs to ' + esc(attPayDate_(d.to)) + ', so these are the figures so far.</strong> ') +
       'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
-      'Overtime (paid at ' + d.rules.otFactor + 'x): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off, or on a public holiday without being planned, are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Holiday team members who did not come are listed under <em>Check</em> for a warning; no pay is deducted. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
+      'Overtime (paid at ' + d.rules.otFactor + 'x' + (d.rules.otAboveThreshold ? ', 1x for staff earning above the BCEA earnings threshold' : '') + '): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off, or on a public holiday without being planned, are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Holiday team members who did not come are listed under <em>Check</em> for a warning; no pay is deducted. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
       (d.noShift ? ' ' + d.noShift + ' linked ' + (d.noShift === 1 ? 'person has' : 'people have') + ' no shift in this period, so nothing is worked out for them.' : '');
     var pend = d.rows.filter(function (r) { return attPayPending_(r, d.rules); });
     var allBtn = document.getElementById('attpay-all');
@@ -5378,14 +5380,14 @@
         amountInput.value = '';
         return;
       }
-      var amount = Math.round(hours * emp.hourRate * OVERTIME_RATE_MULTIPLIER * 100) / 100;
+      var amount = Math.round(hours * emp.hourRate * otFactorOf_(emp) * 100) / 100;
       amountInput.value = amount ? amount.toFixed(2) : '';
       // Both the rate and the total show to the cent here (money() rounds to
       // whole Rand, which made this look like it didn't add up -- e.g.
       // "5.7 hrs x R33/h = R190" when the real rate was R33.00-something and
       // the real total R188.10; the underlying calc above was always exact,
       // only the display was misleading).
-      hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h × ' + OVERTIME_RATE_MULTIPLIER + ' = R ' + moneyExact(amount);
+      hint.textContent = hours + ' hr' + (hours === 1 ? '' : 's') + ' × R ' + moneyExact(emp.hourRate) + '/h × ' + otFactorOf_(emp) + ' = R ' + moneyExact(amount) + (otFactorOf_(emp) === 1 ? ' (1× above the BCEA earnings threshold)' : '');
       return;
     }
 
@@ -5450,7 +5452,7 @@
           errEl.textContent = 'This employee has no hourly rate set — set Days/Week and Amount for them on the Payroll tab first.';
           return;
         }
-        amount = Math.round(hours * emp.hourRate * OVERTIME_RATE_MULTIPLIER * 100) / 100;
+        amount = Math.round(hours * emp.hourRate * otFactorOf_(emp) * 100) / 100;
       }
     } else if (type === 'LateIn') {
       // Minutes go under the same generic "hours" param (stored in the Hours column).
