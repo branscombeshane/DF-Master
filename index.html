@@ -2095,7 +2095,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-21.217-header-check';
+  var FRONTEND_BUILD = '2026-11-21.218-45-days';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7144,7 +7144,7 @@
       }).join('') : '<tr><td colspan="10" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
     Array.prototype.forEach.call(table.querySelectorAll('[data-attd-person]'), function (b) {
       // §102: someone who left: their last 31 days up to the last day
-      b.addEventListener('click', function () { var lo = b.getAttribute('data-attd-left'); openAttendancePerson_(b.getAttribute('data-attd-person'), '', lo ? { to: lo, days: 31 } : null); });
+      b.addEventListener('click', function () { var lo = b.getAttribute('data-attd-left'); openAttendancePerson_(b.getAttribute('data-attd-person'), '', lo ? { to: lo, days: ATT_PERSON_DAYS_ } : null); });
     });
   }
   function openHolidayPlan_() {
@@ -7180,13 +7180,14 @@
       }).catch(function () { btn.disabled = false; btn.textContent = 'Save holiday team'; flashStatus(st, 'Network error', 'save-status err', 6000); });
     });
   }
+  var ATT_PERSON_DAYS_ = 45;   // §136 (Shane, 21 Nov): a person's attendance view shows the last 45 days (was 14)
   function openAttendancePerson_(code, focusDate, range) {
     var status = document.getElementById('attd-status');
     flashStatus(status, 'Loading…', 'save-status', 0);
-    var params = { empCode: code, days: range && range.days ? range.days : 14 };
+    var params = { empCode: code, days: range && range.days ? range.days : ATT_PERSON_DAYS_ };
     if (range && range.to) params.to = range.to;
     attdState.focusDate = focusDate || '';
-    if (focusDate) {   // show the 14 days around that date (up to a week after it, never past today)
+    if (focusDate) {   // show the days up to that date (up to a week after it, never past today)
       var t = new Date(focusDate + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 6);
       var to = t.toISOString().slice(0, 10), today = (attdState.data && attdState.data.today) || '';
       params.to = today && to > today ? today : to;
@@ -7231,7 +7232,7 @@
     var attmCall = function (action, params, btn, okText) {
       var st = document.getElementById('attm-status');
       if (btn) btn.disabled = true; flashStatus(st, 'Saving…', 'save-status', 0);
-      callApi(action, Object.assign({ days: 14 }, attdState.focusTo ? { to: attdState.focusTo } : {}, params)).then(function (r2) {
+      callApi(action, Object.assign({ days: ATT_PERSON_DAYS_ }, attdState.focusTo ? { to: attdState.focusTo } : {}, params)).then(function (r2) {
         if (btn) btn.disabled = false;
         if (!r2 || !r2.ok) { flashStatus(st, (r2 && r2.error) || 'Could not save', 'save-status err', 8000); return; }
         renderAttendancePerson_(r2);
@@ -7254,7 +7255,7 @@
     document.getElementById('attp-save').addEventListener('click', function () {
       var st = document.getElementById('attp-status'), btn = document.getElementById('attp-save');
       btn.disabled = true; flashStatus(st, 'Saving…', 'save-status', 0);
-      callApi('setAttendanceShift', { empCode: pp.empCode, shift: document.getElementById('attp-shift').value, from: document.getElementById('attp-from').value, to: document.getElementById('attp-to').value, days: 14 }).then(function (r2) {
+      callApi('setAttendanceShift', { empCode: pp.empCode, shift: document.getElementById('attp-shift').value, from: document.getElementById('attp-from').value, to: document.getElementById('attp-to').value, days: ATT_PERSON_DAYS_ }).then(function (r2) {
         btn.disabled = false;
         if (!r2 || !r2.ok) { flashStatus(st, (r2 && r2.error) || 'Could not save', 'save-status err', 8000); return; }
         renderAttendancePerson_(r2);
