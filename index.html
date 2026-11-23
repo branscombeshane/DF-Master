@@ -1123,8 +1123,8 @@
         <input type="text" id="payroll-id-number">
       </div>
       <div class="field">
-        <label>Income tax number</label>
-        <input type="text" id="payroll-tax-number">
+        <label>Income tax number *</label>
+        <input type="text" id="payroll-tax-number" inputmode="numeric" maxlength="12" placeholder="10 digits">
       </div>
       <div class="field">
         <label>Date of birth</label>
@@ -2096,7 +2096,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-21.221-clockins-search';
+  var FRONTEND_BUILD = '2026-11-23.222-tax-number';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -8918,6 +8918,7 @@
     setBankFieldsLocked_(state.role === 'hr');
     document.getElementById('payroll-id-number').value = e.idNumber || '';
     document.getElementById('payroll-tax-number').value = e.taxNumber || '';
+    document.getElementById('payroll-tax-number').setAttribute('data-orig', e.taxNumber || '');
     document.getElementById('payroll-dob').value = e.dateOfBirth || '';
     document.getElementById('payroll-id-passport-country').value = e.idPassportCountry || '';
     document.getElementById('payroll-medical-members').value = e.medicalMembers || '';
@@ -9047,7 +9048,7 @@
     updateBankDetailsRequiredUI();
     setBankFieldsLocked_(false);
     document.getElementById('payroll-id-number').value = '';
-    document.getElementById('payroll-tax-number').value = '';
+    document.getElementById('payroll-tax-number').value = ''; document.getElementById('payroll-tax-number').setAttribute('data-orig', '');
     document.getElementById('payroll-dob').value = '';
     document.getElementById('payroll-id-passport-country').value = '';
     document.getElementById('payroll-medical-members').value = '';
@@ -9123,6 +9124,12 @@
     if (!name || !department || !contactNumber) { errEl.textContent = 'Name, department and contact number are required.'; return; }
     var shiftPick = document.getElementById('payroll-shift').value;
     if (!id && !shiftPick) { errEl.textContent = 'Choose the employee\'s shift.'; return; }   // §90: required for a new employee
+    var taxIn = document.getElementById('payroll-tax-number').value.replace(/\s/g, '');
+    var taxStored = id ? String((document.getElementById('payroll-tax-number').getAttribute('data-orig') || '')).replace(/\s/g, '') : null;
+    if (!id || (taxIn && taxIn !== taxStored)) {   // §140: required when adding; a changed number must be real
+      var taxMsg = !taxIn ? 'Income tax number is required.' : !/^\d{10}$/.test(taxIn) ? 'Income tax number must be 10 digits.' : /^0+$/.test(taxIn) ? 'Income tax number cannot be 0000000000. Enter the employee\'s real SARS tax number.' : '';
+      if (taxMsg) { errEl.textContent = taxMsg; return; }
+    }
     var bankName = document.getElementById('payroll-bank-name').value.trim();
     var branchCode = document.getElementById('payroll-branch-code').value.trim();
     var accountNumber = document.getElementById('payroll-account-number').value.trim();
