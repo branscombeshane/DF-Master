@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.233-dp-day';
+  var FRONTEND_BUILD = '2026-11-25.234-hol-paid';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4761,7 +4761,7 @@
         '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">No shift on these days. If they were meant to work, click Pay as overtime. If the shift is wrong, click Open and change it there.</td></tr>';
     } else if (kind === 'hw') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Holiday</th><th style="text-align:left;">In</th><th style="text-align:left;">Out</th><th>Hours</th><th style="text-align:left;">What to check</th>';
-      body = r.holWorked.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.min ? a.min / 60 : '') + '</td><td style="text-align:left;">Not on the holiday team. If they were meant to work, click Pay as overtime (all hours, ' + d.rules.otFactor + 'x).</td>' + fixTd(a.date) + '</tr>'; }).join('');
+      body = r.holWorked.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.arrived) + '</td><td style="text-align:left;">' + esc(a.left || 'no clock-out') + '</td><td>' + (a.min ? a.min / 60 : '') + '</td><td style="text-align:left;">' + (a.planned ? 'Added to the holiday team after these hours were paid as not planned: they stay on that paid line (not paid again as overtime).' : 'Not on the holiday team. If they were meant to work, click Pay as overtime (all hours, ' + d.rules.otFactor + 'x).') + '</td>' + fixTd(a.date) + '</tr>'; }).join('');
     } else if (kind === 'ha') {
       t += '<th style="text-align:left;">Date</th><th style="text-align:left;">Holiday</th><th style="text-align:left;">Planned shift start</th><th style="text-align:left;">What to do</th>';
       body = r.holAbsent.map(function (a) { return '<tr><td style="text-align:left;">' + esc(attPayDate_(a.date)) + '</td><td style="text-align:left;">' + esc(a.holiday) + '</td><td style="text-align:left;">' + esc(a.start) + '</td><td style="text-align:left;">Planned to work the holiday but did not clock in. No pay is deducted (a public holiday is not an ordinary working day): issue a warning.</td>' + fixTd(a.date) + '</tr>'; }).join('');
@@ -5018,17 +5018,20 @@
     // payrollAdjustments.
     Array.prototype.forEach.call(wrap.querySelectorAll('[data-adj-summary-delete]'), function (btn) {
       btn.addEventListener('click', function () {
-        btn.disabled = true;
+        var label = btn.textContent;
+        btn.disabled = true; btn.textContent = label === 'Skip' ? 'Skipping…' : 'Deleting…';
         callApiWithOwnerUnlock('deleteAdjustment', { id: btn.getAttribute('data-adj-summary-delete'), month: state.selectedMonth }).then(function (res) {
           if (res.ok) {
             state.payrollAdjustments = res.payrollAdjustments;
             renderAdjustments();
+            // §153 (Shane, 25 Nov): From clock-ins kept showing the deleted line as accepted until a full reload
+            if (attPayState.data && attPayState.data.month === state.selectedMonth) loadAttendancePay_();
           } else {
-            btn.disabled = false;
+            btn.disabled = false; btn.textContent = label;
             window.alert(res.error || 'Could not delete.');
           }
         }).catch(function () {
-          btn.disabled = false;
+          btn.disabled = false; btn.textContent = label;
           window.alert('Network error — could not delete.');
         });
       });
