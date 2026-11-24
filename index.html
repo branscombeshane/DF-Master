@@ -2096,7 +2096,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-23.222-tax-number';
+  var FRONTEND_BUILD = '2026-11-24.223-adj-readable';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4869,6 +4869,28 @@
   // ground). Matched by employeeId (not name) — item.name can collide
   // across employees that happen to share a name, and item.employeeId is
   // exactly what apiGetPayrollAdjustments_ already keys its items by.
+  // §141: an adjustment note written by From clock-ins ("Paid by X: Worked on a day off (clock-ins 2026-10-20 to
+  // 2026-11-19): 10-20 9.5h, 10-25 3h") becomes { sub: 'Day off worked · clock-ins 20 Oct – 19 Nov · paid by X',
+  // days: ['Tue 20 Oct · 9.5 h', 'Sun 25 Oct · 3 h'] }. Any other note is shown as it is.
+  function adjNoteParts_(note) {
+    note = String(note || '');
+    var m = /^(?:Paid by ([^:]+): )?(?:(.*?) \(clock-ins (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\)|From clock-ins (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})): (.*)$/.exec(note);
+    if (!m) return { sub: note, days: [] };
+    var from = m[3] || m[5], to = m[4] || m[6], what = m[2] || '', body = m[7];
+    var label = /day off/i.test(what) ? 'Day off worked' : /public holiday/i.test(what) ? 'Public holiday worked (not planned)' : '';
+    var wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var nice = function (iso) { var d = new Date(iso + 'T00:00:00Z'); return wd[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + mo[d.getUTCMonth()]; };
+    var days = [], rest = [];
+    body.split(', ').forEach(function (part) {
+      var dm = /^(\d{2})-(\d{2})(?: (.*?))?$/.exec(part.trim());
+      if (!dm) { rest.push(part.trim()); return; }
+      var iso = [from.slice(0, 4), to.slice(0, 4)].map(function (y) { return y + '-' + dm[1] + '-' + dm[2]; }).filter(function (x) { return x >= from && x <= to; })[0] || (to.slice(0, 4) + '-' + dm[1] + '-' + dm[2]);
+      var tail = String(dm[3] || '').replace(/(\d+(?:\.\d+)?)h$/, '$1 h');
+      days.push(nice(iso) + (tail ? ' · ' + tail : ''));
+    });
+    var sub = [label, 'clock-ins ' + nice(from).slice(4) + ' – ' + nice(to).slice(4)].concat(rest).concat(m[1] ? ['paid by ' + m[1].trim()] : []).filter(Boolean).join(' · ');
+    return { sub: sub, days: days };
+  }
   function renderAdjEmpAdjustmentsSummary(emp) {
     var wrap = document.getElementById('adj-emp-adjustments-summary');
     if (!emp) { wrap.innerHTML = ''; return; }
@@ -4878,18 +4900,22 @@
       wrap.innerHTML = '<span class="hint" style="margin:0;">Nothing added for ' + esc(monthLabel(state.selectedMonth)) + ' yet.</span>';
       return;
     }
-    wrap.innerHTML = items.map(function (it) {
+    wrap.innerHTML = items.map(function (it, idx) {
       // HR never sees the Rand amount for Overtime/Absent — it's Basic-
       // Salary-derived (hrFilterAdjustmentsData_ nulls it for that role).
       var amountText = (it.amount === null)
         ? '<span class="hint" style="margin:0;">hidden</span>'
         : (ADJ_TYPE_SIGN[it.type] || '') + 'R ' + moneyExact(it.amount);
-      var extra = (it.type === 'Overtime' && it.hours) ? ' (' + it.hours + 'h)'
-        : (it.type === 'Absent' && it.hours) ? ' (' + it.hours + (it.hours === 1 ? ' day' : ' days') + ')'
-        : (it.type === 'LateIn' && it.hours) ? ' (' + it.hours + ' min)' : '';
-      return '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:2px 0;">' +
-        '<span>' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + extra +
-        (it.note ? ' <span class="hint" style="margin:0;">— ' + esc(it.note) + '</span>' : '') + '</span>' +
+      var extra = (it.type === 'Overtime' && it.hours) ? ' ' + it.hours + ' h'
+        : (it.type === 'Absent' && it.hours) ? ' ' + it.hours + (it.hours === 1 ? ' day' : ' days')
+        : (it.type === 'LateIn' && it.hours) ? ' ' + it.hours + ' min' : '';
+      var nd = adjNoteParts_(it.note);   // §141: clock-in notes split into a short line + one chip per day
+      return '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:8px 0;' + (idx ? ' border-top:1px solid var(--border);' : '') + '">' +
+        '<div style="min-width:0;"><div><strong>' + esc(ADJ_TYPE_LABELS[it.type] || it.type) + esc(extra) + '</strong>' +
+          (nd.sub ? ' <span class="hint" style="margin:0 0 0 6px;">' + esc(nd.sub) + '</span>' : '') + '</div>' +
+          (nd.days.length ? '<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:5px;">' + nd.days.map(function (d) {
+            return '<span style="font-size:11.5px; padding:2px 8px; border-radius:100px; background:var(--bg-subtle, rgba(0,0,0,.05)); border:1px solid var(--border); white-space:nowrap;">' + esc(d) + '</span>'; }).join('') + '</div>' : '') +
+        '</div>' +
         '<span style="white-space:nowrap; display:flex; align-items:center; gap:8px;">' +
           '<span style="font-weight:600;">' + amountText + '</span>' +
           (it.moneyHidden && ADJ_HR_MGMT_TYPES_.indexOf(it.type) === -1 ? '' :
