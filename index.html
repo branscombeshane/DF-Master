@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.237-jhb-sundays';
+  var FRONTEND_BUILD = '2026-11-25.238-group-clockins';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4592,8 +4592,12 @@
     var out = [], id = esc(r.employeeId), c = r.checks || { nco: {}, nci: {}, dayoff: '', holwork: '', holabsent: '' };
     var btn = function (label, attrs, secondary) { return '<button type="button" class="btn ' + (secondary ? 'secondary ' : '') + 'small" style="padding:2px 9px;" ' + attrs + '>' + label + '</button>'; };
     var day = function (dt) { var x = new Date(dt + 'T00:00:00Z'); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][x.getUTCDay()] + ' ' + attPayDate_(dt); };
-    (r.noClockIn || []).forEach(function (a) { if (c.nci[a.date] === undefined) out.push({ cat: 'fix', text: 'No clock-in on <strong>' + esc(day(a.date)) + '</strong>' + (a.left ? ' (only ' + esc(a.left) + ')' : ''), buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(a.date) + '"') + btn('It\'s fine', 'data-apcheck="set|nci|' + id + '|' + esc(a.date) + '" title="The day is right as it is (nothing to add)"', true) }); });
-    (r.noClockOut || []).forEach(function (dt) { if (c.nco[dt] === undefined) out.push({ cat: 'fix', text: 'No clock-out on <strong>' + esc(day(dt)) + '</strong>', buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(dt) + '"') + btn('It\'s fine', 'data-apcheck="set|nco|' + id + '|' + esc(dt) + '" title="They left at the normal time: no overtime for this day"', true) }); });
+    // §157 (Shane, 25 Nov, as in Branscombe): several missing clock-ins / outs are one line: Review (each day) / All fine
+    var nciOpen = (r.noClockIn || []).filter(function (a) { return c.nci[a.date] === undefined; }), ncoOpen = (r.noClockOut || []).filter(function (dt) { return c.nco[dt] === undefined; });
+    if (nciOpen.length === 1) { var a1 = nciOpen[0]; out.push({ cat: 'fix', text: 'No clock-in on <strong>' + esc(day(a1.date)) + '</strong>' + (a1.left ? ' (only ' + esc(a1.left) + ')' : ''), buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(a1.date) + '"') + btn('It\'s fine', 'data-apcheck="set|nci|' + id + '|' + esc(a1.date) + '" title="The day is right as it is (nothing to add)"', true) }); }
+    else if (nciOpen.length) out.push({ cat: 'fix', text: 'No clock-in on <strong>' + nciOpen.length + ' days</strong>', buttons: btn('Review', 'data-apreview="nci|' + id + '"') + btn('All fine', 'data-apcheck="set|nci|' + id + '|' + nciOpen.map(function (a) { return esc(a.date); }).join(',') + '" title="Every one of these days is right as it is"', true) });
+    if (ncoOpen.length === 1) out.push({ cat: 'fix', text: 'No clock-out on <strong>' + esc(day(ncoOpen[0])) + '</strong>', buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(ncoOpen[0]) + '"') + btn('It\'s fine', 'data-apcheck="set|nco|' + id + '|' + esc(ncoOpen[0]) + '" title="They left at the normal time: no overtime for this day"', true) });
+    else if (ncoOpen.length) out.push({ cat: 'fix', text: 'No clock-out on <strong>' + ncoOpen.length + ' days</strong>', buttons: btn('Review', 'data-apreview="nco|' + id + '"') + btn('All fine', 'data-apcheck="set|nco|' + id + '|' + ncoOpen.map(esc).join(',') + '" title="They left at the normal time on all these days: no overtime"', true) });
     if (r.absentUnchecked && !r.accepted.Absent) out.push({ cat: 'absent', text: '<strong>' + r.absentUnchecked + '</strong> absent day' + (r.absentUnchecked === 1 ? '' : 's') + ' to check', buttons: btn('Check', 'data-goto-absent="1"') });
     var lbl = { Overtime: 'Overtime', Absent: 'Absent', LateIn: 'Late in' };
     (r.twice || []).forEach(function (k) { out.push({ cat: 'stale', text: '⚠ <strong>' + lbl[k] + ' paid twice</strong>: ' + r.byHand[k] + ' added by hand and ' + r.accepted[k] + ' from clock-ins. Delete one under Selected employee.' }); });
@@ -4645,6 +4649,34 @@
     Object.keys(r.byHand || {}).forEach(function (k) {
       if (r.accepted[k]) r.twice.push(k); else { r.accepted[k] = r.byHand[k]; r.handPaid[k] = true; }
     });
+  }
+  // §157 Review: each missing clock-in / clock-out day of one person, with Fix / It's fine per day
+  function openAttPayReview_(kind, empId) {
+    var d = attPayState.data, r = d && d.rows.filter(function (x) { return x.employeeId === empId; })[0]; if (!r) return;
+    var c = r.checks || { nco: {}, nci: {} }, id = esc(r.employeeId);
+    var list = kind === 'nci' ? (r.noClockIn || []).filter(function (a) { return c.nci[a.date] === undefined; }).map(function (a) { return { date: a.date, extra: a.left ? 'only ' + a.left : '' }; })
+      : (r.noClockOut || []).filter(function (dt) { return c.nco[dt] === undefined; }).map(function (dt) { return { date: dt, extra: '' }; });
+    var day = function (dt) { var x = new Date(dt + 'T00:00:00Z'); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][x.getUTCDay()] + ' ' + attPayDate_(dt); };
+    var btn = function (label, attrs, secondary) { return '<button type="button" class="btn ' + (secondary ? 'secondary ' : '') + 'small" style="padding:2px 9px;" ' + attrs + '>' + label + '</button>'; };
+    document.getElementById('casual-weeks-title').textContent = r.name + ' — ' + (kind === 'nci' ? 'no clock-in' : 'no clock-out');
+    document.getElementById('casual-weeks-sub').textContent = list.length ? (kind === 'nci' ? 'Fix adds the missed clock-in (Daily Attendance). It\'s fine: the day is right as it is.' : 'Fix adds the missed clock-out. It\'s fine: they left at the normal time, no overtime.') : 'All done.';
+    document.getElementById('casual-weeks-body').innerHTML = list.length ? list.map(function (x) {
+      return '<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gridline);"><span style="flex:1 1 auto;"><strong>' + esc(day(x.date)) + '</strong>' + (x.extra ? ' <span style="color:var(--text-muted);">(' + esc(x.extra) + ')</span>' : '') + '</span>' +
+        '<span style="display:flex; gap:6px;">' + btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(x.date) + '"') + btn('It\'s fine', 'data-apcheck="set|' + kind + '|' + id + '|' + esc(x.date) + '"', true) + '</span></div>';
+    }).join('') : '<p class="hint">Nothing left.</p>';
+    var body = document.getElementById('casual-weeks-body');
+    Array.prototype.forEach.call(body.querySelectorAll('[data-apfix]'), function (b) { b.addEventListener('click', function () { var v = b.getAttribute('data-apfix').split('|'); document.getElementById('casual-weeks-modal').classList.remove('active'); openAttendanceFix_(v[0], v[1]); }); });
+    Array.prototype.forEach.call(body.querySelectorAll('[data-apcheck]'), function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-apcheck').split('|'), status = document.getElementById('attpay-status');
+        b.disabled = true; b.textContent = 'Saving…';
+        callApi('setAttendancePayCheck', { month: d.month, op: v[0], kind: v[1], employeeId: v[2], date: v[3] }).then(function (res) {
+          if (!res || !res.ok) { b.disabled = false; b.textContent = 'It\'s fine'; flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+          attPayState.data = res; renderAttendancePay_(); openAttPayReview_(kind, empId);
+        }).catch(function () { b.disabled = false; b.textContent = 'It\'s fine'; flashStatus(status, 'Network error', 'save-status err', 6000); });
+      });
+    });
+    document.getElementById('casual-weeks-modal').classList.add('active');
   }
   function renderAttendancePay_() {
     var d = attPayState.data; if (!d) return;
@@ -4701,7 +4733,8 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-attpay-tile]'), function (b) { b.addEventListener('click', function () { attPayState.tile = b.getAttribute('data-attpay-tile'); renderAttendancePay_(); }); });
     var inTile = function (x) { return tile === 'all' ? true : tile === 'todo' ? x.steps.length > 0 : tile === 'done' ? !x.steps.length : has(x, tile); };
     var shownInfo = info.filter(function (x) { return shown.indexOf(x.r) !== -1 && inTile(x); });
-    var stepHtml = function (st) { return '<div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:3px 0;"><span style="color:' + (st.cat === 'stale' ? 'var(--critical)' : 'var(--text)') + ';">' + st.text + '</span>' + (st.buttons || '') + '</div>'; };
+    // §157 text on the left, buttons lined up on the right
+    var stepHtml = function (st) { return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dotted var(--gridline);"><span style="flex:1 1 auto; min-width:0; color:' + (st.cat === 'stale' ? 'var(--critical)' : 'var(--text)') + ';">' + st.text + '</span>' + (st.buttons ? '<span style="flex:0 0 auto; display:flex; gap:6px; justify-content:flex-end; white-space:nowrap;">' + st.buttons + '</span>' : '') + '</div>'; };
     document.getElementById('attpay-table').innerHTML = '<thead><tr><th style="text-align:left;">Employee</th><th style="text-align:left;">Department</th><th>Absent (days)</th><th>Late in (min)</th><th>Overtime (hours)</th><th style="text-align:left;">Next step</th></tr></thead><tbody>' +
       (shownInfo.length ? shownInfo.map(function (x) {
         var r = x.r, done = attPayDoneNotes_(r);
@@ -4709,24 +4742,30 @@
           '<td>' + cell(r, 'absent', r.absentDays, r.accepted.Absent) + '</td>' +
           '<td>' + (r.lateMin || r.accepted.LateIn ? cell(r, 'late', r.lateMin, r.accepted.LateIn) : r.lateTotal ? '<button type="button" class="linklike" data-attpay="' + esc(r.employeeId) + '" data-attpay-kind="late" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline dotted;cursor:pointer;">' + lateText(r) + '</button>' : '') + '</td>' +
           '<td>' + cell(r, 'ot', r.otHours, r.accepted.Overtime) + '</td>' +
-          '<td style="text-align:left; font-size:12.5px; min-width:280px; white-space:normal;">' + (x.steps.length ? x.steps.map(stepHtml).join('') : '<span style="color:var(--good); font-weight:700;">✓ Done</span>') +
+          '<td style="text-align:left; font-size:12.5px; min-width:420px; white-space:normal;">' + (x.steps.length ? x.steps.map(stepHtml).join('') : '<span style="color:var(--good); font-weight:700;">✓ Done</span>') +
             (done ? '<div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">' + done + '</div>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">' + (!d.rows.length ? (d.people ? 'No absences, late arrivals or overtime in this period.' : 'Nobody here is linked to BioTime yet (Attendance → BioTime Link-up).') : shown.length ? 'Nobody in this tile.' : 'Nobody matches the department / name search.') + '</td></tr>') + '</tbody>';
     // §149 buttons in the Next step column
-    Array.prototype.forEach.call(document.querySelectorAll('[data-apfix]'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('#attpay-table [data-apfix]'), function (b) {
       b.addEventListener('click', function () { var v = b.getAttribute('data-apfix').split('|'); openAttendanceFix_(v[0], v[1]); });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-apcheck]'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('#attpay-table [data-apcheck]'), function (b) {
       b.addEventListener('click', function () {
-        var v = b.getAttribute('data-apcheck').split('|');   // op|kind|employeeId|date
-        var status = document.getElementById('attpay-status');
-        b.disabled = true; flashStatus(status, 'Saving…', 'save-status', 0);
-        callApi('setAttendancePayCheck', { month: d.month, op: v[0], kind: v[1], employeeId: v[2], date: v[3] || '' }).then(function (res) {
-          if (!res || !res.ok) { b.disabled = false; flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
+        var v = b.getAttribute('data-apcheck').split('|');   // op|kind|employeeId|date (or date,date,… §157)
+        var many = (v[3] || '').indexOf(',') !== -1;
+        if (many && !confirm('Mark all ' + v[3].split(',').length + ' days as fine?' + (v[1] === 'nco' ? ' No overtime is counted for them.' : ''))) return;
+        var status = document.getElementById('attpay-status'), lbl = b.textContent;
+        b.disabled = true; b.textContent = 'Saving…'; flashStatus(status, 'Saving…', 'save-status', 0);
+        var q = { month: d.month, op: v[0], kind: v[1], employeeId: v[2] }; if (many) q.dates = v[3]; else q.date = v[3] || '';
+        callApi('setAttendancePayCheck', q).then(function (res) {
+          if (!res || !res.ok) { b.disabled = false; b.textContent = lbl; flashStatus(status, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
           flashStatus(status, 'Saved', 'save-status ok', 2000);
           attPayState.data = res; renderAttendancePay_();
-        }).catch(function () { b.disabled = false; flashStatus(status, 'Network error', 'save-status err', 6000); });
+        }).catch(function () { b.disabled = false; b.textContent = lbl; flashStatus(status, 'Network error', 'save-status err', 6000); });
       });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#attpay-table [data-apreview]'), function (b) {
+      b.addEventListener('click', function () { var v = b.getAttribute('data-apreview').split('|'); openAttPayReview_(v[0], v[1]); });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-goto-absent]'), function (b) {
       b.addEventListener('click', function () { absState.month = d.month; showPayrollSubTab('attendance'); showAttendancePanel_('absent'); loadAbsences_(); });
