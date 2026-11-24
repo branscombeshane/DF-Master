@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.234-hol-paid';
+  var FRONTEND_BUILD = '2026-11-25.235-dp-clear';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6827,8 +6827,9 @@
     if (!c.closed && !c.holiday) d.departments.forEach(function (dep) { (d.cells[date + '|' + dep].offList || []).forEach(function (o) { if (o.canExtra) offCand.push({ id: o.employeeId, name: o.name, dep: dep }); }); });
     var count = function () {
       var w = 0;
-      c.bookedList.forEach(function (b) { if (st.rem[b.employeeId]) return; if (askedIds[b.employeeId] && st.dec[b.employeeId] === 'give') return; w++; });
-      asked.forEach(function (a) { if (a.state === 'give' && st.dec[a.employeeId] === 'no') w++; });
+      // §154 only people sure to work count: someone who asked counts once marked "Works this day"
+      c.bookedList.forEach(function (b) { if (st.rem[b.employeeId] || askedIds[b.employeeId]) return; w++; });
+      asked.forEach(function (a) { if (stateOf(a) === 'no') w++; });
       w += Object.keys(st.add).length;
       return w;
     };
@@ -6836,7 +6837,7 @@
       return Object.keys(st.dec).length + Object.keys(st.add).length + Object.keys(st.rem).length + (st.req.trim() !== String(c.required) ? 1 : 0);
     };
     var render = function () {
-      var w = count();
+      var w = count(), nOpenAll = asked.filter(function (a) { return stateOf(a) === 'asked'; }).length;
       var how = 'Normal ' + c.normal + ' for this weekday × ' + (c.factor === null ? '100% (no sales data)' : Math.round(c.factor * 100) + '% (last year\'s sales that week)') + ' = ' + c.estimate + '.';
       var h = '';
       if (c.holiday) h += '<div style="font-weight:700; margin-bottom:6px;">' + esc(c.holiday) + '</div>';
@@ -6850,7 +6851,11 @@
       var b = '';
       // asked for leave
       if (asked.length) {
-        b += '<h3 style="font-size:13px; margin:12px 0 4px;">Asked for leave (' + asked.length + ')</h3>';
+        var nOpen = asked.filter(function (a) { return stateOf(a) === 'asked'; }).length, nGive = asked.filter(function (a) { return stateOf(a) === 'give'; }).length, nNo = asked.length - nOpen - nGive;
+        asked.sort(function (x, y) { var o = { asked: 0, give: 1, no: 2 }; return (o[stateOf(x)] - o[stateOf(y)]) || x.name.localeCompare(y.name); });
+        b += '<div style="margin:12px 0 4px; padding:8px 10px; border-radius:8px; background:color-mix(in srgb, var(--warning) 16%, transparent); display:flex; gap:10px; flex-wrap:wrap; align-items:baseline;">' +
+          '<strong style="font-size:14px;">🌴 Asked for leave (' + asked.length + ')</strong><span style="font-size:12px;">' +
+          [nOpen ? '<strong style="color:var(--warning);">' + nOpen + ' to decide</strong>' : '', nGive ? '<strong style="color:var(--good);">' + nGive + ' given leave</strong>' : '', nNo ? '<strong style="color:var(--brand);">' + nNo + ' working</strong>' : ''].filter(String).join(' · ') + '</span></div>';
         b += asked.map(function (a) {
           var s = stateOf(a), seg = function (val, label, color) {
             var on = s === val;
@@ -6858,7 +6863,8 @@
           };
           var other = a.days - 1;
           return '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 8px; margin-bottom:4px; border-radius:8px; border:1px solid var(--gridline);' + (s === 'asked' ? 'background:color-mix(in srgb, var(--warning) 10%, transparent);' : '') + '">' +
-            '<div style="flex:1 1 180px; min-width:0;"><strong>' + esc(a.name) + '</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(a.shift) + '</span>' +
+            '<div style="flex:1 1 180px; min-width:0;"><strong>' + esc(a.name) + '</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(a.shift) + '</span> ' +
+            (s === 'asked' ? '<span style="font-size:11px; font-weight:700; color:var(--warning);">NOT DECIDED</span>' : s === 'give' ? '<span style="font-size:11px; font-weight:700; color:var(--good);">ON LEAVE</span>' : '<span style="font-size:11px; font-weight:700; color:var(--brand);">WORKS</span>') +
             '<div style="font-size:12px; color:var(--text-muted);">' + a.left + ' days left · ' + (other > 0 ? 'also asked for ' + other + ' other day' + (other === 1 ? '' : 's') + (a.open - (a.state === 'asked' ? 1 : 0) > 0 ? ' (' + (a.open - (a.state === 'asked' ? 1 : 0)) + ' not decided)' : '') : 'only this day') +
             (st.dec[a.employeeId] ? ' · <span style="color:var(--warning); font-weight:700;">not saved</span>' : '') + '</div></div>' +
             '<div style="display:flex; gap:4px;">' + seg('give', 'Give leave', 'var(--good)') + seg('no', 'Works this day', 'var(--brand)') + '</div></div>';
@@ -6868,13 +6874,14 @@
       }
       // working
       var working = c.bookedList.filter(function (x) { return !askedIds[x.employeeId]; });
-      b += '<h3 style="font-size:13px; margin:12px 0 4px;">Working (' + w + ')</h3><div style="font-size:13px; line-height:1.7;">';
+      b += '<div style="margin:16px 0 4px; padding:8px 10px; border-radius:8px; background:color-mix(in srgb, var(--good) 16%, transparent);"><strong style="font-size:14px;">✅ Working (' + w + ')</strong>' +
+        (nOpenAll ? ' <span style="font-size:12px; color:var(--text-muted);">· the ' + nOpenAll + ' not decided are not counted until you mark them</span>' : '') + '</div><div style="font-size:13px; line-height:1.7;">';
       var rows = working.map(function (x) {
         var gone = st.rem[x.employeeId];
         return '<div' + (gone ? ' style="text-decoration:line-through; color:var(--text-muted);"' : '') + '>' + esc(x.name) + ' <span style="color:' + (x.extra ? 'var(--brand)' : 'var(--text-muted)') + ';">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>' +
           (x.extra && !locked ? ' <button class="btn secondary small" type="button" data-dp-unextra="' + esc(x.employeeId) + '" style="padding:2px 8px; font-size:11px;">' + (gone ? 'Keep' : 'Remove') + '</button>' : '') + '</div>';
       });
-      asked.forEach(function (a) { if (stateOf(a) !== 'give') rows.push('<div>' + esc(a.name) + ' <span style="color:var(--text-muted);">' + esc(a.shift) + ' · ' + (stateOf(a) === 'asked' ? 'asked for leave, not decided' : 'asked for leave, works') + '</span></div>'); });
+      asked.forEach(function (a) { if (stateOf(a) === 'no') rows.push('<div>' + esc(a.name) + ' <span style="color:var(--text-muted);">' + esc(a.shift) + ' · </span><span style="color:var(--brand);">asked for leave, works this day</span></div>'); });
       Object.keys(st.add).forEach(function (id) { var o = offCand.filter(function (x) { return x.id === id; })[0]; rows.push('<div>' + esc(o ? o.name : id) + ' <span style="color:var(--brand);">extra day' + (o && o.dep !== dept ? ' (' + esc(o.dep) + ')' : '') + ' · <strong style="color:var(--warning);">not saved</strong></span> <button class="btn secondary small" type="button" data-dp-unadd="' + esc(id) + '" style="padding:2px 8px; font-size:11px;">Undo</button></div>'); });
       b += (rows.length ? rows.join('') : '<div class="hint" style="margin:0;">Nobody.</div>') + '</div>';
       if (!locked && !c.holiday) {
@@ -6888,7 +6895,7 @@
       } else if (c.holiday && !c.closed) b += '<div class="hint" style="margin:6px 0 0;">Public holiday: plan who works it in Daily Attendance (Plan who works).</div>';
       var lst = function (title, arr, fmt) { return arr.length ? '<details style="margin-top:10px;"><summary style="font-size:13px; font-weight:600; cursor:pointer;">' + title + ' (' + arr.length + ')</summary><div style="font-size:13px; line-height:1.6; margin-top:4px;">' + arr.map(fmt).join('<br>') + '</div></details>' : ''; };
       var given = asked.filter(function (a) { return stateOf(a) === 'give'; });
-      b += lst('Off on leave', given.map(function (a) { return { name: a.name, type: 'given here' + (st.dec[a.employeeId] ? ' (not saved)' : ' (approved once their request is fully decided)') }; }).concat(c.leaveList), function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
+      b += lst('🌴 Off on leave', given.map(function (a) { return { name: a.name, type: 'given here' + (st.dec[a.employeeId] ? ' (not saved)' : ' (approved once their request is fully decided)') }; }).concat(c.leaveList), function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
         lst('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
       if (!c.closed) b += '<div id="dp-foot" class="toolbar" style="margin:14px 0 0; padding-top:10px; border-top:1px solid var(--gridline); flex-wrap:wrap;"></div>';
       document.getElementById('casual-weeks-sub').innerHTML = h;
@@ -6902,8 +6909,9 @@
       var open = asked.filter(function (a) { return stateOf(a) === 'asked'; }).length;
       var lv = document.getElementById('dp-live');
       if (lv) lv.innerHTML = tile('Needed', need, 'var(--brand)', st.req.trim() === '' || Number(st.req) === c.estimate ? 'estimate' : 'set by hand') +
-          tile('Working', w, 'var(--brand)', open ? open + ' still to decide' : '') +
-          tile(diff < 0 ? 'Short' : 'Spare', Math.abs(diff), diff < 0 ? 'var(--critical)' : diff === 0 ? 'var(--warning)' : 'var(--good)', diff === 0 ? 'exactly enough' : '');
+          tile('Working', w, 'var(--good)', 'sure to work') +
+          (open ? tile('To decide', open, 'var(--warning)', 'asked for leave') : '') +
+          tile(diff < 0 ? 'Short' : 'Spare', Math.abs(diff), diff < 0 ? 'var(--critical)' : diff === 0 ? 'var(--warning)' : 'var(--good)', open ? 'before the ' + open + ' to decide' : diff === 0 ? 'exactly enough' : '');
       var ft = document.getElementById('dp-foot');
       if (ft) {
         var n = changes();
