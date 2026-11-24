@@ -2097,7 +2097,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.227-cpt-no-guess';
+  var FRONTEND_BUILD = '2026-11-25.228-cmp-columns';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3922,7 +3922,7 @@
       return cur(x[0]) || months.some(function (m) { return hist[m] && hist[m][x[0]]; });
     });
     var th = '<th style="text-align:left;">&nbsp;</th>' + months.map(function (m) { return '<th>' + esc(monthLabel(m)) + '</th>'; }).join('') +
-      '<th>Average</th><th class="cmp-cur">' + esc(monthLabel(state.selectedMonth)) + '</th><th>vs average</th>';
+      '<th class="cmp-cur">' + esc(monthLabel(state.selectedMonth)) + '</th><th>Average</th><th>vs average</th>';   // §146 month, then average, then the comparison
     var fmt = function (k, v) { return k === 'count' ? String(Math.round(v * 10) / 10) : money(v); };
     // Everyone in this department (current or past) with their figures, for the expandable rows.
     var emps = [];
@@ -3945,7 +3945,7 @@
         var neg = x[2] < 0 && r.cur ? ' style="color:var(--critical);"' : '';
         return '<tr class="cmp-emp"><td style="text-align:left; padding-left:28px;">' + esc(r.e.name) + (r.e.active ? '' : ' <span class="hint" style="margin:0;">(left)</span>') + '</td>' +
           r.hv.map(function (v) { return '<td>' + (v ? fmt(k, v) : '–') + '</td>'; }).join('') +
-          '<td>' + (r.avg ? fmt(k, r.avg) : '–') + '</td><td class="cmp-cur"' + neg + '>' + (r.cur ? fmt(k, r.cur) : '–') + '</td>' +
+          '<td class="cmp-cur"' + neg + '>' + (r.cur ? fmt(k, r.cur) : '–') + '</td><td>' + (r.avg ? fmt(k, r.avg) : '–') + '</td>' +
           '<td>' + (k === 'count' ? '' : (r.cur || r.avg ? cmpBadge_(r.cur, { n: nAvg, [k]: r.avg }, k) : '')) + '</td></tr>';
       }).join('');
     }
@@ -3958,7 +3958,7 @@
         var neg = x[2] < 0 && c ? ' class="dept-neg"' : '';
         var open = !!expanded[k];
         var row = '<tr><td style="text-align:left; font-weight:600;"><button type="button" class="cmp-toggle" data-k="' + k + '" aria-expanded="' + open + '" title="Click to ' + (open ? 'hide' : 'see') + ' the employees behind this row">' +
-          '<span class="cmp-caret">' + (open ? '▾' : '▸') + '</span> ' + x[1] + '</button></td>' + cells + '<td>' + avgTxt + '</td><td class="cmp-cur"' + (neg ? ' style="color:var(--critical);"' : '') + '>' + (c ? fmt(k, c) : '–') + '</td><td>' + badge + '</td></tr>';
+          '<span class="cmp-caret">' + (open ? '▾' : '▸') + '</span> ' + x[1] + '</button></td>' + cells + '<td class="cmp-cur"' + (neg ? ' style="color:var(--critical);"' : '') + '>' + (c ? fmt(k, c) : '–') + '</td><td>' + avgTxt + '</td><td>' + badge + '</td></tr>';
         return row + (open ? detailRows_(x) : '');
       }).join('');
       document.getElementById('dept-cmp-body').innerHTML = '<table class="data-table cmp-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>' +
