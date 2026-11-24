@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.239-fast-payroll';
+  var FRONTEND_BUILD = '2026-11-25.240-missed-top';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7525,13 +7525,8 @@
       res.shifts.map(function (n) { return '<option' + (n === res.currentShift ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
       '</select><label style="font-size:13px; font-weight:600;">from</label><input type="date" id="attp-from" value="' + esc(res.days[0].date) + '"><label style="font-size:13px; font-weight:600;">to</label><input type="date" id="attp-to" title="Leave empty for a permanent change"><button class="btn small" id="attp-save">Change shift</button><span class="save-status" id="attp-status"></span></div>' +
       '<div class="hint" style="margin:4px 0 0;">Currently: ' + esc(res.currentShift || 'no shift') + (res.currentFrom ? ' since ' + esc(res.currentFrom) : '') + (res.currentTo ? ' until ' + esc(res.currentTo) : '') + '. Leave <em>to</em> empty for a permanent change; with a <em>to</em> date they go back to their usual shift afterwards.</div>';
-    document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Day</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late In</th><th>Early Out</th><th title="Clocked out more than 30 minutes after the shift end, in half hours (the same rule as Pay Adjustments)">Overtime (h)</th><th style="text-align:left;">Status</th><th style="text-align:left;">All clock-ins</th></tr></thead><tbody>' +
-      res.days.map(function (x) {
-        return '<tr' + (focus && x.date === focus ? ' style="background:color-mix(in srgb, var(--brand) 12%, transparent);"' : '') + '><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : x.holiday ? '<span style="color:var(--brand); font-weight:600;">' + esc(x.holiday) + '</span>' : 'off') + '</td>' +
-          '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td>' + attpOtCell_(x, otH) + '<td style="text-align:left;">' + attpStatus_(x) + '</td>' +
-          '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + esc(x.punches.join(', ')) + '</td></tr>';
-      }).join('') + '</tbody></table>' +
-      '<h3 style="font-size:14px; margin:18px 0 6px;">Add a missed clock-in or clock-out</h3>' +
+    document.getElementById('casual-weeks-body').innerHTML = ('<div style="margin:0 0 12px; padding:10px 12px; border-radius:10px; background:var(--surface-1);"><h3 style="font-size:14px; margin:0 0 6px;">Add a missed clock-in or clock-out</h3>' +   // §159 at the top (Shane, 25 Nov)
+     
       '<div class="toolbar"><input type="date" id="attm-date" value="' + esc(focus || res.days[0].date) + '" aria-label="Date"><input type="time" id="attm-time" aria-label="Time" style="max-width:130px;">' +
       '<input type="text" id="attm-reason" placeholder="Why it was missed" maxlength="200" style="max-width:220px;">' +
       '<input id="attm-mgr" list="attm-mgr-list" placeholder="Signed off by (Management)" autocomplete="off" style="max-width:240px;"><datalist id="attm-mgr-list">' +
@@ -7541,7 +7536,13 @@
         res.manual.map(function (m) {
           return '<tr' + (m.status === 'Cancelled' ? ' style="opacity:.55;"' : '') + '><td style="text-align:left;">' + esc(m.at) + '</td><td style="text-align:left;">' + esc(m.reason) + '</td><td style="text-align:left;">' + esc(m.approvedBy) + '</td><td style="text-align:left;">' + esc(m.capturedBy) + '</td>' +
             '<td>' + (m.status === 'Cancelled' ? 'Cancelled: ' + esc(m.cancelReason) : '<button class="btn secondary small" type="button" data-attm-cancel="' + esc(m.id) + '">Cancel</button>') + '</td></tr>';
-        }).join('') + '</tbody></table>' : '');
+        }).join('') + '</tbody></table>' : '')) + '</div>' +
+      '<table class="data-table" id="attp-days"><thead><tr><th style="text-align:left;">Day</th><th style="text-align:left;">Shift</th><th>In</th><th>Out</th><th>Hours</th><th>Late In</th><th>Early Out</th><th title="Clocked out more than 30 minutes after the shift end, in half hours (the same rule as Pay Adjustments)">Overtime (h)</th><th style="text-align:left;">Status</th><th style="text-align:left;">All clock-ins</th></tr></thead><tbody>' +
+      res.days.map(function (x) {
+        return '<tr' + (focus && x.date === focus ? ' style="background:color-mix(in srgb, var(--brand) 12%, transparent);"' : '') + '><td style="text-align:left;">' + wd[new Date(x.date + 'T00:00:00Z').getUTCDay()] + ' ' + esc(x.date.slice(8) + '/' + x.date.slice(5, 7)) + '</td><td style="text-align:left;">' + (x.start ? esc(x.start + '–' + x.end) : x.holiday ? '<span style="color:var(--brand); font-weight:600;">' + esc(x.holiday) + '</span>' : 'off') + '</td>' +
+          '<td>' + esc(x.arrived) + '</td><td>' + esc(x.left) + '</td><td>' + attdHrs_(x.hours) + '</td><td>' + (x.lateMin || '') + '</td><td>' + (x.earlyMin || '') + '</td>' + attpOtCell_(x, otH) + '<td style="text-align:left;">' + attpStatus_(x) + '</td>' +
+          '<td style="text-align:left; font-size:12px; color:var(--text-muted);">' + esc(x.punches.join(', ')) + '</td></tr>';
+      }).join('') + '</tbody></table>';
     var attmCall = function (action, params, btn, okText) {
       var st = document.getElementById('attm-status');
       if (btn) btn.disabled = true; flashStatus(st, 'Saving…', 'save-status', 0);
