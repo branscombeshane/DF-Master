@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.235-dp-clear';
+  var FRONTEND_BUILD = '2026-11-25.236-by-hand';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4595,8 +4595,10 @@
     (r.noClockIn || []).forEach(function (a) { if (c.nci[a.date] === undefined) out.push({ cat: 'fix', text: 'No clock-in on <strong>' + esc(day(a.date)) + '</strong>' + (a.left ? ' (only ' + esc(a.left) + ')' : ''), buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(a.date) + '"') + btn('It\'s fine', 'data-apcheck="set|nci|' + id + '|' + esc(a.date) + '" title="The day is right as it is (nothing to add)"', true) }); });
     (r.noClockOut || []).forEach(function (dt) { if (c.nco[dt] === undefined) out.push({ cat: 'fix', text: 'No clock-out on <strong>' + esc(day(dt)) + '</strong>', buttons: btn('Fix', 'data-apfix="' + esc(r.empCode) + '|' + esc(dt) + '"') + btn('It\'s fine', 'data-apcheck="set|nco|' + id + '|' + esc(dt) + '" title="They left at the normal time: no overtime for this day"', true) }); });
     if (r.absentUnchecked && !r.accepted.Absent) out.push({ cat: 'absent', text: '<strong>' + r.absentUnchecked + '</strong> absent day' + (r.absentUnchecked === 1 ? '' : 's') + ' to check', buttons: btn('Check', 'data-goto-absent="1"') });
+    var lbl = { Overtime: 'Overtime', Absent: 'Absent', LateIn: 'Late in' };
+    (r.twice || []).forEach(function (k) { out.push({ cat: 'stale', text: '⚠ <strong>' + lbl[k] + ' paid twice</strong>: ' + r.byHand[k] + ' added by hand and ' + r.accepted[k] + ' from clock-ins. Delete one under Selected employee.' }); });
     var stale = attPayStaleCount_(r);
-    if (stale) out.push({ cat: 'stale', text: '⚠ Accepted line out of date (see below): delete it under Selected employee, then accept again' });
+    if (stale) out.push({ cat: 'stale', text: '⚠ ' + (Object.keys(r.handPaid || {}).some(function (k) { var now = k === 'Absent' ? r.absentDays : k === 'LateIn' ? r.lateMin : r.otHours; return attPayStale_(r.accepted[k], now); }) ? 'A line added by hand does not match the clock-ins' : 'Accepted line out of date') + ' (see below): delete it under Selected employee, then accept again' });
     var acc = [];
     if (r.absentDays > 0 && !r.accepted.Absent && !r.absentUnchecked) acc.push('Absent ' + r.absentDays + ' day' + (r.absentDays === 1 ? '' : 's'));
     if (r.lateMin > 0 && !r.accepted.LateIn) acc.push('Late in ' + r.lateMin + ' min');
@@ -4614,6 +4616,7 @@
   function attPayDoneNotes_(r) {
     var c = r.checks || { nco: {}, nci: {}, dayoff: '', holwork: '', holabsent: '' }, id = esc(r.employeeId), out = [];
     var undo = function (kind, date) { return ' <button type="button" class="linklike" data-apcheck="clear|' + kind + '|' + id + '|' + esc(date || '') + '" style="background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer;">undo</button>'; };
+    Object.keys(r.handPaid || {}).forEach(function (k) { out.push('✓ ' + ({ Overtime: 'overtime ' + r.accepted[k] + ' h', Absent: 'absent ' + r.accepted[k] + ' day(s)', LateIn: 'late in ' + r.accepted[k] + ' min' })[k] + ' added by hand'); });
     Object.keys(c.nci || {}).forEach(function (dt) { out.push('✓ no clock-in on ' + esc(attPayDate_(dt)) + ' is fine (' + esc(c.nci[dt]) + ')' + undo('nci', dt)); });
     Object.keys(c.nco || {}).forEach(function (dt) { out.push('✓ no clock-out on ' + esc(attPayDate_(dt)) + ' is fine (' + esc(c.nco[dt]) + ')' + undo('nco', dt)); });
     if (r.accepted.DayOff) out.push(attPayStale_(r.accepted.DayOff, r.dayOffHours) ? attPayStaleHtml_(r.accepted.DayOff, r.dayOffHours, 'day-off hours') : (r.repriceNeeded || []).indexOf('DayOff') !== -1 ? attPayRateStaleHtml_('day off ' + r.accepted.DayOff + ' h') : '✓ day off ' + r.accepted.DayOff + ' h paid as overtime');
@@ -4635,8 +4638,17 @@
   function attPayPending_(r, rules) {
     return (r.absentDays > 0 && !r.accepted.Absent) || (r.lateMin > 0 && !r.accepted.LateIn) || (r.otHours > 0 && !r.accepted.Overtime);
   }
+  // §155: Absent / Late in / Overtime typed in by hand this month count as paid (✓, never offered again, red when the
+  // clock-ins say something else); both by hand AND from clock-ins = paid twice
+  function attPayByHand_(r) {
+    if (r._bh) return; r._bh = true; r.handPaid = {}; r.twice = [];
+    Object.keys(r.byHand || {}).forEach(function (k) {
+      if (r.accepted[k]) r.twice.push(k); else { r.accepted[k] = r.byHand[k]; r.handPaid[k] = true; }
+    });
+  }
   function renderAttendancePay_() {
     var d = attPayState.data; if (!d) return;
+    (d.rows || []).forEach(attPayByHand_);
     document.getElementById('attpay-title').textContent = 'From clock-ins (' + attPayDate_(d.from) + ' – ' + attPayDate_(d.to) + ')';
     document.getElementById('attpay-note').innerHTML = (d.complete ? '' : '<strong style="color:var(--warning);">This period runs to ' + esc(attPayDate_(d.to)) + ', so these are the figures so far.</strong> ') +
       'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
