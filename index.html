@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.232-lr-reopen';
+  var FRONTEND_BUILD = '2026-11-25.233-dp-day';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2120,7 +2120,7 @@
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
     getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
-    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, renameTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
+    getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, saveDecPlanDay: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, renameTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
 
   // ================= STATE =================
@@ -6808,82 +6808,154 @@
       td.addEventListener('click', function () { var k = td.getAttribute('data-dp-cell').split('|'); openDecPlanCell_(k[0], k.slice(1).join('|')); });
     });
   }
-  function openDecPlanCell_(date, dept) {
+  // §152 the day window: decide each leave request (Give leave / Works), set the number needed, add people on their
+  // day off, then Save (draft) or Save & finalize day. Nothing is sent until Save; the counter updates as you click.
+  function openDecPlanCell_(date, dept, keep) {
     var d = dpState.data, c = d.cells[date + '|' + dept];
-    var how = c.closed ? 'Company closed.' : 'Normal ' + c.normal + ' for this weekday × ' + (c.factor === null ? '100% (no sales data)' : Math.round(c.factor * 100) + '% (last year\'s sales that week)') + ' = ' + c.estimate + '.';
-    document.getElementById('casual-weeks-title').textContent = dept + ' — ' + date;
-    document.getElementById('casual-weeks-sub').innerHTML = (c.holiday ? '<strong>' + esc(c.holiday) + '.</strong> ' : '') + 'Booked ' + c.booked + ' of ' + c.required + ' needed' + (c.short ? ', <strong style="color:var(--critical);">' + c.short + ' short</strong>' : '') + '. Estimate: ' + esc(how) +
-      (c.override ? ' Number set by ' + esc(c.setBy) + '.' : '') +
-      '<div class="toolbar" style="margin:10px 0 0;"><label style="font-size:13px; font-weight:600;">Needed</label><input type="number" id="dp-req" min="0" step="1" value="' + c.required + '" style="max-width:90px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);">' +
-      '<button class="btn small" type="button" id="dp-save">Save</button>' + (c.override ? '<button class="btn secondary small" type="button" id="dp-reset">Use the estimate (' + c.estimate + ')</button>' : '') + '<span class="save-status" id="dp-cell-status"></span></div>';
-    var list = function (title, arr, fmt) { return '<h3 style="font-size:13px; margin:12px 0 4px;">' + title + ' (' + arr.length + ')</h3>' + (arr.length ? '<div style="font-size:13px; line-height:1.6;">' + arr.map(fmt).join('<br>') + '</div>' : '<div class="hint" style="margin:0;">None.</div>'); };
-    document.getElementById('casual-weeks-body').innerHTML =
-      ((c.askedList || []).length ? (function () {
-        // §104: who is left working if every request for this day is approved
-        var askedNames = {}; c.askedList.forEach(function (x) { askedNames[x.name] = true; });
-        var stay = c.bookedList.filter(function (x) { return !askedNames[x.name]; }), diff = stay.length - c.required;
-        return '<div style="margin:12px 0 0; padding:10px 12px; border-radius:8px; font-size:14px; background:color-mix(in srgb, ' + (diff < 0 ? 'var(--critical)' : diff === 0 ? 'var(--warning)' : 'var(--good)') + ' 14%, transparent);">' +
-          'If all requests are approved: <strong>' + stay.length + ' left working</strong> of ' + c.required + ' needed — <strong>' + (diff < 0 ? (-diff) + ' short' : diff === 0 ? 'exactly enough' : diff + ' spare') + '</strong>.</div>' +
-          list('Asked for leave (not decided yet)', c.askedList, function (x) { return esc(x.name); }) +
-          list('Left working if all approved', stay, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>'; });
-      })() : '') +
-      list('Booked' + ((c.askedList || []).length ? ' now (before any leave is approved)' : ''), c.bookedList, function (x) { return esc(x.name) + ' <span style="color:' + (x.extra ? 'var(--brand)' : 'var(--text-muted)') + ';">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>' + (x.extra && !c.final ? ' <button class="btn secondary small" type="button" data-dp-unextra="' + esc(x.employeeId) + '" style="padding:2px 8px; font-size:11px;">Remove</button>' : ''); }) +
-      list('On leave', c.leaveList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
-      list('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
-    document.getElementById('casual-weeks-modal').classList.add('active');
-    var save = function (val, btn) {
-      var st = document.getElementById('dp-cell-status');
-      btn.disabled = true; btn.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
-      callApi('setDecPlanRequired', { year: d.year, date: date, department: dept, required: val }).then(function (res) {
-        if (!res || !res.ok) { btn.disabled = false; btn.textContent = 'Save'; flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
-        dpState.data = res; renderDecPlan_(); openDecPlanCell_(date, dept);
-        flashStatus(document.getElementById('dp-cell-status'), 'Saved', 'save-status ok', 3000);
-      }).catch(function () { btn.disabled = false; btn.textContent = 'Save'; flashStatus(st, 'Network error', 'save-status err', 6000); });
+    var st = keep || { req: String(c.required), dec: {}, add: {}, rem: {}, mgr: (lrState && lrState.lastMgr) || '' };
+    dpState.cellEdit = st;
+    var locked = c.final || c.closed;
+    var mgrs = (lrState.data && lrState.data.managers) || [];
+    var stateOf = function (a) { return st.dec[a.employeeId] || a.state; };
+    var asked = (c.askedList || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var askedIds = {}; asked.forEach(function (a) { askedIds[a.employeeId] = true; });
+    // who works: booked (server already leaves out days given) adjusted for unsaved choices
+    var offCand = [];
+    if (!c.closed && !c.holiday) d.departments.forEach(function (dep) { (d.cells[date + '|' + dep].offList || []).forEach(function (o) { if (o.canExtra) offCand.push({ id: o.employeeId, name: o.name, dep: dep }); }); });
+    var count = function () {
+      var w = 0;
+      c.bookedList.forEach(function (b) { if (st.rem[b.employeeId]) return; if (askedIds[b.employeeId] && st.dec[b.employeeId] === 'give') return; w++; });
+      asked.forEach(function (a) { if (a.state === 'give' && st.dec[a.employeeId] === 'no') w++; });
+      w += Object.keys(st.add).length;
+      return w;
     };
-    document.getElementById('dp-save').addEventListener('click', function () { save(document.getElementById('dp-req').value, this); });
-    var rs = document.getElementById('dp-reset'); if (rs) rs.addEventListener('click', function () { save('', this); });
-    // §112 add someone who is off that day to work here (only when the day is short)
-    var extraCall = function (id, remove, btn) {
-      var st = document.getElementById('dp-cell-status'), label = btn.textContent;
-      btn.disabled = true; btn.textContent = remove ? 'Removing…' : 'Adding…'; flashStatus(st, 'Saving…', 'save-status', 0);
-      callApi('setDecPlanExtra', { year: d.year, date: date, department: dept, employeeId: id, remove: remove ? '1' : '' }).then(function (res) {
-        if (!res || !res.ok) { btn.disabled = false; btn.textContent = label; flashStatus(document.getElementById('dp-cell-status'), (res && res.error) || 'Could not save', 'save-status err', 8000); return; }
-        dpState.data = res; renderDecPlan_(); openDecPlanCell_(date, dept);
-        flashStatus(document.getElementById('dp-cell-status'), remove ? 'Removed' : 'Added', 'save-status ok', 3000);
+    var changes = function () {
+      return Object.keys(st.dec).length + Object.keys(st.add).length + Object.keys(st.rem).length + (st.req.trim() !== String(c.required) ? 1 : 0);
+    };
+    var render = function () {
+      var w = count();
+      var how = 'Normal ' + c.normal + ' for this weekday × ' + (c.factor === null ? '100% (no sales data)' : Math.round(c.factor * 100) + '% (last year\'s sales that week)') + ' = ' + c.estimate + '.';
+      var h = '';
+      if (c.holiday) h += '<div style="font-weight:700; margin-bottom:6px;">' + esc(c.holiday) + '</div>';
+      if (c.closed) h += '<div class="hint">Company closed.</div>';
+      else {
+        h += '<div id="dp-live" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>';
+        h += '<div class="toolbar" style="margin:0 0 4px; flex-wrap:wrap;"><label style="font-size:13px; font-weight:600;">Needed</label><input type="number" id="dp-req" min="0" step="1" value="' + esc(st.req) + '"' + (locked ? ' disabled' : '') + ' style="max-width:80px; padding:6px 8px; border-radius:8px; border:1px solid var(--border);">' +
+          (!locked ? '<button class="btn secondary small" type="button" id="dp-reset">Use the estimate (' + c.estimate + ')</button>' : '') +
+          '<span style="font-size:12px; color:var(--text-muted);">' + esc(how) + (c.override ? ' Number set by ' + esc(c.setBy) + '.' : '') + '</span></div>';
+      }
+      var b = '';
+      // asked for leave
+      if (asked.length) {
+        b += '<h3 style="font-size:13px; margin:12px 0 4px;">Asked for leave (' + asked.length + ')</h3>';
+        b += asked.map(function (a) {
+          var s = stateOf(a), seg = function (val, label, color) {
+            var on = s === val;
+            return '<button type="button" class="btn small' + (on ? '' : ' secondary') + '" data-dp-dec="' + esc(a.employeeId + '|' + val) + '"' + (locked ? ' disabled' : '') + ' style="padding:4px 10px;' + (on ? 'background:' + color + '; border-color:' + color + ';' : '') + '">' + label + '</button>';
+          };
+          var other = a.days - 1;
+          return '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 8px; margin-bottom:4px; border-radius:8px; border:1px solid var(--gridline);' + (s === 'asked' ? 'background:color-mix(in srgb, var(--warning) 10%, transparent);' : '') + '">' +
+            '<div style="flex:1 1 180px; min-width:0;"><strong>' + esc(a.name) + '</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(a.shift) + '</span>' +
+            '<div style="font-size:12px; color:var(--text-muted);">' + a.left + ' days left · ' + (other > 0 ? 'also asked for ' + other + ' other day' + (other === 1 ? '' : 's') + (a.open - (a.state === 'asked' ? 1 : 0) > 0 ? ' (' + (a.open - (a.state === 'asked' ? 1 : 0)) + ' not decided)' : '') : 'only this day') +
+            (st.dec[a.employeeId] ? ' · <span style="color:var(--warning); font-weight:700;">not saved</span>' : '') + '</div></div>' +
+            '<div style="display:flex; gap:4px;">' + seg('give', 'Give leave', 'var(--good)') + seg('no', 'Works this day', 'var(--brand)') + '</div></div>';
+        }).join('');
+        b += '<div class="toolbar" style="margin:6px 0 0; flex-wrap:wrap;"><label style="font-size:13px;">Leave signed off by</label><select id="dp-mgr"' + (locked ? ' disabled' : '') + '><option value="">— manager —</option>' + mgrs.map(function (m) { return '<option' + (m.name === st.mgr ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select></div>' +
+          '<div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Nothing is approved day by day. Once every day a person asked for is decided, their request finalizes itself: the given days become Annual Leave signed off by this manager, or with no days given it is declined. They can be changed per person in the list below (Decide).</div>';
+      }
+      // working
+      var working = c.bookedList.filter(function (x) { return !askedIds[x.employeeId]; });
+      b += '<h3 style="font-size:13px; margin:12px 0 4px;">Working (' + w + ')</h3><div style="font-size:13px; line-height:1.7;">';
+      var rows = working.map(function (x) {
+        var gone = st.rem[x.employeeId];
+        return '<div' + (gone ? ' style="text-decoration:line-through; color:var(--text-muted);"' : '') + '>' + esc(x.name) + ' <span style="color:' + (x.extra ? 'var(--brand)' : 'var(--text-muted)') + ';">' + esc(x.shift) + (x.note ? ' · ' + esc(x.note) : '') + '</span>' +
+          (x.extra && !locked ? ' <button class="btn secondary small" type="button" data-dp-unextra="' + esc(x.employeeId) + '" style="padding:2px 8px; font-size:11px;">' + (gone ? 'Keep' : 'Remove') + '</button>' : '') + '</div>';
+      });
+      asked.forEach(function (a) { if (stateOf(a) !== 'give') rows.push('<div>' + esc(a.name) + ' <span style="color:var(--text-muted);">' + esc(a.shift) + ' · ' + (stateOf(a) === 'asked' ? 'asked for leave, not decided' : 'asked for leave, works') + '</span></div>'); });
+      Object.keys(st.add).forEach(function (id) { var o = offCand.filter(function (x) { return x.id === id; })[0]; rows.push('<div>' + esc(o ? o.name : id) + ' <span style="color:var(--brand);">extra day' + (o && o.dep !== dept ? ' (' + esc(o.dep) + ')' : '') + ' · <strong style="color:var(--warning);">not saved</strong></span> <button class="btn secondary small" type="button" data-dp-unadd="' + esc(id) + '" style="padding:2px 8px; font-size:11px;">Undo</button></div>'); });
+      b += (rows.length ? rows.join('') : '<div class="hint" style="margin:0;">Nobody.</div>') + '</div>';
+      if (!locked && !c.holiday) {
+        var own = offCand.filter(function (o) { return o.dep === dept && !st.add[o.id]; }), oth = offCand.filter(function (o) { return o.dep !== dept && !st.add[o.id]; });
+        var sortL = function (x, y) { return x.name.localeCompare(y.name); }; own.sort(sortL); oth.sort(sortL);
+        b += (own.length + oth.length) ? '<div class="toolbar" style="margin:6px 0 0; flex-wrap:wrap;"><select id="dp-extra-emp" style="min-width:220px;"><option value="">+ Add someone on their day off…</option>' +
+          (own.length ? '<optgroup label="' + esc(dept) + '">' + own.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.name) + '</option>'; }).join('') + '</optgroup>' : '') +
+          (oth.length ? '<optgroup label="Other departments">' + oth.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.name + ' (' + o.dep + ')') + '</option>'; }).join('') + '</optgroup>' : '') +
+          '</select><button class="btn secondary small" type="button" id="dp-extra-add">Add to work</button></div>' +
+          '<div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Stays their day off in attendance: hours are paid as day-off overtime, not coming in is not an Absent deduction.</div>' : '';
+      } else if (c.holiday && !c.closed) b += '<div class="hint" style="margin:6px 0 0;">Public holiday: plan who works it in Daily Attendance (Plan who works).</div>';
+      var lst = function (title, arr, fmt) { return arr.length ? '<details style="margin-top:10px;"><summary style="font-size:13px; font-weight:600; cursor:pointer;">' + title + ' (' + arr.length + ')</summary><div style="font-size:13px; line-height:1.6; margin-top:4px;">' + arr.map(fmt).join('<br>') + '</div></details>' : ''; };
+      var given = asked.filter(function (a) { return stateOf(a) === 'give'; });
+      b += lst('Off on leave', given.map(function (a) { return { name: a.name, type: 'given here' + (st.dec[a.employeeId] ? ' (not saved)' : ' (approved once their request is fully decided)') }; }).concat(c.leaveList), function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.type) + '</span>'; }) +
+        lst('Not working', c.offList, function (x) { return esc(x.name) + ' <span style="color:var(--text-muted);">' + esc(x.why) + '</span>'; });
+      if (!c.closed) b += '<div id="dp-foot" class="toolbar" style="margin:14px 0 0; padding-top:10px; border-top:1px solid var(--gridline); flex-wrap:wrap;"></div>';
+      document.getElementById('casual-weeks-sub').innerHTML = h;
+      document.getElementById('casual-weeks-body').innerHTML = b;
+      wire(); live();
+    };
+    // the counter and the Save bar: redrawn on every change without touching the rest (typing in Needed keeps focus)
+    var tile = function (label, val, color, sub) { return '<div style="flex:1 1 0; min-width:90px; padding:8px 10px; border-radius:10px; background:color-mix(in srgb, ' + color + ' 14%, transparent);"><div style="font-size:11px; color:var(--text-muted); font-weight:600;">' + label + '</div><div style="font-size:24px; font-weight:800;">' + val + '</div>' + (sub ? '<div style="font-size:11px; color:var(--text-muted);">' + sub + '</div>' : '') + '</div>'; };
+    var live = function () {
+      var need = st.req.trim() === '' ? c.estimate : Number(st.req), w = count(), diff = w - need;
+      var open = asked.filter(function (a) { return stateOf(a) === 'asked'; }).length;
+      var lv = document.getElementById('dp-live');
+      if (lv) lv.innerHTML = tile('Needed', need, 'var(--brand)', st.req.trim() === '' || Number(st.req) === c.estimate ? 'estimate' : 'set by hand') +
+          tile('Working', w, 'var(--brand)', open ? open + ' still to decide' : '') +
+          tile(diff < 0 ? 'Short' : 'Spare', Math.abs(diff), diff < 0 ? 'var(--critical)' : diff === 0 ? 'var(--warning)' : 'var(--good)', diff === 0 ? 'exactly enough' : '');
+      var ft = document.getElementById('dp-foot');
+      if (ft) {
+        var n = changes();
+        ft.innerHTML =
+          (c.final ? '<span style="color:var(--good); font-weight:700;">✓ Finalized' + (c.finalBy ? ' by ' + esc(c.finalBy) : '') + '</span><button class="btn secondary small" type="button" id="dp-unfinal">Unfinalize to change</button>'
+            : '<button class="btn secondary small" type="button" id="dp-save"' + (n ? '' : ' disabled') + '>Save</button>' +
+              '<button class="btn small" type="button" id="dp-save-final"' + (open ? ' disabled title="Decide every leave request first"' : '') + '>' + (n ? 'Save & finalize day' : 'Finalize day') + '</button>' +
+              '<span style="font-size:12px; color:' + (n ? 'var(--warning)' : 'var(--text-muted)') + ';">' + (n ? n + ' unsaved change' + (n === 1 ? '' : 's') : open ? open + ' request' + (open === 1 ? '' : 's') + ' still to decide' : 'Nothing changed') + '</span>') +
+          '<span class="save-status" id="dp-cell-status"></span>';
+        var q = function (id) { return document.getElementById(id); };
+        var sv = q('dp-save'); if (sv) sv.addEventListener('click', function () { save(false, sv); });
+        var sf = q('dp-save-final'); if (sf) sf.addEventListener('click', function () { save(true, sf); });
+        var un = q('dp-unfinal'); if (un) un.addEventListener('click', function () { dpFinal_([date + '|' + dept], '0', un, function () { openDecPlanCell_(date, dept); }); });
+      }
+    };
+    var wire = function () {
+      var q = function (id) { return document.getElementById(id); };
+      var ri = q('dp-req'); if (ri) ri.addEventListener('input', function () { st.req = ri.value; live(); });
+      var rs = q('dp-reset'); if (rs) rs.addEventListener('click', function () { st.req = String(c.estimate); q('dp-req').value = st.req; live(); });
+      var mg = q('dp-mgr'); if (mg) mg.addEventListener('change', function () { st.mgr = mg.value; lrState.lastMgr = mg.value; });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-dp-dec]'), function (bt) {
+        bt.addEventListener('click', function () {
+          var k = bt.getAttribute('data-dp-dec').split('|'), a = asked.filter(function (x) { return x.employeeId === k[0]; })[0];
+          if (!a) return;
+          if (a.state === k[1]) delete st.dec[k[0]]; else st.dec[k[0]] = k[1];
+          render();
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-dp-unextra]'), function (bt) { bt.addEventListener('click', function () { var id = bt.getAttribute('data-dp-unextra'); if (st.rem[id]) delete st.rem[id]; else st.rem[id] = true; render(); }); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-dp-unadd]'), function (bt) { bt.addEventListener('click', function () { delete st.add[bt.getAttribute('data-dp-unadd')]; render(); }); });
+      var ab = q('dp-extra-add'); if (ab) ab.addEventListener('click', function () {
+        var id = q('dp-extra-emp').value;
+        if (!id) { flashStatus(q('dp-cell-status'), 'Pick who works.', 'save-status err', 5000); return; }
+        st.add[id] = true; render();
+      });
+    };
+    var save = function (final, btn) {
+      var stEl = document.getElementById('dp-cell-status'), label = btn.textContent;
+      if (st.req.trim() !== '' && !(Number(st.req) >= 0)) { flashStatus(stEl, 'Needed must be a number.', 'save-status err', 5000); return; }
+      var params = { year: d.year, date: date, department: dept, approvedBy: st.mgr || '', final: final ? '1' : '' };
+      if (st.req.trim() !== String(c.required)) { params.setRequired = '1'; params.required = Number(st.req) === c.estimate ? '' : st.req.trim(); }
+      params.decisions = Object.keys(st.dec).map(function (id) { return id + ':' + st.dec[id]; }).join(',');
+      params.extraAdd = Object.keys(st.add).join(','); params.extraRemove = Object.keys(st.rem).join(',');
+      btn.disabled = true; btn.textContent = 'Saving…'; flashStatus(stEl, 'Saving…', 'save-status', 0);
+      callApi('saveDecPlanDay', params).then(function (res) {
+        if (!res || !res.ok) { btn.disabled = false; btn.textContent = label; flashStatus(document.getElementById('dp-cell-status'), (res && res.error) || 'Could not save', 'save-status err', 10000); return; }
+        dpState.data = res; renderDecPlan_(); loadLeaveReqs_();
+        openDecPlanCell_(date, dept);
+        var msg = (final ? 'Saved and finalized' : 'Saved') + ((res.completed || []).length ? '. ' + res.completed.map(function (x) { return x.name + ': ' + (x.status === 'Approved' ? x.days + ' day' + (x.days === 1 ? '' : 's') + ' leave approved' : x.status === 'Declined' ? 'no leave, request declined' : 'could not finalize (' + x.error + ')'); }).join('; ') : '');
+        flashStatus(document.getElementById('dp-cell-status'), msg, 'save-status ok', 9000);
       }).catch(function () { btn.disabled = false; btn.textContent = label; flashStatus(document.getElementById('dp-cell-status'), 'Network error', 'save-status err', 6000); });
     };
-    Array.prototype.forEach.call(document.querySelectorAll('[data-dp-unextra]'), function (b) { b.addEventListener('click', function () { extraCall(b.getAttribute('data-dp-unextra'), true, b); }); });
-    if (!c.closed && c.short > 0) {
-      var own = [], other = [];
-      d.departments.forEach(function (dep) { (d.cells[date + '|' + dep].offList || []).forEach(function (o) { if (o.canExtra) (dep === dept ? own : other).push({ id: o.employeeId, label: o.name + (dep === dept ? '' : ' (' + dep + ')') }); }); });
-      var sortL = function (a, b) { return a.label.localeCompare(b.label); }; own.sort(sortL); other.sort(sortL);
-      var ab = document.createElement('div'); ab.style.margin = '12px 0 0'; ab.style.padding = '10px 12px'; ab.style.borderRadius = '8px'; ab.style.background = 'color-mix(in srgb, var(--critical) 8%, transparent)';
-      ab.innerHTML = '<div style="font-size:13px; font-weight:700; margin-bottom:6px;">Add someone to work this day (' + c.short + ' short)</div>' +
-        (c.final ? '<div class="hint" style="margin:0;">This day is finalized: unfinalize it first.</div>' : c.holiday ? '<div class="hint" style="margin:0;">Public holiday: plan who works it in Daily Attendance (Plan who works).</div>' : (own.length + other.length) ?
-          '<div class="toolbar" style="margin:0; flex-wrap:wrap;"><select id="dp-extra-emp" style="min-width:220px;"><option value="">— someone who is off that day —</option>' +
-          (own.length ? '<optgroup label="' + esc(dept) + '">' + own.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>' : '') +
-          (other.length ? '<optgroup label="Other departments">' + other.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>' : '') +
-          '</select><button class="btn small" type="button" id="dp-extra-add">Add to work</button></div>' +
-          '<div class="hint" style="margin:6px 0 0;">It stays their day off in attendance: hours worked are paid as day-off overtime (Pay Adjustments &gt; From clock-ins &gt; Pay as overtime) and not coming in is not an Absent deduction. Their roster shows it as a work day.</div>'
-          : '<div class="hint" style="margin:0;">Nobody in the company is off that day.</div>');
-      document.getElementById('casual-weeks-sub').appendChild(ab);
-      var addB = document.getElementById('dp-extra-add');
-      if (addB) addB.addEventListener('click', function () {
-        var id = document.getElementById('dp-extra-emp').value;
-        if (!id) { flashStatus(document.getElementById('dp-cell-status'), 'Pick who works.', 'save-status err', 5000); return; }
-        extraCall(id, false, addB);
-      });
-    }
-    // §107 finalize this day / the whole department / the whole day
-    if (!c.closed) {
-      var fb = document.createElement('div'); fb.className = 'toolbar'; fb.style.margin = '10px 0 0';
-      fb.innerHTML = (c.final ? '<span style="color:var(--good); font-weight:700;">✓ Finalized' + (c.finalBy ? ' by ' + esc(c.finalBy) : '') + '</span><button class="btn secondary small" type="button" id="dp-unfinal">Unfinalize</button>'
-          : '<button class="btn small" type="button" id="dp-final-one"' + (c.asked ? ' disabled title="Decide the open leave requests first"' : '') + '>Mark finalized</button>');   // §108: only Mark finalized / Unfinalize here (Shane)
-      document.getElementById('casual-weeks-sub').appendChild(fb);
-      var reopen = function () { openDecPlanCell_(date, dept); };
-      var one = document.getElementById('dp-final-one'); if (one) one.addEventListener('click', function () { dpFinal_([date + '|' + dept], '1', this, reopen); });
-      var un = document.getElementById('dp-unfinal'); if (un) un.addEventListener('click', function () { dpFinal_([date + '|' + dept], '0', this, reopen); });
-    }
+    document.getElementById('casual-weeks-title').textContent = dept + ' — ' + date + ' (' + ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(date + 'T00:00:00Z').getUTCDay()] + ')';
+    render();
+    document.getElementById('casual-weeks-modal').classList.add('active');
   }
 
   // §107 mark days finalized / unfinalized
