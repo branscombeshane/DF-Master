@@ -1297,6 +1297,19 @@
         </div>
       </div>
 
+      <div class="payroll-subview" id="payroll-sub-status">
+        <div class="panel">
+          <h2>Pay status</h2>
+          <p class="panel-sub" id="paystat-sub"></p>
+          <div id="paystat-tiles"></div>
+          <div class="toolbar" style="margin:0 0 8px;">
+            <select id="paystat-dept"><option value="">All departments</option></select>
+            <input type="search" id="paystat-search" placeholder="Search name" style="max-width:240px;">
+          </div>
+          <div class="table-scroll"><table class="data-table" id="paystat-table"></table></div>
+        </div>
+      </div>
+
       <div class="payroll-subview" id="payroll-sub-adjustments">
         <div class="panel">
           <h2>Pay adjustments</h2>
@@ -2098,7 +2111,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.240-missed-top';
+  var FRONTEND_BUILD = '2026-11-25.241-pay-status';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -3021,6 +3034,7 @@
   var PAYROLL_SUBTABS = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'roster', label: 'Roster' },
+    { key: 'status', label: 'Pay status' },
     { key: 'adjustments', label: 'Pay Adjustments' },
     { key: 'reports', label: 'Reports' },
     { key: 'casuals', label: 'Casuals' },
@@ -3105,7 +3119,8 @@
     setTimeout(function () { state.attPrefetching = false; if (!attPanelFresh_(next) && !(state.attInflight && state.attInflight[next])) attLoadPanel_(next, true); }, 300);
   }
   // Staff Management (.150): Dashboard | Payroll (Roster, Pay Adjustments, Reports, Casuals) | Attendance.
-  var PAYROLL_GROUP_KEYS_ = ['roster', 'adjustments', 'reports', 'casuals'];
+  // §160 (Shane, 25 Nov): Dashboard | Roster (employee details only) | Payroll (Pay status, Pay Adjustments, Reports, Casuals) | Attendance.
+  var PAYROLL_GROUP_KEYS_ = ['status', 'adjustments', 'reports', 'casuals'];
   function payrollGroupOf_(key) { return PAYROLL_GROUP_KEYS_.indexOf(key) !== -1 ? 'payroll' : key; }
   function renderPayrollSubNav() {
     applyHrReportsLimits_();
@@ -3122,7 +3137,8 @@
       b.addEventListener('click', onClick); return b;
     };
     if (has('dashboard')) top.appendChild(mk('Dashboard', { 'data-subgroup': 'dashboard', 'data-subview': 'dashboard' }, function () { showPayrollSubTab('dashboard'); }));
-    top.appendChild(mk('Payroll', { 'data-subgroup': 'payroll' }, function () { showPayrollSubTab(state.payrollLastSub || 'roster'); }));
+    top.appendChild(mk('Roster', { 'data-subgroup': 'roster', 'data-subview': 'roster' }, function () { showPayrollSubTab('roster'); }));
+    top.appendChild(mk('Payroll', { 'data-subgroup': 'payroll' }, function () { showPayrollSubTab(state.payrollLastSub || 'status'); }));
     if (has('attendance')) top.appendChild(mk('Attendance', { 'data-subgroup': 'attendance', 'data-subview': 'attendance' }, function () { showPayrollSubTab('attendance'); }));
     visible.forEach(function (t) {
       if (PAYROLL_GROUP_KEYS_.indexOf(t.key) === -1) return;
@@ -3976,8 +3992,8 @@
 
   function renderPayroll() {
     if (!state.payroll) return;
-    document.getElementById('payroll-roster-sub').textContent = monthLabel(state.selectedMonth) + ' — Status updates automatically when you Save or Finalize an employee in Pay Adjustments; resets fresh each month.';
-    renderMonthLockedBadge_('payroll-roster-sub', state.payroll && state.payroll.lockedEmployeeIds);
+    document.getElementById('payroll-roster-sub').textContent = 'Employee details: add, edit or discharge. Who is finalized for the month is under Payroll > Pay status.';
+    renderPayStatus_();   // §160
     // People who start AFTER this pay month are not part of it (a pay month runs 25th to 24th).
     var laterEl = document.getElementById('payroll-startlater-note');
     var later = (state.payroll && state.payroll.startingLater) || [];
@@ -4082,6 +4098,71 @@
     return '<span class="status-badge ' + m[0] + '">' + m[1] + '</span>';
   }
 
+  // §160 (Shane, 25 Nov: "inside payroll have a more clear section who has been finalized"): Payroll > Pay status.
+  var payStatState = { tile: 'open' };
+  function renderPayStatus_() {
+    if (!state.payroll || !document.getElementById('paystat-table')) return;
+    var isHr = state.role === 'hr', locked = {};
+    ((state.payroll && state.payroll.lockedEmployeeIds) || []).forEach(function (id) { locked[String(id)] = true; });
+    var all = state.payroll.employees.filter(function (e) { return e.active; });
+    var cnt = { not_started: 0, in_progress: 0, finalized: 0 };
+    all.forEach(function (e) { var k = cnt[e.status] !== undefined ? e.status : 'not_started'; cnt[k]++; });
+    var done = cnt.finalized, total = all.length, pct = total ? Math.round(done / total * 100) : 0;
+    document.getElementById('paystat-sub').innerHTML = esc(monthLabel(state.selectedMonth)) + ': <strong>' + done + ' of ' + total + '</strong> finalized. Work through each person in Pay Adjustments (Save in progress / Finalize); payroll can be run once everyone is finalized.' +
+      '<div style="margin:8px 0 2px; height:8px; border-radius:6px; background:var(--surface-1); overflow:hidden;"><div style="height:100%; width:' + pct + '%; background:var(--good);"></div></div>';
+    renderMonthLockedBadge_('paystat-sub', state.payroll && state.payroll.lockedEmployeeIds);
+    var tile = payStatState.tile, defs = [['open', 'Still to do', cnt.not_started + cnt.in_progress, 'Not started or in progress', 'var(--warning)'], ['not_started', 'Not started', cnt.not_started, 'Nothing saved yet', 'var(--text-muted)'],
+      ['in_progress', 'In progress', cnt.in_progress, 'Saved, not finalized', 'var(--brand)'], ['finalized', 'Finalized', cnt.finalized, total && done === total ? 'Everyone is finalized' : 'Ready for the payroll run', 'var(--good)'], ['all', 'Everyone', total, 'On payroll this month', 'var(--text-muted)']];
+    document.getElementById('paystat-tiles').innerHTML = '<div class="kpi-grid casual-tiles" style="margin:6px 0 10px;">' + defs.map(function (t) {
+      return '<button type="button" class="kpi-card" data-paystat-tile="' + t[0] + '" style="--dot:' + t[4] + ';' + (tile === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="label">' + t[1] + '</div><div class="big">' + t[2] + '</div><div class="cap">' + t[3] + '</div></button>';
+    }).join('') + '</div>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-paystat-tile]'), function (b) { b.addEventListener('click', function () { payStatState.tile = b.getAttribute('data-paystat-tile'); renderPayStatus_(); }); });
+    var dSel = document.getElementById('paystat-dept'), dCur = dSel.value;
+    var depts = Array.from(new Set(all.map(function (e) { return e.department; }))).sort();
+    dSel.innerHTML = '<option value="">All departments</option>' + depts.map(function (d) { return '<option' + (d === dCur ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('');
+    var q = document.getElementById('paystat-search').value.trim().toLowerCase();
+    var rows = all.filter(function (e) {
+      var st = cnt[e.status] !== undefined ? e.status : 'not_started';
+      if (tile === 'open' && st === 'finalized') return false;
+      if (tile !== 'open' && tile !== 'all' && st !== tile) return false;
+      if (dSel.value && e.department !== dSel.value) return false;
+      return !q || e.name.toLowerCase().indexOf(q) !== -1;
+    }).sort(function (a, b) { return a.department !== b.department ? (a.department < b.department ? -1 : 1) : (a.name < b.name ? -1 : 1); });
+    var byDept = {}; all.forEach(function (e) { var x = byDept[e.department] = byDept[e.department] || { n: 0, f: 0 }; x.n++; if (e.status === 'finalized') x.f++; });
+    // department progress: one chip each, click to show that department
+    var chips = document.getElementById('paystat-depts');
+    if (!chips) { chips = document.createElement('div'); chips.id = 'paystat-depts'; chips.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px;'; document.getElementById('paystat-tiles').after(chips); }
+    chips.innerHTML = depts.map(function (dn) {
+      var x = byDept[dn], full = x.f === x.n, on = dSel.value === dn;
+      return '<button type="button" data-paystat-dept="' + esc(dn) + '" style="border:1px solid ' + (on ? 'var(--brand)' : 'var(--border)') + '; border-radius:999px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; background:' + (full ? 'color-mix(in srgb, var(--good) 14%, transparent)' : 'var(--card)') + ';">' +
+        esc(dn) + ' <strong style="color:' + (full ? 'var(--good)' : 'var(--text-primary)') + ';">' + x.f + '/' + x.n + '</strong>' + (full ? ' ✓' : '') + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(chips.querySelectorAll('[data-paystat-dept]'), function (b) { b.addEventListener('click', function () { var v = b.getAttribute('data-paystat-dept'); dSel.value = dSel.value === v ? '' : v; renderPayStatus_(); }); });
+    var table = document.getElementById('paystat-table');
+    table.innerHTML = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th style="text-align:left;">Department done</th><th style="text-align:left;">Status</th><th style="text-align:left;">Payroll run</th><th></th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (e) {
+        var d = byDept[e.department];
+        return '<tr><td style="text-align:left;">' + esc(e.name) + '</td><td style="text-align:left;">' + esc(e.department) + '</td>' +
+          '<td style="text-align:left; color:' + (d.f === d.n ? 'var(--good)' : 'var(--text-muted)') + ';">' + d.f + ' of ' + d.n + '</td>' +
+          '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
+          '<td style="text-align:left;">' + (locked[String(e.id)] ? '<span style="color:var(--good); font-weight:600;">✓ run</span>' : '<span style="color:var(--text-muted);">not yet</span>') + '</td>' +
+          '<td style="text-align:right; white-space:nowrap;"><div class="roster-actions"><button class="btn secondary small" type="button" data-paystat-open="' + esc(e.id) + '">' + (e.status === 'finalized' ? 'View' : 'Open') + ' in Pay Adjustments</button>' +
+          (isHr ? '' : '<button class="btn secondary small" type="button" data-payslip-id="' + esc(e.id) + '">Payslip</button>') + '</div></td></tr>';
+      }).join('') : '<tr><td colspan="6" style="text-align:left; color:var(--text-muted);">' + (tile === 'open' && total ? '✓ Everyone shown is finalized.' : 'Nobody here.') + '</td></tr>') + '</tbody>';
+    Array.prototype.forEach.call(table.querySelectorAll('[data-payslip-id]'), function (b) { b.addEventListener('click', function () { openPayslip(b.getAttribute('data-payslip-id')); }); });
+    Array.prototype.forEach.call(table.querySelectorAll('[data-paystat-open]'), function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-paystat-open'), df = document.getElementById('adj-dept-filter');
+        showPayrollSubTab('adjustments');
+        if (df && df.value) { df.value = ''; df.dispatchEvent(new Event('change')); }
+        var sel = document.getElementById('adj-employee');
+        if (sel) { sel.value = id; sel.dispatchEvent(new Event('change')); sel.scrollIntoView({ block: 'center' }); }
+      });
+    });
+  }
+  document.getElementById('paystat-dept').addEventListener('change', function () { renderPayStatus_(); });
+  document.getElementById('paystat-search').addEventListener('input', function () { renderPayStatus_(); });
+
   function renderPayrollTable() {
     var search = document.getElementById('payroll-search').value.trim().toLowerCase();
     var deptFilterVal = document.getElementById('payroll-dept-filter').value;
@@ -4120,8 +4201,7 @@
     function actionsHtml(e) {
       // One combined Actions column instead of two separate buttons each
       // with their own blank header — same actions, less visual noise.
-      return '<div class="roster-actions">' + (isHr ? '' : '<button class="btn secondary small" data-payslip-id="' + esc(e.id) + '">Payslip</button>') +
-        '<button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></div>';
+      return '<div class="roster-actions"><button class="btn secondary small" data-edit-id="' + esc(e.id) + '">Edit</button></div>';   // §160 Payslip moved to Payroll > Pay status
     }
 
     var table = document.getElementById('payroll-table');
@@ -4131,7 +4211,7 @@
     // actually has a note.
     var anyNotes = activeRows.some(function (e) { return e.notes && String(e.notes).trim(); });
     var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th title="Days per week">Days</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th style="text-align:left;">Status</th><th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th title="Days per week">Days</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th></th></tr></thead>';
     var body = '<tbody>' + activeRows.map(function (e) {
       var salaryCells = isHr ? '' :
         '<td>' + (e.salaryNeeded ? '<button type="button" class="salary-pill" data-setsalary-id="' + esc(e.id) + '" title="No Basic Salary yet — click to set it">Set salary</button>' : money(e.amount)) + '</td>' +
@@ -4146,7 +4226,6 @@
         salaryCells +
         '<td style="text-align:left;">' + esc(e.dateEmployed) + '</td>' +
         (anyNotes ? '<td class="wrap" style="text-align:left; max-width:160px;">' + esc(e.notes) + '</td>' : '') +
-        '<td style="text-align:left;">' + statusBadgeHtml(e.status) + '</td>' +
         '<td style="text-align:right; white-space:nowrap;">' + actionsHtml(e) + '</td>' +
         '</tr>';
     }).join('') + '</tbody>';
