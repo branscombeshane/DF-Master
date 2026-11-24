@@ -1692,6 +1692,7 @@
             <span class="save-status" id="att-status"></span>
           </div>
           <div style="overflow-x:auto;"><table class="data-table" id="att-table"></table></div>
+          <div id="att-resigned"></div>
         </div>
         <div class="panel" id="btp-panel" data-attpanel="push" style="display:none;">
           <h2>Send changes to BioTime</h2>
@@ -2096,7 +2097,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-24.225-day-rate';
+  var FRONTEND_BUILD = '2026-11-24.226-link-resigned';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7615,7 +7616,7 @@
         d.employees.map(function (e) {
           var taken = e.linkedTo && e.linkedTo !== pp.empCode;
           return '<option value="' + esc(e.id) + '"' + (e.id === pp.employeeId ? ' selected' : '') + (taken ? ' disabled' : '') + '>' +
-            esc(e.name) + (e.employeeNumber ? ' (#' + esc(e.employeeNumber) + ')' : '') + ' · ' + (e.company ? esc(e.company) + ' · ' : '') + esc(e.department) + (taken ? ' — linked to ' + esc(e.linkedTo) : '') + '</option>';
+            esc(e.name) + (e.employeeNumber ? ' (#' + esc(e.employeeNumber) + ')' : '') + ' · ' + (e.company ? esc(e.company) + ' · ' : '') + esc(e.department) + (e.left ? ' · left' + (e.left !== 'yes' ? ' ' + esc(e.left) : '') : '') + (taken ? ' — linked to ' + esc(e.linkedTo) : '') + '</option>';
         }).join('');
     };
     var table = document.getElementById('att-table');
@@ -7625,7 +7626,27 @@
           '</td><td style="text-align:left;">' + esc(pp.department || '') + '</td><td style="text-align:left;"><select data-att-code="' + esc(pp.empCode) + '" style="max-width:340px;">' + opts(pp) + '</select></td>' +
           '<td style="text-align:left; color:var(--text-muted); font-size:12px;">' + esc(pp.method || '') + (pp.linkedBy && pp.linkedBy !== 'system' ? ' · ' + esc(pp.linkedBy) : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="5" style="text-align:left; color:var(--text-muted);">Nobody here.</td></tr>') + '</tbody>';
-    Array.prototype.forEach.call(table.querySelectorAll('select[data-att-code]'), function (sel) {
+    // §144: people who resigned in BioTime come through as a number only: link them here to see their clock-ins
+    var rz = d.resigned || [], rzEl = document.getElementById('att-resigned');
+    rzEl.innerHTML = !rz.length ? '' : '<h3 style="font-size:14px; margin:20px 0 4px;">Resigned in BioTime</h3>' +
+      '<p class="hint" style="margin:0 0 8px;">BioTime sends people who resigned as a number only (no name), so they are not in the list above. Link each one to the payroll employee to see their clock-ins in Daily Attendance (including people who have left). The employee with the same number is suggested.</p>' +
+      '<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th style="text-align:left;">BioTime #</th><th style="text-align:left;">Resigned in BioTime</th><th style="text-align:left;">Payroll employee</th></tr></thead><tbody>' +
+      rz.map(function (r) {
+        var pp = { empCode: r.empCode, employeeId: r.employeeId || '' };
+        var o = opts(pp);
+        if (!r.employeeId && r.suggestId) o = '<option value="">— not linked (suggested: ' + esc(r.suggestName) + ') —</option>' + o.replace(/^<option value="">— not linked —<\/option>/, '');
+        return '<tr' + (!r.employeeId ? ' style="background:color-mix(in srgb, var(--warning) 8%, transparent);"' : '') + '><td style="text-align:left;">' + esc(r.empCode) + '</td><td style="text-align:left;">' + esc(r.resignedOn || '') + '</td>' +
+          '<td style="text-align:left;"><select data-att-code="' + esc(r.empCode) + '" style="max-width:340px;">' + o + '</select>' +
+          (!r.employeeId && r.suggestId ? ' <button type="button" class="btn small" data-att-suggest="' + esc(r.empCode) + '" data-att-suggest-id="' + esc(r.suggestId) + '">Link to ' + esc(r.suggestName) + '</button>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    Array.prototype.forEach.call(rzEl.querySelectorAll('[data-att-suggest]'), function (b) {
+      b.addEventListener('click', function () {
+        var sel = rzEl.querySelector('select[data-att-code="' + b.getAttribute('data-att-suggest') + '"]');
+        sel.value = b.getAttribute('data-att-suggest-id'); b.disabled = true; b.textContent = 'Linking…';
+        sel.dispatchEvent(new Event('change'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#att-table select[data-att-code], #att-resigned select[data-att-code]'), function (sel) {
       sel.addEventListener('change', function () {
         var status = document.getElementById('att-status');
         sel.disabled = true;
