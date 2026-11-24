@@ -2097,7 +2097,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-24.226-link-resigned';
+  var FRONTEND_BUILD = '2026-11-25.227-cpt-no-guess';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7629,7 +7629,7 @@
     // §144: people who resigned in BioTime come through as a number only: link them here to see their clock-ins
     var rz = d.resigned || [], rzEl = document.getElementById('att-resigned');
     rzEl.innerHTML = !rz.length ? '' : '<h3 style="font-size:14px; margin:20px 0 4px;">Resigned in BioTime</h3>' +
-      '<p class="hint" style="margin:0 0 8px;">BioTime sends people who resigned as a number only (no name), so they are not in the list above. Link each one to the payroll employee to see their clock-ins in Daily Attendance (including people who have left). The employee with the same number is suggested.</p>' +
+      '<p class="hint" style="margin:0 0 8px;">BioTime sends people who resigned as a number only (no name), so they are not in the list above. Link each one to the payroll employee to see their clock-ins in Daily Attendance (including people who have left). ' + (d.site === 'cpt' ? '<strong>Cape Town\'s BioTime numbers are not the payroll numbers:</strong> check the name for each number in Cape Town\'s BioTime (Personnel → Resign) before linking.' : 'The employee with the same number is suggested.') + '</p>' +
       '<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th style="text-align:left;">BioTime #</th><th style="text-align:left;">Resigned in BioTime</th><th style="text-align:left;">Payroll employee</th></tr></thead><tbody>' +
       rz.map(function (r) {
         var pp = { empCode: r.empCode, employeeId: r.employeeId || '' };
