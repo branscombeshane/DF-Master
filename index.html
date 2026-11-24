@@ -2098,7 +2098,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.231-clockins-todo';
+  var FRONTEND_BUILD = '2026-11-25.232-lr-reopen';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6993,8 +6993,7 @@
           '<td style="text-align:left; font-size:12px; white-space:normal; min-width:120px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px; white-space:normal; min-width:160px;">' + statusCell(x) + '</td>' +
           '<td style="white-space:normal; text-align:right;"><div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; max-width:260px; margin-left:auto;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : x.status === 'In progress' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Continue</button> ' : !x.status ? '<button class="btn secondary small" type="button" data-lr-decide="' + esc(x.employeeId) + '" data-lr-manual="1" title="For staff who did not or could not use the link: pick their days here">Allocate leave</button> ' : '') +
           (/Approved|Declined/.test(x.status) ? '<button class="btn secondary small" type="button" data-lr-reopen="' + esc(x.employeeId) + '">Reopen</button> ' : '') +
-          '<button class="btn secondary small" type="button" data-lr-wa="' + esc(x.employeeId) + '" title="Open WhatsApp on this device with the message and their private link">WhatsApp</button> ' +
-          '<button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button></div></td></tr>';   // §115 wraps instead of side-scrolling
+          (x.status ? '<button class="btn secondary small" type="button" data-lr-view="' + esc(x.employeeId) + '">View</button>' : '') + '</div></td></tr>';   // §151 View; WhatsApp / Copy link removed from the rows
       }).join('') : '<tr><td colspan="7" style="text-align:left;">Nobody here.</td></tr>') + '</tbody>';
     var tickedN = function () { return Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; }).length; };
     var sb = document.getElementById('lr-send-btn');
@@ -7007,7 +7006,11 @@
       var on = this.checked; rows.forEach(function (x) { if (sendable(x)) lrState.ticked[x.employeeId] = on; }); renderLeaveReqs_();
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-lr-decide]'), function (b) { b.addEventListener('click', function () { openLeaveReqDecide_(b.getAttribute('data-lr-decide'), b.hasAttribute('data-lr-manual')); }); });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-reopen]'), function (b) { b.addEventListener('click', function () { if (confirm('Reopen this request so it can be decided again (and the person can change it before the deadline)?')) lrCall_('reopenLeaveRequest', { employeeId: b.getAttribute('data-lr-reopen') }, b, 'Reopened'); }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-reopen]'), function (b) { b.addEventListener('click', function () {
+      var x = d.people.filter(function (p) { return p.employeeId === b.getAttribute('data-lr-reopen'); })[0] || {};
+      if (confirm('Reopen ' + (x.name || 'this') + '\'s December leave request so it can be decided again?' + (x.approvedDates && x.approvedDates.length ? '\n\nThe leave already given from it (' + lrShortDates_(x.approvedDates) + ') is cancelled.' : ''))) lrCall_('reopenLeaveRequest', { employeeId: b.getAttribute('data-lr-reopen'), cancelLeave: '1' }, b, 'Reopened');
+    }); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lr-view]'), function (b) { b.addEventListener('click', function () { openLeaveReqView_(b.getAttribute('data-lr-view')); }); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-lr-copy],[data-lr-wa]'), function (b) {
       b.addEventListener('click', function () {
         var wa = b.hasAttribute('data-lr-wa'), id = b.getAttribute(wa ? 'data-lr-wa' : 'data-lr-copy'), label = b.textContent;
@@ -7031,13 +7034,36 @@
       });
     });
   }
+  // §151: read-only look at one person's December leave request
+  function openLeaveReqView_(id) {
+    var d = lrState.data, x = d.people.filter(function (p) { return p.employeeId === id; })[0]; if (!x) return;
+    var row = function (k, v) { return '<tr><td style="text-align:left; color:var(--text-muted); width:170px;">' + k + '</td><td style="text-align:left; white-space:normal;">' + v + '</td></tr>'; };
+    var asked = x.dates || [], given = x.approvedDates || [];
+    var notGiven = asked.filter(function (dt) { return given.indexOf(dt) === -1; }), added = given.filter(function (dt) { return asked.indexOf(dt) === -1; });
+    var st = { Requested: 'Asked, not decided yet', 'In progress': 'Being decided', Approved: 'Finalized', Declined: 'Finalized: no leave' }[x.status] || x.status || '';
+    document.getElementById('casual-weeks-title').textContent = 'Leave request — ' + x.name;
+    document.getElementById('casual-weeks-sub').textContent = x.department + ' · December ' + d.year + ' – January ' + (d.year + 1);
+    document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><tbody>' +
+      row('Status', '<strong>' + esc(st) + '</strong>') +
+      row('Asked for', asked.length ? esc(lrShortDates_(asked)) + ' <span class="hint" style="margin:0;">(' + asked.length + ' day' + (asked.length === 1 ? '' : 's') + ')</span>' : '—') +
+      (x.submittedAt ? row('Asked on', esc(x.submittedAt.slice(0, 16))) : '') +
+      (x.status === 'In progress' ? row('Draft', esc(lrShortDates_(x.draftDates || [])) || '—') : '') +
+      (/Approved|Declined/.test(x.status) ? row('Given', given.length ? esc(lrShortDates_(given)) + ' <span class="hint" style="margin:0;">(' + given.length + ' day' + (given.length === 1 ? '' : 's') + ')</span>' : 'No leave') +
+        (notGiven.length ? row('Asked, not given', '<span style="color:var(--warning);">' + esc(lrShortDates_(notGiven)) + '</span>') : '') +
+        (added.length ? row('Added (not asked)', '<span style="color:var(--brand);">' + esc(lrShortDates_(added)) + '</span>') : '') : '') +
+      (x.decidedBy ? row('Decided by', esc(x.decidedBy) + (x.decidedAt ? ' · ' + esc(x.decidedAt.slice(0, 16)) : '')) : '') +
+      (x.decisionNote ? row('Note', esc(x.decisionNote)) : '') +
+      row('Leave left', x.left + ' day' + (x.left === 1 ? '' : 's') + ' this year · ' + x.leftNext + ' next year') + '</tbody></table>';
+    document.getElementById('casual-weeks-modal').classList.add('active');
+  }
   function lrCall_(action, params, btn, okText) {
     var st = document.getElementById('lr-status'), label = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     flashStatus(st, 'Saving…', 'save-status', 0);
     return callApi(action, Object.assign({ year: dpState.year }, params)).then(function (res) {
       if (btn) { btn.disabled = false; btn.textContent = label; }
-      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return false; }
+      if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); window.alert((res && res.error) || 'Could not save');   // §151 also where you clicked
+        return false; }
       lrState.data = res; renderLeaveReqs_(); flashStatus(document.getElementById('lr-status'), okText, 'save-status ok', 3500);
       if (action === 'decideLeaveRequest' || action === 'reopenLeaveRequest') loadDecPlan_(dpState.year);
       return true;
