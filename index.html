@@ -2096,7 +2096,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-24.224-stale-accepted';
+  var FRONTEND_BUILD = '2026-11-24.225-day-rate';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4582,8 +4582,11 @@
     return '<span style="color:var(--critical); font-weight:600;" title="Delete it in this month\'s adjustments (Selected employee) and accept it again">' +
       '⚠ ' + (what ? what + ' ' : '') + acc + ' accepted, clock-ins now ' + (Number(now) || 0) + '</span>';
   }
+  function attPayRateStaleHtml_(acc) {
+    return '<span style="color:var(--critical); font-weight:600;" title="Worked out on an old rate. Delete it in this month\'s adjustments (Selected employee) and accept it again">⚠ ' + acc + ' accepted at an old rate</span>';
+  }
   function attPayStaleCount_(r) {
-    var a = r.accepted, n = 0;
+    var a = r.accepted, n = (r.repriceNeeded || []).length;   // §143 amount on an old rate
     if (a.Absent && attPayStale_(a.Absent, r.absentDays)) n++;
     if (a.LateIn && attPayStale_(a.LateIn, r.lateMin)) n++;
     if (a.Overtime && attPayStale_(a.Overtime, r.otHours)) n++;
@@ -4601,7 +4604,7 @@
       'Absent: a shift day with no clock-in (not on leave or a public holiday), or unpaid leave. Late in: minutes after the shift start, only taken off when the period total is more than ' + d.rules.lateMinOver + ' minutes. ' +
       'Overtime (paid at ' + d.rules.otFactor + 'x): clocking out more than ' + d.rules.otMinOver + ' minutes after the shift ends, in half hours. Hours worked on a day off, or on a public holiday without being planned, are listed under <em>Check</em>: pay them with <em>Pay as overtime</em> (not part of Accept all). Holiday team members who did not come are listed under <em>Check</em> for a warning; no pay is deducted. Nothing goes into pay until you click <em>Accept</em>; check the dates first (click a number).' +
       (d.noShift ? ' ' + d.noShift + ' linked ' + (d.noShift === 1 ? 'person has' : 'people have') + ' no shift in this period, so nothing is worked out for them.' : '') +
-      (function () { var st = d.rows.filter(function (r) { return attPayStaleCount_(r); }); return st.length ? '<div style="margin-top:6px; color:var(--critical); font-weight:600;">⚠ ' + st.length + (st.length === 1 ? ' person has' : ' people have') + ' an accepted line that no longer matches the clock-ins (' + st.slice(0, 6).map(function (r) { return esc(r.name); }).join(', ') + (st.length > 6 ? '…' : '') + '). Delete that line in this month\'s adjustments and accept it again.</div>' : ''; })();
+      (function () { var st = d.rows.filter(function (r) { return attPayStaleCount_(r); }); return st.length ? '<div style="margin-top:6px; color:var(--critical); font-weight:600;">⚠ ' + st.length + (st.length === 1 ? ' person has' : ' people have') + ' an accepted line that no longer matches the clock-ins or the current rate (' + st.slice(0, 6).map(function (r) { return esc(r.name); }).join(', ') + (st.length > 6 ? '…' : '') + '). Delete that line in this month\'s adjustments and accept it again.</div>' : ''; })();
     // §139: department drop-down + name search (Accept all takes only the people showing)
     var deptSel = document.getElementById('attpay-dept'), qIn = document.getElementById('attpay-q');
     var depts = d.rows.map(function (r) { return r.department || ''; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
@@ -4624,6 +4627,7 @@
     };
     var cell = function (r, kind, val, acc, extra) {
       if (acc && attPayStale_(acc, val)) return attPayStaleHtml_(acc, val);   // §142
+      if (acc && (r.repriceNeeded || []).indexOf(({ absent: 'Absent', late: 'LateIn', ot: 'Overtime' })[kind]) !== -1) return attPayRateStaleHtml_(acc);   // §143
       if (acc) return '<span style="color:var(--good); font-weight:600;">✓ ' + acc + '</span>';
       if (!val && !extra) return '';
       return '<button type="button" class="linklike" data-attpay="' + esc(r.employeeId) + '" data-attpay-kind="' + kind + '" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;">' + (val || extra) + '</button>';
@@ -4639,10 +4643,10 @@
           '<td style="text-align:left; font-size:12px; color:var(--warning);">' + (r.noClockOut.length ? cell(r, 'nco', '', '', r.noClockOut.length + ' day' + (r.noClockOut.length === 1 ? '' : 's') + ' with no clock-out') : '') +
             ((r.noClockIn || []).length ? (r.noClockOut.length ? '<br>' : '') + cell(r, 'nci', '', '', r.noClockIn.length + ' day' + (r.noClockIn.length === 1 ? '' : 's') + ' with no clock-in') : '') +
             ((r.holAbsent || []).length ? '<br><span style="color:var(--critical); font-weight:600;">' + cell(r, 'ha', '', '', 'absent on the holiday team: issue a warning') + '</span>' : '') +
-            ((r.holWorked || []).length ? '<br>' + (r.accepted.HolWork ? (attPayStale_(r.accepted.HolWork, r.holWorkHours) ? attPayStaleHtml_(r.accepted.HolWork, r.holWorkHours, 'holiday hours') : '<span style="color:var(--good); font-weight:600;">✓ holiday ' + r.accepted.HolWork + ' h paid as overtime</span>')
+            ((r.holWorked || []).length ? '<br>' + (r.accepted.HolWork ? (attPayStale_(r.accepted.HolWork, r.holWorkHours) ? attPayStaleHtml_(r.accepted.HolWork, r.holWorkHours, 'holiday hours') : (r.repriceNeeded || []).indexOf('HolWork') !== -1 ? attPayRateStaleHtml_('holiday ' + r.accepted.HolWork + ' h') : '<span style="color:var(--good); font-weight:600;">✓ holiday ' + r.accepted.HolWork + ' h paid as overtime</span>')
               : cell(r, 'hw', '', '', 'clocked in on a holiday, not planned' + (r.holWorkHours ? ' (' + r.holWorkHours + ' h)' : '')) +
                 (r.holWorkHours ? ' <button class="btn secondary small" type="button" data-attpay-holwork="' + esc(r.employeeId) + '" style="padding:2px 8px;">Pay as overtime</button>' : '')) : '') +
-            ((r.dayOff || []).length ? '<br>' + (r.accepted.DayOff ? (attPayStale_(r.accepted.DayOff, r.dayOffHours) ? attPayStaleHtml_(r.accepted.DayOff, r.dayOffHours, 'day-off hours') : '<span style="color:var(--good); font-weight:600;">✓ day off ' + r.accepted.DayOff + ' h paid as overtime</span>')
+            ((r.dayOff || []).length ? '<br>' + (r.accepted.DayOff ? (attPayStale_(r.accepted.DayOff, r.dayOffHours) ? attPayStaleHtml_(r.accepted.DayOff, r.dayOffHours, 'day-off hours') : (r.repriceNeeded || []).indexOf('DayOff') !== -1 ? attPayRateStaleHtml_('day off ' + r.accepted.DayOff + ' h') : '<span style="color:var(--good); font-weight:600;">✓ day off ' + r.accepted.DayOff + ' h paid as overtime</span>')
               : cell(r, 'do', '', '', 'worked ' + r.dayOff.length + ' day' + (r.dayOff.length === 1 ? '' : 's') + ' off' + (r.dayOffHours ? ' (' + r.dayOffHours + ' h)' : '')) +
                 (r.dayOffHours ? ' <button class="btn secondary small" type="button" data-attpay-dayoff="' + esc(r.employeeId) + '" style="padding:2px 8px;">Pay as overtime</button>' : '')) : '') + '</td>' +
           '<td>' + (pending ? '<button class="btn small" type="button" data-attpay-accept="' + esc(r.employeeId) + '">Accept</button>' : '') + '</td></tr>';
