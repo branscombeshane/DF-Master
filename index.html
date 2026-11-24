@@ -2097,7 +2097,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.228-cmp-columns';
+  var FRONTEND_BUILD = '2026-11-25.229-adv-negative';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4801,6 +4801,9 @@
       balWrap.innerHTML = '<h3 style="margin:0 0 8px; font-size:14px; color:var(--text-muted);">Outstanding advances</h3>' +
         '<div class="ded-grid">' + pa.advanceBalances.map(function (b) {
           var sched = dedAccounts_().filter(function (a) { return a.employeeId === b.employeeId && a.kind === 'advance' && a.status === 'active'; })[0];
+          if (b.balance < 0) return '<button type="button" class="ded-card" style="border-left-color:var(--critical);" data-adv-open="' + esc(b.employeeId) + '">' +   // §147
+            '<div class="d-name">' + esc(b.name) + '</div><div class="d-sub" style="margin:0 0 6px; color:var(--critical);">Repaid more than was given &middot; click for what to do</div>' +
+            '<div class="d-bal" style="color:var(--critical);">' + dedRand_(-b.balance) + ' over</div></button>';
           return '<button type="button" class="ded-card" style="border-left-color:var(--brand);" data-adv-open="' + esc(b.employeeId) + '">' +
             '<div class="d-name">' + esc(b.name) + '</div>' +
             '<div class="d-sub" style="margin:0 0 6px;">Advance owed' + (sched ? ' &middot; ' + dedRand_(sched.monthly) + ' a month &middot; ' + sched.instalmentsLeft + (sched.instalmentsLeft === 1 ? ' payment' : ' payments') + ' left' : ' &middot; no repayment schedule') + '</div>' +
@@ -5159,6 +5162,15 @@
     if (!b) return;
     dedOpenId = null;
     document.getElementById('ded-modal-title').textContent = b.name + ' — Advance';
+    if (b.balance < 0) {   // §147 (Shane, 25 Nov: "how is this a negative balance"): repayments with no advance recorded
+      document.getElementById('ded-modal-sub').innerHTML = '<span class="status-badge" style="background:color-mix(in srgb, var(--critical) 14%, transparent); color:var(--critical);">Repaid more than was given</span>';
+      document.getElementById('ded-modal-body').innerHTML = '<div class="ded-stats"><div><div class="k">Repaid more than given</div><div class="v" style="color:var(--critical);">' + dedRand_(-b.balance) + '</div></div></div>' +
+        '<p style="font-size:13px; line-height:1.5; margin:0 0 8px;">Advance repayments of ' + dedRand_(-b.balance) + ' more than the advances recorded for ' + esc(b.name) + ' have been taken off their pay. Usually the advance itself was never entered in the app (handed over before advances were tracked here).</p>' +
+        '<ul style="font-size:13px; line-height:1.6; margin:0 0 0 18px; padding:0;"><li>If they did get an advance: select them under <strong>Add</strong> and click <strong>Give advance</strong> with the amount they were given. The balance then shows what they still owe.</li>' +
+        '<li>If the repayment was a mistake: delete the Advance repayment line in the month it was added.</li></ul>';
+      document.getElementById('ded-modal').classList.add('active');
+      return;
+    }
     document.getElementById('ded-modal-sub').innerHTML = '<span class="status-badge in-progress">No repayment schedule</span> &nbsp;Repayments are currently added by hand under Add for this month &rarr; Advance repayment.';
     document.getElementById('ded-modal-body').innerHTML = '<div class="ded-stats"><div><div class="k">Balance owed</div><div class="v">' + dedRand_(b.balance) + '</div></div></div>' +
       '<h3 style="margin:0 0 6px; font-size:14px;">Schedule repayments</h3>' +
