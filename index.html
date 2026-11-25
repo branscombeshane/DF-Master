@@ -2111,7 +2111,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.242-directors-signoff';
+  var FRONTEND_BUILD = '2026-11-25.243-directors-hidden';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -9398,7 +9398,7 @@
   function setContributionFieldsHidden_(hide) {
     ['payroll-medical-contribution', 'payroll-retirement', 'payroll-notes'].forEach(function (fid) {
       var el = document.getElementById(fid); if (!el) return;
-      el.disabled = hide; el.placeholder = hide ? 'Hidden (Management)' : '';
+      el.disabled = hide; el.placeholder = hide ? 'Hidden (Management / Director)' : '';
     });
   }
   // §90: the shift list comes with the roster data; current value pre-selected
