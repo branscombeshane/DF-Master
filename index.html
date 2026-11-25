@@ -998,8 +998,9 @@
         <div class="hint" id="payroll-empnum-hint">Assigned automatically when you save a new employee.</div>
       </div>
       <div class="field">
-        <label>Job title</label>
-        <input type="text" id="payroll-job-title">
+        <label>Role *</label>
+        <select id="payroll-job-title"></select>
+        <div class="hint" id="payroll-job-title-hint"></div>
       </div>
       <div class="field">
         <label>Days per week</label>
@@ -1285,8 +1286,11 @@
           <div class="toolbar">
             <input type="text" id="payroll-search" placeholder="Search by name...">
             <select id="payroll-dept-filter"><option value="">All departments</option></select>
+            <select id="payroll-role-filter"><option value="">All roles</option></select>
             <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="payroll-show-inactive" style="width:auto;">Show discharged</label>
+            <button class="btn secondary small" type="button" id="payroll-roles-btn">Manage roles</button>
           </div>
+          <div id="payroll-role-warn" style="display:none; margin:0 0 10px;"></div>
           <div style="overflow-x:auto;">
             <table class="data-table roster-table" id="payroll-table"></table>
           </div>
@@ -2113,7 +2117,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.247-advance-date';
+  var FRONTEND_BUILD = '2026-11-26.248-roles';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2127,7 +2131,7 @@
   // before a group is even chosen.
   var GROUP_SCOPED_ACTIONS = {
     getFinancialYear: true, getFiscalYears: true,
-    getPayroll: true, addEmployee: true, updateEmployee: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getCasualInsights: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
+    getPayroll: true, addEmployee: true, updateEmployee: true, saveJobRoles: true, dischargeEmployee: true, rehireEmployee: true, editDischargeDate: true, getCasualInsights: true, getEmploymentHistory: true, setPayrollAdjustmentStatus: true,
     runPayroll: true, getPayrollRun: true, getIrp5: true, getPayslip: true, importPayrollHistory: true, getEmployerRecon: true,
     getPayrollAdjustments: true, addAdjustment: true, deleteAdjustment: true, getAttendancePay: true, acceptAttendancePay: true, setAttendancePayCheck: true,
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
@@ -4053,6 +4057,10 @@
     deptFilter.innerHTML = '<option value="">All departments</option>' +
       deptNames.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
     deptFilter.value = currentFilter;
+    // §167 role filter: the company's roles plus "no role / not on the list"
+    var roleFilter = document.getElementById('payroll-role-filter'), curRole = roleFilter.value;
+    roleFilter.innerHTML = '<option value="">All roles</option><option value="__none">No role / not on the list</option>' + (state.payroll.roles || []).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('');
+    roleFilter.value = curRole;
 
     renderPayrollTable();
     // Keeps the Reports > Payslips checkbox table (a separate view over the
@@ -4169,9 +4177,18 @@
     var search = document.getElementById('payroll-search').value.trim().toLowerCase();
     var deptFilterVal = document.getElementById('payroll-dept-filter').value;
     var showInactive = document.getElementById('payroll-show-inactive').checked;
+    var roleFilterVal = document.getElementById('payroll-role-filter').value;
+    var roleList = (state.payroll.roles || []).map(function (r) { return r.toLowerCase(); });
+    var roleOk = function (e) { return roleList.indexOf(String(e.jobTitle || '').trim().toLowerCase()) !== -1; };
+    // §167 how many current people still need a role from the list
+    var noRole = state.payroll.employees.filter(function (e) { return e.active && !roleOk(e); }).length, rw = document.getElementById('payroll-role-warn');
+    rw.style.display = noRole ? '' : 'none';
+    rw.innerHTML = noRole ? '<button type="button" id="payroll-role-warn-btn" style="width:100%; text-align:left; padding:10px 12px; border-radius:8px; border:1px solid var(--critical); background:color-mix(in srgb, var(--critical) 8%, transparent); color:var(--critical); font:inherit; font-weight:600; cursor:pointer;">⚠ ' + noRole + ' current employee' + (noRole === 1 ? ' has' : 's have') + ' no role or one that is not on the list. Click to show them, then Edit each and pick a role.</button>' : '';
+    if (noRole) document.getElementById('payroll-role-warn-btn').onclick = function () { document.getElementById('payroll-role-filter').value = '__none'; renderPayrollTable(); };
 
     function matchesFilters(e) {
       if (deptFilterVal && e.department !== deptFilterVal) return false;
+      if (roleFilterVal === '__none' ? roleOk(e) : roleFilterVal && String(e.jobTitle || '').trim().toLowerCase() !== roleFilterVal.toLowerCase()) return false;
       if (search && e.name.toLowerCase().indexOf(search) === -1) return false;
       return true;
     }
@@ -4213,7 +4230,7 @@
     // actually has a note.
     var anyNotes = activeRows.some(function (e) { return e.notes && String(e.notes).trim(); });
     var salaryHeadCells = isHr ? '' : '<th>Amount</th><th>Day rate</th><th>Hour rate</th>';
-    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th>Emp#</th><th title="Days per week">Days</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th></th></tr></thead>';
+    var head = '<thead><tr><th style="text-align:left;">Name</th><th style="text-align:left;">Department</th><th style="text-align:left;">Role</th><th>Emp#</th><th title="Days per week">Days</th>' + salaryHeadCells + '<th style="text-align:left;">Employed</th>' + (anyNotes ? '<th style="text-align:left;">Notes</th>' : '') + '<th></th></tr></thead>';
     var body = '<tbody>' + activeRows.map(function (e) {
       var salaryCells = isHr ? '' :
         '<td>' + (e.salaryNeeded ? '<button type="button" class="salary-pill" data-setsalary-id="' + esc(e.id) + '" title="No Basic Salary yet — click to set it">Set salary</button>' : money(e.amount)) + '</td>' +
@@ -4223,6 +4240,7 @@
       return '<tr>' +
         '<td class="name-cell" style="text-align:left;">' + esc(e.name) + leavingChip + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
+        '<td style="text-align:left;">' + (roleOk(e) ? esc(e.jobTitle) : '<span style="color:var(--critical); font-weight:600;">' + (e.jobTitle ? esc(e.jobTitle) + ' ⚠' : 'no role ⚠') + '</span>') + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
         salaryCells +
@@ -4273,6 +4291,38 @@
 
   document.getElementById('payroll-search').addEventListener('input', renderPayrollTable);
   document.getElementById('payroll-dept-filter').addEventListener('change', renderPayrollTable);
+  document.getElementById('payroll-role-filter').addEventListener('change', renderPayrollTable);
+  // §167 Manage roles: rename (everyone holding it follows), add, remove (only when nobody current has it)
+  document.getElementById('payroll-roles-btn').addEventListener('click', function () { openRolesModal_(); });
+  function openRolesModal_() {
+    var roles = ((state.payroll && state.payroll.roles) || []).map(function (r) { return { name: r, from: r }; });
+    var count = function (r) { return state.payroll.employees.filter(function (e) { return e.active && String(e.jobTitle || '').trim().toLowerCase() === r.toLowerCase(); }).length; };
+    var draw = function () {
+      document.getElementById('casual-weeks-title').textContent = 'Roles';
+      document.getElementById('casual-weeks-sub').textContent = 'The list of roles to choose from on Add / Edit employee. Renaming a role renames it for everyone who has it. A role can only be removed when nobody current has it.';
+      document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Role</th><th>People</th><th></th></tr></thead><tbody>' +
+        roles.map(function (r, i) { var n = r.from ? count(r.from) : 0;
+          return '<tr><td style="text-align:left;"><input type="text" data-role-i="' + i + '" value="' + esc(r.name) + '" maxlength="40" style="max-width:260px;"></td><td>' + n + '</td><td>' + (n ? '' : '<button class="btn secondary small" type="button" data-role-del="' + i + '">Remove</button>') + '</td></tr>'; }).join('') +
+        '</tbody></table><div class="toolbar" style="margin-top:8px;"><input type="text" id="role-new" placeholder="New role, e.g. Packer" maxlength="40" style="max-width:240px;"><button class="btn secondary small" type="button" id="role-add">Add</button></div>' +
+        '<div class="toolbar"><button class="btn small" type="button" id="role-save">Save roles</button><span class="save-status" id="role-status"></span></div>';
+      Array.prototype.forEach.call(document.querySelectorAll('[data-role-i]'), function (inp) { inp.addEventListener('input', function () { roles[+inp.getAttribute('data-role-i')].name = inp.value; }); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-role-del]'), function (b) { b.addEventListener('click', function () { roles.splice(+b.getAttribute('data-role-del'), 1); draw(); }); });
+      document.getElementById('role-add').addEventListener('click', function () { var v = document.getElementById('role-new').value.trim(); if (v) { roles.push({ name: v, from: '' }); draw(); } });
+      document.getElementById('role-save').addEventListener('click', function () {
+        var b = this, st = document.getElementById('role-status');
+        b.disabled = true; b.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
+        callApi('saveJobRoles', { month: state.selectedMonth, roles: JSON.stringify(roles) }).then(function (res) {
+          b.disabled = false; b.textContent = 'Save roles';
+          if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
+          state.payroll = res.payroll; renderPayroll();
+          roles = res.roles.map(function (r) { return { name: r, from: r }; }); draw();
+          flashStatus(document.getElementById('role-status'), 'Saved', 'save-status ok', 3000);
+        }).catch(function () { b.disabled = false; b.textContent = 'Save roles'; flashStatus(st, 'Network error', 'save-status err', 6000); });
+      });
+    };
+    draw();
+    document.getElementById('casual-weeks-modal').classList.add('active');
+  }
   document.getElementById('payroll-show-inactive').addEventListener('change', renderPayrollTable);
 
   // ================= PDF GENERATION (payslips / certificates) =================
@@ -9308,9 +9358,10 @@
     document.getElementById('payroll-name').value = e.name;
     populateEmployeeDepartmentSelect_(e.department);
     populateShiftSelect_(e.shift || '');
+    populateRoleSelect_(e.jobTitle || '');
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
     document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when this employee was created — edit the Sheet directly if it genuinely needs correcting.';
-    document.getElementById('payroll-job-title').value = e.jobTitle || '';
+
     document.getElementById('payroll-days').value = e.days === null ? '' : e.days;
     // HR accounts never receive 'amount' on the employee object at all (see
     // hrRedactEmployee_) — the field is hidden for them (toggled below), so
@@ -9452,6 +9503,13 @@
     });
   }
   // §90: the shift list comes with the roster data; current value pre-selected
+  // §167 Role is a fixed list per company (managed from the Roster: Manage roles)
+  function populateRoleSelect_(cur) {
+    var sel = document.getElementById('payroll-job-title'); if (!sel) return;
+    var roles = ((state.payroll && state.payroll.roles) || []), match = roles.filter(function (r) { return r.toLowerCase() === String(cur || '').trim().toLowerCase(); })[0] || '';
+    sel.innerHTML = '<option value="">— pick a role —</option>' + roles.map(function (r) { return '<option' + (r === match ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('');
+    document.getElementById('payroll-job-title-hint').innerHTML = cur && !match ? '<span style="color:var(--critical);">Was "' + esc(cur) + '", which is not on the list: pick a role.</span>' : (roles.length ? '' : 'No roles yet: add them with Manage roles on the Roster.');
+  }
   function populateShiftSelect_(cur) {
     var sel = document.getElementById('payroll-shift'); if (!sel) return;
     var names = ((state.payroll && state.payroll.shiftNames) || []).slice();
@@ -9467,7 +9525,7 @@
     populateEmployeeDepartmentSelect_('');
     document.getElementById('payroll-empnum').value = '';
     document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when you save a new employee.';
-    document.getElementById('payroll-job-title').value = '';
+    populateRoleSelect_('');
     document.getElementById('payroll-days').value = '';
     document.getElementById('payroll-amount-field').style.display = state.role === 'hr' ? 'none' : '';
     document.getElementById('payroll-amount').value = '';
