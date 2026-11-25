@@ -2111,7 +2111,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.241-pay-status';
+  var FRONTEND_BUILD = '2026-11-25.242-directors-signoff';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -6840,7 +6840,7 @@
     document.getElementById('casual-weeks-body').innerHTML = '<div class="toolbar" style="flex-wrap:wrap;">' +
       '<select id="absl-type">' + d.types.map(function (t) { return '<option' + (/sick/i.test(t) ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
       '<label style="font-size:13px;"><input type="checkbox" id="absl-half"> Half day</label>' +
-      '<select id="absl-mgr"><option value="">— signed off by (Management) —</option>' + d.managers.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select>' +
+      '<select id="absl-mgr"><option value="">— signed off by (Management / Director) —</option>' + d.managers.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select>' +
       '<input type="text" id="absl-note" placeholder="Note, e.g. sick note brought in on 5 Nov" maxlength="250" style="min-width:260px;"></div>' +
       '<div class="toolbar"><button class="btn small" type="button" id="absl-save">Add leave</button><span class="save-status" id="absl-status"></span></div>';
     document.getElementById('casual-weeks-modal').classList.add('active');
@@ -7608,7 +7608,7 @@
      
       '<div class="toolbar"><input type="date" id="attm-date" value="' + esc(focus || res.days[0].date) + '" aria-label="Date"><input type="time" id="attm-time" aria-label="Time" style="max-width:130px;">' +
       '<input type="text" id="attm-reason" placeholder="Why it was missed" maxlength="200" style="max-width:220px;">' +
-      '<input id="attm-mgr" list="attm-mgr-list" placeholder="Signed off by (Management)" autocomplete="off" style="max-width:240px;"><datalist id="attm-mgr-list">' +
+      '<input id="attm-mgr" list="attm-mgr-list" placeholder="Signed off by (Management / Director)" autocomplete="off" style="max-width:240px;"><datalist id="attm-mgr-list">' +
       (res.managers || []).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist>' +
       '<button class="btn small" id="attm-add" type="button">Add clock-in</button><span class="save-status" id="attm-status"></span></div>' +
       ((res.manual || []).length ? '<table class="data-table" style="margin-top:6px;"><thead><tr><th style="text-align:left;">Clock-in added</th><th style="text-align:left;">Why</th><th style="text-align:left;">Signed off by</th><th style="text-align:left;">Added by</th><th></th></tr></thead><tbody>' +
@@ -7811,7 +7811,7 @@
     var label = function (e) { return e.name + ' — ' + (e.department || 'no department'); };
     document.getElementById('lc-emp-list').innerHTML = (d.employees || []).map(function (e) { return '<option value="' + esc(label(e)) + '"></option>'; }).join('');
     document.getElementById('lc-mgr-list').innerHTML = (d.managers || []).map(function (e) { return '<option value="' + esc(e.name) + '"></option>'; }).join('');
-    document.getElementById('lc-mgr-hint').textContent = (d.managers || []).length ? 'Management department staff only.' : 'Nobody is in a Management department for this company yet, so leave cannot be signed off. Add the managers to the Management department first.';
+    document.getElementById('lc-mgr-hint').textContent = (d.managers || []).length ? 'Management department staff and Directors only.' : 'Nobody is in a Management department for this company yet, so leave cannot be signed off. Add the managers to the Management department first.';
     document.getElementById('lc-type').innerHTML = (d.types || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
     var emp = document.getElementById('lc-emp'), from = document.getElementById('lc-from'), to = document.getElementById('lc-to'), half = document.getElementById('lc-half');
     emp.value = preset && byId[preset] ? label(byId[preset]) : '';
