@@ -2113,7 +2113,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.246-fast-run';
+  var FRONTEND_BUILD = '2026-11-25.247-advance-date';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -5414,6 +5414,11 @@
       '<div><div class="k">Repaid so far</div><div class="v">' + dedRand_(a.paid) + '</div></div>' +
       '<div><div class="k">Balance</div><div class="v">' + dedRand_(a.balance) + '</div></div>' +
       '<div><div class="k">Per month</div><div class="v">' + dedRand_(a.monthly) + '</div></div></div>';
+    // §166 when the advance(s) were given
+    if (a.kind === 'advance') html += '<h3 style="font-size:13px; margin:0 0 4px;">Advance given</h3>' + ((a.given || []).length
+      ? '<table class="data-table" style="margin:0 0 12px;"><thead><tr><th style="text-align:left;">Date given</th><th style="text-align:left;">Pay month</th><th>Amount</th><th style="text-align:left;">Note</th></tr></thead><tbody>' +
+        a.given.map(function (g) { return '<tr><td style="text-align:left;">' + esc(g.date ? attPayDate_(g.date) + ' ' + g.date.slice(0, 4) : '—') + '</td><td style="text-align:left;">' + esc(g.month ? monthLabel(g.month) : '') + '</td><td>' + dedRand_(g.amount) + '</td><td style="text-align:left;">' + esc(g.note || '') + '</td></tr>'; }).join('') + '</tbody></table>'
+      : '<p class="hint" style="margin:0 0 12px;">No advance is recorded for them in the app (it may have been handed over before advances were tracked here).</p>');
     if (a.status === 'active') {
       var endMonth = dedMonthAdd_(a.history.length ? a.history[a.history.length - 1].month : a.startMonth, a.instalmentsLeft);
       html += '<p class="hint" style="margin:0 0 12px; font-size:13px;">' + a.instalmentsLeft + (a.instalmentsLeft === 1 ? ' payment' : ' payments') + ' still to come after what has been deducted — about ' + esc(monthLabel(endMonth)) + '. The last one is whatever is left, so it never over-deducts.</p>';
