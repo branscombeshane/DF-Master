@@ -916,7 +916,9 @@
     </div>
     <div class="field">
       <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;"><input id="lc-half" type="checkbox" style="width:auto;"> Half day (one date only)</label>
+      <label id="lc-cert-wrap" style="display:none; align-items:center; gap:8px; margin:6px 0 0; cursor:pointer;"><input id="lc-cert" type="checkbox" style="width:auto;"> Medical certificate received</label>
       <div class="hint" id="lc-days"></div>
+      <div class="hint" id="lc-limit"></div>
     </div>
     <div class="field">
       <label for="lc-mgr">Signed off by (manager)</label>
@@ -2111,7 +2113,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.243-directors-hidden';
+  var FRONTEND_BUILD = '2026-11-25.244-leave-limits';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -2131,7 +2133,7 @@
     giveAdvance: true, scheduleAdvanceRepayments: true, addDeductionAccount: true, updateDeductionAccount: true, setBaseAmountOverride: true,
     saveDepartments: true, saveCompanies: true, saveCategoryAliases: true,
     getCasualWeek: true, getCasualPending: true, getSalaryNeeded: true, getRerunNeeded: true, saveCasual: true, saveCasualHours: true, submitCasualWeek: true, reopenCasualWeek: true, setCasualPaid: true, saveCasualRates: true,
-    getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, cancelLeave: true,
+    getAttendanceLinks: true, setAttendanceLink: true, getLeaveTaken: true, setLeaveEntitlement: true, captureLeave: true, getLeaveBalance: true, cancelLeave: true,
     getAttendanceDay: true, getAttendancePerson: true, setAttendanceShift: true,
     getAttendanceSettings: true, setHolidayRoster: true, getDecPlanner: true, setDecPlanRequired: true, saveShiftSeason: true, deleteAttSetting: true, getAbsences: true, reviewAbsence: true, getLeaveRequests: true, getLeaveRequestLink: true, getLeaveRequestDays: true, setDecPlanFinal: true, setDecPlanExtra: true, saveDecPlanDay: true, sendRosterWhatsapp: true, sendLeaveRequestWhatsapp: true, decideLeaveRequest: true, reopenLeaveRequest: true, setLeaveRequestDeadline: true, addHoliday: true, removeHoliday: true, saveTimetable: true, renameTimetable: true, saveShiftPattern: true, setAttendanceCutover: true, addManualPunch: true, cancelManualPunch: true
   };
@@ -6840,6 +6842,7 @@
     document.getElementById('casual-weeks-body').innerHTML = '<div class="toolbar" style="flex-wrap:wrap;">' +
       '<select id="absl-type">' + d.types.map(function (t) { return '<option' + (/sick/i.test(t) ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
       '<label style="font-size:13px;"><input type="checkbox" id="absl-half"> Half day</label>' +
+      '<label style="font-size:13px;" title="BCEA s23: needed for more than 2 sick days in a row or the 3rd time off sick in 8 weeks"><input type="checkbox" id="absl-cert"> Medical certificate received</label>' +
       '<select id="absl-mgr"><option value="">— signed off by (Management / Director) —</option>' + d.managers.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select>' +
       '<input type="text" id="absl-note" placeholder="Note, e.g. sick note brought in on 5 Nov" maxlength="250" style="min-width:260px;"></div>' +
       '<div class="toolbar"><button class="btn small" type="button" id="absl-save">Add leave</button><span class="save-status" id="absl-status"></span></div>';
@@ -6848,7 +6851,7 @@
       var b = this, st = document.getElementById('absl-status');
       b.disabled = true; b.textContent = 'Saving…'; flashStatus(st, 'Saving…', 'save-status', 0);
       callApi('reviewAbsence', { month: absState.month, op: 'leave', items: key, type: document.getElementById('absl-type').value, halfDay: document.getElementById('absl-half').checked ? '1' : '',
-        approvedBy: document.getElementById('absl-mgr').value, note: document.getElementById('absl-note').value }).then(function (res) {
+        approvedBy: document.getElementById('absl-mgr').value, note: document.getElementById('absl-note').value, medCert: document.getElementById('absl-cert').checked ? '1' : '' }).then(function (res) {
         b.disabled = false; b.textContent = 'Add leave';
         if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
         document.getElementById('casual-weeks-modal').classList.remove('active');
@@ -7815,7 +7818,7 @@
     document.getElementById('lc-type').innerHTML = (d.types || []).map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
     var emp = document.getElementById('lc-emp'), from = document.getElementById('lc-from'), to = document.getElementById('lc-to'), half = document.getElementById('lc-half');
     emp.value = preset && byId[preset] ? label(byId[preset]) : '';
-    from.value = ''; to.value = ''; half.checked = false;
+    from.value = ''; to.value = ''; half.checked = false; document.getElementById('lc-cert').checked = false; document.getElementById('lc-limit').textContent = '';
     document.getElementById('lc-mgr').value = ''; document.getElementById('lc-note').value = '';
     document.getElementById('lc-error').textContent = ''; document.getElementById('lc-days').textContent = '';
     document.getElementById('leave-cap-modal').classList.add('active');
@@ -7831,6 +7834,24 @@
     var annual = /annual/i.test(document.getElementById('lc-type').value || '');
     document.getElementById('lc-days').textContent = (!from ? '' : (half ? 'Half a day.' : n + ' weekday' + (n === 1 ? '' : 's') + ' (public holidays are left out when counted).')) +
       (annual && P ? ' Annual leave left: ' + P.annualLeft + ' day' + (P.annualLeft === 1 ? '' : 's') + (from && !half && n > P.annualLeft ? ': the days over it can only be saved as Unpaid Leave.' : '.') : '');
+    // §163 sick / family responsibility limits (BCEA), asked from the server
+    var typeV = document.getElementById('lc-type').value || '', sick = /sick/i.test(typeV), fam = /family/i.test(typeV), lim = document.getElementById('lc-limit');
+    document.getElementById('lc-cert-wrap').style.display = sick ? 'flex' : 'none';
+    lim.textContent = '';
+    if (!(sick || fam) || !e || !from) return;
+    var seq = (leaveCaptureDays_.seq = (leaveCaptureDays_.seq || 0) + 1);
+    lim.textContent = 'Checking the ' + (sick ? 'sick' : 'family responsibility') + ' leave balance…';
+    callApi('getLeaveBalance', { employeeId: e.id, type: typeV, from: from, to: to, halfDay: half ? '1' : '' }).then(function (b) {
+      if (seq !== leaveCaptureDays_.seq) return;
+      if (!b || !b.ok) { lim.textContent = (b && b.error) || ''; return; }
+      if (b.unknown) { lim.textContent = 'No start date on the roster, so the legal limit cannot be checked.'; return; }
+      if (b.kind === 'family' && !b.eligible) { lim.innerHTML = '<span style="color:var(--critical);">Not entitled to family responsibility leave (BCEA: after 4 months\' employment, working at least 4 days a week).</span>'; return; }
+      var over = b.requested > b.left;
+      lim.innerHTML = (b.kind === 'sick' ? (b.firstSixMonths ? 'Sick leave, first 6 months: 1 day per 26 days worked (' + b.worked + ' worked) = ' + b.entitlement + '. ' : 'Sick leave cycle ' + esc(b.cycleFrom) + ' to ' + esc(b.cycleTo) + ': ' + b.entitlement + ' days. ')
+          : 'Family responsibility leave, year from ' + esc(b.cycleFrom) + ': 3 days. ') +
+        'Used ' + b.used + ', <strong' + (over ? ' style="color:var(--critical);"' : '') + '>' + b.left + ' left</strong>' + (over ? ': the days over it can only be saved as Unpaid Leave.' : '.') +
+        (b.certNeeded ? '<br><strong style="color:var(--warning);">Medical certificate needed</strong> (' + esc(b.certWhy) + '): tick it once it is in hand, otherwise it can only be Unpaid Leave.' : '');
+    }).catch(function () { if (seq === leaveCaptureDays_.seq) lim.textContent = ''; });
   }
   function saveLeaveCapture_(splitUnpaid) {
     var d = leaveState.data, err = document.getElementById('lc-error'), btn = document.getElementById('lc-save');
@@ -7844,18 +7865,19 @@
     err.textContent = '';
     btn.disabled = true; btn.textContent = 'Saving…';
     callApi('captureLeave', { employeeId: e.id, type: document.getElementById('lc-type').value, from: from, to: to, halfDay: document.getElementById('lc-half').checked ? '1' : '',
-      approvedBy: mgr, note: document.getElementById('lc-note').value.trim(), year: from.slice(0, 4), splitUnpaid: splitUnpaid ? '1' : '' }).then(function (res) {
+      approvedBy: mgr, note: document.getElementById('lc-note').value.trim(), year: from.slice(0, 4), splitUnpaid: splitUnpaid ? '1' : '', medCert: document.getElementById('lc-cert').checked ? '1' : '' }).then(function (res) {
       btn.disabled = false; btn.textContent = 'Save leave';
       // §110: more than the balance: offer the rest as Unpaid Leave (deducted through Pay Adjustments → From clock-ins)
       if (res && res.overBalance) {
-        if (confirm(res.error + '\n\nSave ' + (res.annualDays ? res.annualDays + ' day(s) as Annual Leave and ' : '') + res.unpaidDays + ' day(s) as Unpaid Leave instead?\nUnpaid days are deducted from pay (Pay Adjustments → From clock-ins, as absent days).')) saveLeaveCapture_(true);
+        if (confirm(res.error + '\n\nSave ' + (res.annualDays ? res.annualDays + ' day(s) as ' + (res.paidType || 'Annual Leave') + ' and ' : '') + res.unpaidDays + ' day(s) as Unpaid Leave instead?\nUnpaid days are deducted from pay (Pay Adjustments → From clock-ins, as absent days).')) saveLeaveCapture_(true);
         else err.textContent = res.error + ' Not saved.';
         return;
       }
+      if (res && res.certNeeded) { err.textContent = res.error; document.getElementById('lc-cert-wrap').style.display = 'flex'; document.getElementById('lc-cert').focus(); return; }   // §163
       if (!res || !res.ok) { err.textContent = (res && res.error) || 'Could not save'; return; }
       document.getElementById('leave-cap-modal').classList.remove('active');
       leaveState.data = res; leaveState.year = res.year; renderLeaveTaken_();
-      flashStatus(document.getElementById('leave-status'), 'Saved: ' + res.saved.name + ', ' + (res.saved.split ? res.saved.split.annual + ' day(s) Annual + ' + res.saved.split.unpaid + ' day(s) Unpaid Leave' : res.saved.type) + ' ' + res.saved.from + (res.saved.to !== res.saved.from ? ' to ' + res.saved.to : '') + ' (signed off by ' + res.saved.approvedBy + ')', 'save-status ok', 8000);
+      flashStatus(document.getElementById('leave-status'), 'Saved: ' + res.saved.name + ', ' + (res.saved.split ? res.saved.split.annual + ' day(s) ' + (res.saved.split.paidType || 'Annual') + ' + ' + res.saved.split.unpaid + ' day(s) Unpaid Leave' : res.saved.type) + ' ' + res.saved.from + (res.saved.to !== res.saved.from ? ' to ' + res.saved.to : '') + ' (signed off by ' + res.saved.approvedBy + ')', 'save-status ok', 8000);
     }).catch(function () { btn.disabled = false; btn.textContent = 'Save leave'; err.textContent = 'Network error'; });
   }
   (function () {
@@ -7875,7 +7897,7 @@
     if (lcCancel) lcCancel.addEventListener('click', function () { document.getElementById('leave-cap-modal').classList.remove('active'); });
     var lcSave = document.getElementById('lc-save');
     if (lcSave) lcSave.addEventListener('click', function () { saveLeaveCapture_(false); });
-    ['lc-emp', 'lc-type'].forEach(function (idn) { var el = document.getElementById(idn); if (el) { el.addEventListener('change', leaveCaptureDays_); el.addEventListener('input', leaveCaptureDays_); } });   // §110 balance line
+    ['lc-emp', 'lc-type'].forEach(function (idn) { var el = document.getElementById(idn); if (el) { el.addEventListener('change', leaveCaptureDays_); el.addEventListener('input', leaveCaptureDays_); } });   // §110 balance line (§163 asks the server only once a known employee and a date are filled in)
   })();
 
   // ---------------- Attendance: BioTime link-up (SETUP §58) ----------------
