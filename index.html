@@ -1050,7 +1050,7 @@
             <input type="text" id="payroll-editdischarge-reason">
           </div>
         </div>
-        <div class="hint" style="margin:0 0 10px;">Owner only. Their final pay is worked out again up to the new date (a Basic Salary you typed in by hand is left alone), and the history line is corrected with a note of the old date. If payroll was already run for the month, you will be asked for the Owner password and will need to re-run payroll for them.</div>
+        <div class="hint" style="margin:0 0 10px;">Owner only. Their final pay is worked out again up to the new date (a Basic Salary you typed in by hand is left alone), and the history line is corrected with a note of the old date. If payroll was already run for the month, you will be asked for the Owner password and will need to re-run payroll for them.<br><strong>Save new date saves it straight away</strong>: you do not need to click Update employee afterwards.</div>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn small" id="payroll-editdischarge-confirm-btn">Save new date</button>
           <button type="button" class="btn secondary small" id="payroll-editdischarge-cancel-btn">Cancel</button>
@@ -1067,7 +1067,7 @@
             <input type="text" id="payroll-discharge-reason">
           </div>
         </div>
-        <div class="hint" style="margin:0 0 10px;">Their pay for the pay month that includes this date (25th to 24th) is worked out up to and including the discharge date, by working days. They are then taken off payroll from the next pay month. Their payslip, Payments report and SARS figures follow that amount automatically.</div>
+        <div class="hint" style="margin:0 0 10px;">Their pay for the pay month that includes this date (25th to 24th) is worked out up to and including the discharge date, by working days. They are then taken off payroll from the next pay month. Their payslip, Payments report and SARS figures follow that amount automatically.<br><strong>Confirm discharge saves it straight away</strong>: you do not need to click Update employee afterwards.</div>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn danger small" id="payroll-discharge-confirm-btn">Confirm discharge</button>
           <button type="button" class="btn secondary small" id="payroll-discharge-cancel-btn">Cancel</button>
@@ -2113,7 +2113,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-25.244-leave-limits';
+  var FRONTEND_BUILD = '2026-11-25.245-discharge-clear';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -9359,6 +9359,29 @@
     });
 
     document.getElementById('employee-modal').classList.add('active');
+    state.empFormSnap = empFormSnapshot_();   // §164 to know whether other details were changed before a discharge
+  }
+  // §164 (Shane, 25 Nov: "not sure if it's saved or if I need to click Update employee afterwards")
+  function empFormSnapshot_() {
+    var skip = document.querySelectorAll('#payroll-discharge-fields *, #payroll-rehire-fields *, #payroll-editdischarge-fields *');
+    var sk = new Set(Array.prototype.slice.call(skip));
+    return Array.prototype.filter.call(document.querySelectorAll('#employee-modal input, #employee-modal select, #employee-modal textarea'), function (el) { return !sk.has(el) && el.id; })
+      .map(function (el) { return el.id + '=' + (el.type === 'checkbox' ? el.checked : el.value); }).join('|');
+  }
+  function empFormDirty_() { return !!state.empFormSnap && empFormSnapshot_() !== state.empFormSnap; }
+  function empStatusAskUnsaved_(what) {
+    return !empFormDirty_() || confirm('You also changed other details of this employee that are not saved yet.\n\n' + what + ' is saved on its own and the window then closes, so those other changes would be lost.\n\nClick Cancel to keep them (then click Update employee first), or OK to ' + what.toLowerCase() + ' now.');
+  }
+  // after a discharge / rehire / date change: close the window and say clearly on the roster that it is done
+  function empStatusDone_(title, detailHtml) {
+    resetEmployeeForm();
+    var box = document.getElementById('payroll-prorata-notice'), txt = document.getElementById('payroll-prorata-notice-text');
+    if (!box || !txt) { alert(title); return; }
+    txt.innerHTML = '<div style="font-size:15px; font-weight:700; color:var(--good); margin-bottom:4px;">✓ ' + esc(title) + '</div>' +
+      '<div style="margin-bottom:4px;">Saved. Nothing else to do: you do not need to click Update employee.</div>' + (detailHtml ? '<div>' + detailHtml + '</div>' : '');
+    box.style.borderLeftColor = 'var(--good)';
+    box.style.display = '';
+    if (box.offsetParent) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
   // "Employed since <date>" / "Discharged on <date> — Reason: <text>" — the
@@ -9684,25 +9707,26 @@
     var reason = document.getElementById('payroll-editdischarge-reason').value.trim();
     var status = document.getElementById('payroll-save-status');
     var btn = document.getElementById('payroll-editdischarge-confirm-btn');
-    btn.disabled = true;
+    if (!empStatusAskUnsaved_('Change the discharge date')) return;
+    var name = document.getElementById('payroll-name').value;
+    btn.disabled = true; btn.textContent = 'Saving…';
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApiWithOwnerUnlock('editDischargeDate', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
-      btn.disabled = false;
+      btn.disabled = false; btn.textContent = 'Save new date';
       if (res.ok) {
-        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        flashStatus(status, '', 'save-status', 0);
         showLeaverNotice_(res.leaver, date);
+        var detail = document.getElementById('payroll-prorata-notice-text').innerHTML;
         loadRerunNeeded_();
         state.payroll = res.payroll;
         renderPayroll();
         if (state.payrollAdjustments) renderAdjustments();
-        startEditEmployee(id);
-        var noticeTxt = document.getElementById('payroll-prorata-notice-text');
-        if (noticeTxt) document.getElementById('payroll-status-display').insertAdjacentHTML('beforeend', '<div style="margin-top:6px; padding:8px 10px; border-left:4px solid var(--accent, #2f7d32); background:var(--surface-1); border-radius:6px; font-size:13px;">' + noticeTxt.innerHTML + '</div>');
-      } else {
+        empStatusDone_(name + '\'s discharge date changed to ' + date, detail);   // §164
+      } else if (res.locked) { flashStatus(status, '', 'save-status', 0); } else {
         flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to change the discharge date.';
       }
     }).catch(function () {
-      btn.disabled = false;
+      btn.disabled = false; btn.textContent = 'Save new date';
       flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
     });
   });
@@ -9733,22 +9757,26 @@
     errEl.textContent = '';
     var reason = document.getElementById('payroll-discharge-reason').value.trim();
     var status = document.getElementById('payroll-save-status');
+    if (!empStatusAskUnsaved_('Discharge')) return;
+    var btn = this, name = document.getElementById('payroll-name').value;
+    btn.disabled = true; btn.textContent = 'Discharging…';
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApiWithOwnerUnlock('dischargeEmployee', { id: id, dateDischarged: date, reason: reason, month: state.selectedMonth }).then(function (res) {
+      btn.disabled = false; btn.textContent = 'Confirm discharge';
       if (res.ok) {
-        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        flashStatus(status, '', 'save-status', 0);
         showLeaverNotice_(res.leaver, date);
+        var detail = document.getElementById('payroll-prorata-notice-text').innerHTML;
         loadRerunNeeded_();
         state.payroll = res.payroll;
         renderPayroll();
         if (state.payrollAdjustments) renderAdjustments();
-        startEditEmployee(id); // refresh the modal in place with the new status + history
-        var noticeTxt = document.getElementById('payroll-prorata-notice-text');
-        if (noticeTxt) document.getElementById('payroll-status-display').insertAdjacentHTML('beforeend', '<div style="margin-top:6px; padding:8px 10px; border-left:4px solid var(--accent, #2f7d32); background:var(--surface-1); border-radius:6px; font-size:13px;">' + noticeTxt.innerHTML + '</div>');
-      } else {
+        empStatusDone_(name + ' discharged on ' + date, detail);   // §164
+      } else if (!res.locked) {
         flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to discharge employee.';
       }
     }).catch(function () {
+      btn.disabled = false; btn.textContent = 'Confirm discharge';
       flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
     });
   });
@@ -9761,18 +9789,23 @@
     if (!date) { errEl.textContent = 'Rehire date is required.'; return; }
     errEl.textContent = '';
     var status = document.getElementById('payroll-save-status');
+    if (!empStatusAskUnsaved_('Rehire')) return;
+    var btn = this, label = btn.textContent, name = document.getElementById('payroll-name').value;
+    btn.disabled = true; btn.textContent = 'Rehiring…';
     flashStatus(status, 'Saving…', 'save-status', 0);
     callApi('rehireEmployee', { id: id, dateEmployed: date, month: state.selectedMonth }).then(function (res) {
+      btn.disabled = false; btn.textContent = label;
       if (res.ok) {
-        flashStatus(status, 'Saved', 'save-status ok', 3000);
+        flashStatus(status, '', 'save-status', 0);
         state.payroll = res.payroll;
         renderPayroll();
         if (state.payrollAdjustments) renderAdjustments();
-        startEditEmployee(id); // refresh the modal in place with the new status + history
+        empStatusDone_(name + ' rehired from ' + date, 'Back on the roster and on payroll from the pay month that includes ' + esc(date) + '.');   // §164
       } else {
         flashStatus(status, '', 'save-status', 0); errEl.textContent = res.error || 'Failed to rehire employee.';
       }
     }).catch(function () {
+      btn.disabled = false; btn.textContent = label;
       flashStatus(status, '', 'save-status', 0); errEl.textContent = 'Network error.';
     });
   });
