@@ -1002,6 +1002,11 @@
         <select id="payroll-job-title"></select>
         <div class="hint" id="payroll-job-title-hint"></div>
       </div>
+      <div class="field" id="payroll-extra-roles-field" style="display:none;">
+        <label>Extra roles</label>
+        <div id="payroll-extra-roles" style="display:flex; flex-wrap:wrap; gap:4px 14px;"></div>
+        <div class="hint">On top of the main role, e.g. a driver who is also a checker.</div>
+      </div>
       <div class="field">
         <label>Days per week</label>
         <input type="number" step="0.5" id="payroll-days">
@@ -2117,7 +2122,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-26.250-fast-decide';
+  var FRONTEND_BUILD = '2026-11-26.251-extra-roles';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4059,7 +4064,8 @@
     deptFilter.value = currentFilter;
     // §167 role filter: the company's roles plus "no role / not on the list"
     var roleFilter = document.getElementById('payroll-role-filter'), curRole = roleFilter.value;
-    roleFilter.innerHTML = '<option value="">All roles</option><option value="__none">No role / not on the list</option>' + (state.payroll.roles || []).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('');
+    roleFilter.innerHTML = '<option value="">All roles</option><option value="__none">No role / not on the list</option>' + (state.payroll.roles || []).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('') +
+      (state.payroll.extraRoles || []).map(function (r) { return '<option value="x:' + esc(r) + '">' + esc(r) + ' (extra role)</option>'; }).join('');   // §169
     roleFilter.value = curRole;
 
     renderPayrollTable();
@@ -4188,7 +4194,8 @@
 
     function matchesFilters(e) {
       if (deptFilterVal && e.department !== deptFilterVal) return false;
-      if (roleFilterVal === '__none' ? roleOk(e) : roleFilterVal && String(e.jobTitle || '').trim().toLowerCase() !== roleFilterVal.toLowerCase()) return false;
+      if (roleFilterVal.indexOf('x:') === 0) { if ((e.extraRoles || []).indexOf(roleFilterVal.slice(2)) === -1) return false; }   // §169 extra role
+      else if (roleFilterVal === '__none' ? roleOk(e) : roleFilterVal && String(e.jobTitle || '').trim().toLowerCase() !== roleFilterVal.toLowerCase()) return false;
       if (search && e.name.toLowerCase().indexOf(search) === -1) return false;
       return true;
     }
@@ -4240,7 +4247,8 @@
       return '<tr>' +
         '<td class="name-cell" style="text-align:left;">' + esc(e.name) + leavingChip + '</td>' +
         '<td style="text-align:left;">' + esc(e.department) + '</td>' +
-        '<td style="text-align:left;">' + (roleOk(e) ? esc(e.jobTitle) : '<span style="color:var(--critical); font-weight:600;">' + (e.jobTitle ? esc(e.jobTitle) + ' ⚠' : 'no role ⚠') + '</span>') + '</td>' +
+        '<td style="text-align:left;">' + (roleOk(e) ? esc(e.jobTitle) : '<span style="color:var(--critical); font-weight:600;">' + (e.jobTitle ? esc(e.jobTitle) + ' ⚠' : 'no role ⚠') + '</span>') +
+          (e.extraRoles || []).map(function (x) { return ' <span class="xrole-chip" style="display:inline-block; padding:0 6px; border-radius:9px; border:1px solid var(--brand); color:var(--brand); font-size:11px; white-space:nowrap;">+ ' + esc(x) + '</span>'; }).join('') + '</td>' +
         '<td>' + esc(e.employeeNumber) + '</td>' +
         '<td>' + (e.days === null ? '—' : e.days) + '</td>' +
         salaryCells +
@@ -4295,23 +4303,27 @@
   // §167 Manage roles: rename (everyone holding it follows), add, remove (only when nobody current has it)
   document.getElementById('payroll-roles-btn').addEventListener('click', function () { openRolesModal_(); });
   function openRolesModal_() {
-    var roles = ((state.payroll && state.payroll.roles) || []).map(function (r) { return { name: r, from: r }; });
-    var peopleOf = function (r) { return state.payroll.employees.filter(function (e) { return e.active && String(e.jobTitle || '').trim().toLowerCase() === r.toLowerCase(); }).sort(function (a, b) { return a.department !== b.department ? (a.department < b.department ? -1 : 1) : (a.name < b.name ? -1 : 1); }); };
+    var mkRoles = function (main, extra) { return (main || []).map(function (r) { return { name: r, from: r, extra: false }; }).concat((extra || []).map(function (r) { return { name: r, from: r, extra: true }; })); };
+    var roles = mkRoles(state.payroll && state.payroll.roles, state.payroll && state.payroll.extraRoles);
+    var wasExtra = {}; roles.forEach(function (r) { if (r.extra) wasExtra[r.from] = true; });
+    var peopleOf = function (r) { return state.payroll.employees.filter(function (e) { return e.active && (wasExtra[r] ? (e.extraRoles || []).indexOf(r) !== -1 : String(e.jobTitle || '').trim().toLowerCase() === r.toLowerCase()); }).sort(function (a, b) { return a.department !== b.department ? (a.department < b.department ? -1 : 1) : (a.name < b.name ? -1 : 1); }); };
     var count = function (r) { return peopleOf(r).length; };
     var openRole = null;   // §167b the role whose people are listed
     var draw = function () {
       document.getElementById('casual-weeks-title').textContent = 'Roles';
-      document.getElementById('casual-weeks-sub').textContent = 'The list of roles to choose from on Add / Edit employee. Renaming a role renames it for everyone who has it. A role can only be removed when nobody current has it.';
-      document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Role</th><th>People</th><th></th></tr></thead><tbody>' +
+      document.getElementById('casual-weeks-sub').textContent = 'The list of roles to choose from on Add / Edit employee. Renaming a role renames it for everyone who has it. A role can only be removed when nobody current has it. Tick "Extra" for a role people hold on top of their main role (e.g. Checker): it shows as tick boxes on the employee form instead of in the Role list.';
+      document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Role</th><th title="Held on top of the main role">Extra</th><th>People</th><th></th></tr></thead><tbody>' +
         roles.map(function (r, i) { var n = r.from ? count(r.from) : 0, open = openRole === r.from && n;
           return '<tr><td style="text-align:left;"><input type="text" data-role-i="' + i + '" value="' + esc(r.name) + '" maxlength="40" style="max-width:260px;"></td>' +
+            '<td><input type="checkbox" data-role-x="' + i + '"' + (r.extra ? ' checked' : '') + (n ? ' disabled title="People have this role: make a new role instead"' : '') + '></td>' +
             '<td>' + (n ? '<button type="button" class="linklike" data-role-people="' + esc(r.from) + '" title="Show who has this role" style="background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer;">' + n + '</button>' : '0') + '</td>' +
             '<td>' + (n ? '' : '<button class="btn secondary small" type="button" data-role-del="' + i + '">Remove</button>') + '</td></tr>' +
-            (open ? '<tr><td colspan="3" style="text-align:left; background:var(--surface-1);">' + peopleOf(r.from).map(function (e) {
+            (open ? '<tr><td colspan="4" style="text-align:left; background:var(--surface-1);">' + peopleOf(r.from).map(function (e) {
               return '<div style="display:flex; align-items:center; gap:8px; padding:3px 0;"><span style="flex:1 1 auto;">' + esc(e.name) + ' <span style="color:var(--text-muted);">' + esc(e.department) + '</span></span><button class="btn secondary small" type="button" data-role-edit="' + esc(e.id) + '" style="padding:2px 8px;">Edit</button></div>'; }).join('') + '</td></tr>' : ''); }).join('') +
         '</tbody></table><div class="toolbar" style="margin-top:8px;"><input type="text" id="role-new" placeholder="New role, e.g. Packer" maxlength="40" style="max-width:240px;"><button class="btn secondary small" type="button" id="role-add">Add</button></div>' +
         '<div class="toolbar"><button class="btn small" type="button" id="role-save">Save roles</button><span class="save-status" id="role-status"></span></div>';
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-i]'), function (inp) { inp.addEventListener('input', function () { roles[+inp.getAttribute('data-role-i')].name = inp.value; }); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-role-x]'), function (c) { c.addEventListener('change', function () { roles[+c.getAttribute('data-role-x')].extra = c.checked; }); });
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-people]'), function (b) { b.addEventListener('click', function () { var v = b.getAttribute('data-role-people'); openRole = openRole === v ? null : v; draw(); }); });
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-edit]'), function (b) { b.addEventListener('click', function () { document.getElementById('casual-weeks-modal').classList.remove('active'); startEditEmployee(b.getAttribute('data-role-edit')); }); });
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-del]'), function (b) { b.addEventListener('click', function () { roles.splice(+b.getAttribute('data-role-del'), 1); draw(); }); });
@@ -4323,7 +4335,7 @@
           b.disabled = false; b.textContent = 'Save roles';
           if (!res || !res.ok) { flashStatus(st, (res && res.error) || 'Could not save', 'save-status err', 9000); return; }
           state.payroll = res.payroll; renderPayroll();
-          roles = res.roles.map(function (r) { return { name: r, from: r }; }); draw();
+          roles = mkRoles(res.roles, res.extraRoles); wasExtra = {}; roles.forEach(function (r) { if (r.extra) wasExtra[r.from] = true; }); draw();
           flashStatus(document.getElementById('role-status'), 'Saved', 'save-status ok', 3000);
         }).catch(function () { b.disabled = false; b.textContent = 'Save roles'; flashStatus(st, 'Network error', 'save-status err', 6000); });
       });
@@ -9366,7 +9378,7 @@
     document.getElementById('payroll-name').value = e.name;
     populateEmployeeDepartmentSelect_(e.department);
     populateShiftSelect_(e.shift || '');
-    populateRoleSelect_(e.jobTitle || '');
+    populateRoleSelect_(e.jobTitle || '', e.extraRoles || []);
     document.getElementById('payroll-empnum').value = e.employeeNumber || '';
     document.getElementById('payroll-empnum-hint').textContent = 'Assigned automatically when this employee was created — edit the Sheet directly if it genuinely needs correcting.';
 
@@ -9512,11 +9524,15 @@
   }
   // §90: the shift list comes with the roster data; current value pre-selected
   // §167 Role is a fixed list per company (managed from the Roster: Manage roles)
-  function populateRoleSelect_(cur) {
+  function populateRoleSelect_(cur, xtra) {
     var sel = document.getElementById('payroll-job-title'); if (!sel) return;
     var roles = ((state.payroll && state.payroll.roles) || []), match = roles.filter(function (r) { return r.toLowerCase() === String(cur || '').trim().toLowerCase(); })[0] || '';
     sel.innerHTML = '<option value="">— pick a role —</option>' + roles.map(function (r) { return '<option' + (r === match ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('');
     document.getElementById('payroll-job-title-hint').innerHTML = cur && !match ? '<span style="color:var(--critical);">Was "' + esc(cur) + '", which is not on the list: pick a role.</span>' : (roles.length ? '' : 'No roles yet: add them with Manage roles on the Roster.');
+    // §169 extra roles (e.g. Checker) as tick boxes
+    var xr = ((state.payroll && state.payroll.extraRoles) || []), have = xtra || [];
+    document.getElementById('payroll-extra-roles-field').style.display = xr.length ? '' : 'none';
+    document.getElementById('payroll-extra-roles').innerHTML = xr.map(function (r, i) { return '<label style="display:inline-flex; align-items:center; gap:5px; font-weight:400;"><input type="checkbox" id="payroll-xrole-' + i + '" data-xrole="' + esc(r) + '"' + (have.indexOf(r) !== -1 ? ' checked' : '') + '> ' + esc(r) + '</label>'; }).join('');
   }
   function populateShiftSelect_(cur) {
     var sel = document.getElementById('payroll-shift'); if (!sel) return;
@@ -9647,6 +9663,7 @@
       employeeNumber: document.getElementById('payroll-empnum').value.trim(),
       shift: shiftPick,
       jobTitle: document.getElementById('payroll-job-title').value.trim(),
+      extraRoles: Array.prototype.filter.call(document.querySelectorAll('#payroll-extra-roles [data-xrole]'), function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-xrole'); }).join(','),
       days: document.getElementById('payroll-days').value,
       dateEmployed: document.getElementById('payroll-date').value.trim(),
       address: document.getElementById('payroll-address').value.trim(),
