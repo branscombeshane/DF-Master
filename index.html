@@ -2117,7 +2117,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-26.248-roles';
+  var FRONTEND_BUILD = '2026-11-26.249-role-people';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -4296,16 +4296,24 @@
   document.getElementById('payroll-roles-btn').addEventListener('click', function () { openRolesModal_(); });
   function openRolesModal_() {
     var roles = ((state.payroll && state.payroll.roles) || []).map(function (r) { return { name: r, from: r }; });
-    var count = function (r) { return state.payroll.employees.filter(function (e) { return e.active && String(e.jobTitle || '').trim().toLowerCase() === r.toLowerCase(); }).length; };
+    var peopleOf = function (r) { return state.payroll.employees.filter(function (e) { return e.active && String(e.jobTitle || '').trim().toLowerCase() === r.toLowerCase(); }).sort(function (a, b) { return a.department !== b.department ? (a.department < b.department ? -1 : 1) : (a.name < b.name ? -1 : 1); }); };
+    var count = function (r) { return peopleOf(r).length; };
+    var openRole = null;   // §167b the role whose people are listed
     var draw = function () {
       document.getElementById('casual-weeks-title').textContent = 'Roles';
       document.getElementById('casual-weeks-sub').textContent = 'The list of roles to choose from on Add / Edit employee. Renaming a role renames it for everyone who has it. A role can only be removed when nobody current has it.';
       document.getElementById('casual-weeks-body').innerHTML = '<table class="data-table"><thead><tr><th style="text-align:left;">Role</th><th>People</th><th></th></tr></thead><tbody>' +
-        roles.map(function (r, i) { var n = r.from ? count(r.from) : 0;
-          return '<tr><td style="text-align:left;"><input type="text" data-role-i="' + i + '" value="' + esc(r.name) + '" maxlength="40" style="max-width:260px;"></td><td>' + n + '</td><td>' + (n ? '' : '<button class="btn secondary small" type="button" data-role-del="' + i + '">Remove</button>') + '</td></tr>'; }).join('') +
+        roles.map(function (r, i) { var n = r.from ? count(r.from) : 0, open = openRole === r.from && n;
+          return '<tr><td style="text-align:left;"><input type="text" data-role-i="' + i + '" value="' + esc(r.name) + '" maxlength="40" style="max-width:260px;"></td>' +
+            '<td>' + (n ? '<button type="button" class="linklike" data-role-people="' + esc(r.from) + '" title="Show who has this role" style="background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer;">' + n + '</button>' : '0') + '</td>' +
+            '<td>' + (n ? '' : '<button class="btn secondary small" type="button" data-role-del="' + i + '">Remove</button>') + '</td></tr>' +
+            (open ? '<tr><td colspan="3" style="text-align:left; background:var(--surface-1);">' + peopleOf(r.from).map(function (e) {
+              return '<div style="display:flex; align-items:center; gap:8px; padding:3px 0;"><span style="flex:1 1 auto;">' + esc(e.name) + ' <span style="color:var(--text-muted);">' + esc(e.department) + '</span></span><button class="btn secondary small" type="button" data-role-edit="' + esc(e.id) + '" style="padding:2px 8px;">Edit</button></div>'; }).join('') + '</td></tr>' : ''); }).join('') +
         '</tbody></table><div class="toolbar" style="margin-top:8px;"><input type="text" id="role-new" placeholder="New role, e.g. Packer" maxlength="40" style="max-width:240px;"><button class="btn secondary small" type="button" id="role-add">Add</button></div>' +
         '<div class="toolbar"><button class="btn small" type="button" id="role-save">Save roles</button><span class="save-status" id="role-status"></span></div>';
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-i]'), function (inp) { inp.addEventListener('input', function () { roles[+inp.getAttribute('data-role-i')].name = inp.value; }); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-role-people]'), function (b) { b.addEventListener('click', function () { var v = b.getAttribute('data-role-people'); openRole = openRole === v ? null : v; draw(); }); });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-role-edit]'), function (b) { b.addEventListener('click', function () { document.getElementById('casual-weeks-modal').classList.remove('active'); startEditEmployee(b.getAttribute('data-role-edit')); }); });
       Array.prototype.forEach.call(document.querySelectorAll('[data-role-del]'), function (b) { b.addEventListener('click', function () { roles.splice(+b.getAttribute('data-role-del'), 1); draw(); }); });
       document.getElementById('role-add').addEventListener('click', function () { var v = document.getElementById('role-new').value.trim(); if (v) { roles.push({ name: v, from: '' }); draw(); } });
       document.getElementById('role-save').addEventListener('click', function () {
