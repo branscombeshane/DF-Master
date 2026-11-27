@@ -2122,7 +2122,7 @@
   // BACKEND_BUILD — see the comment next to that constant for why this
   // exists. If these two ever don't match after logging in, a banner says
   // so instead of leaving you to guess why something new isn't showing up.
-  var FRONTEND_BUILD = '2026-11-26.253-rostered-for-packing';
+  var FRONTEND_BUILD = '2026-11-27.254-planner-by-role';
 
   var ENTITY_COLOR_VAR = { jhb: '--series-jhb', veg: '--series-veg', pyroca: '--series-pyroca', cpt: '--series-cpt', blendid: '--series-blendid' };
   var SECTION_LABELS = { dashboard: 'Dashboard', history: 'History', payroll: 'Staff Management', vehicles: 'Vehicles', sales: 'Sales' };
@@ -7011,7 +7011,7 @@
         (c.final && !c.closed ? '<span style="position:absolute; top:0; right:2px; font-size:10px; color:var(--good); font-weight:700;">✓</span>' : '') +
         (c.closed ? '<span style="color:var(--text-muted);">closed</span>' : c.booked + '/' + c.required + (c.override ? '<sup style="color:var(--brand);">•</sup>' : '') + (c.short ? '<div style="color:var(--critical); font-weight:700; font-size:11px;">−' + c.short + '</div>' : '') + (c.asked ? '<div style="color:var(--warning); font-weight:700; font-size:11px;" title="Asked for leave, not decided">?' + c.asked + '</div>' : '')) + '</td>';
     };
-    document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--card, #fff); z-index:4; box-shadow:2px 0 0 var(--gridline); text-align:left; min-width:130px;">Department</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
+    document.getElementById('dp-board').innerHTML = '<table class="data-table" style="margin:0; border-collapse:separate; border-spacing:1px;"><thead><tr><th style="position:sticky; left:0; background:var(--card, #fff); z-index:4; box-shadow:2px 0 0 var(--gridline); text-align:left; min-width:130px;">' + (d.byRole ? 'Department · role' : 'Department') + '</th>' + d.dates.map(th).join('') + '</tr></thead><tbody>' +
       '<tr><td style="position:sticky; left:0; z-index:3; background:var(--card, #fff); box-shadow:2px 0 0 var(--gridline); text-align:left; font-weight:700;">All</td>' + d.dates.map(function (dt) { var t = d.totals[dt]; return '<td style="text-align:center; font-size:12px; font-weight:700; padding:4px 2px; background:' + dpColor_({ short: t.short, closed: d.closed.indexOf(dt.slice(5)) !== -1 }) + ';">' + (d.closed.indexOf(dt.slice(5)) !== -1 ? '–' : t.booked + '/' + t.required) + '</td>'; }).join('') + '</tr>' +
       depts.map(function (dep) { return '<tr><td style="position:sticky; left:0; z-index:3; background:var(--card, #fff); box-shadow:2px 0 0 var(--gridline); text-align:left; white-space:nowrap;">' + esc(dep) + '</td>' + d.dates.map(function (dt) { return cell(dt, dep); }).join('') + '</tr>'; }).join('') +
       (depts.length ? '' : '<tr><td colspan="' + (d.dates.length + 1) + '" style="text-align:left;">No shortfalls.</td></tr>') + '</tbody></table>';
@@ -7212,6 +7212,7 @@
     return runs.map(function (r) { return r[0] === r[1] ? lab(r[0]) : lab(r[0]) + '–' + lab(r[1]); }).join(', ');
   }
   function lrKind_(x) {
+    if (x.rechooseUntil && x.status !== 'Requested') return 'rechoose';   // §171 choosing other days
     if (x.status === 'Requested') return 'asked';
     if (x.status === 'In progress') return 'progress';
     if (x.status === 'Approved') return 'approved';
@@ -7238,7 +7239,7 @@
       '<br>' + tplLine + rosterLine + '</div>';
     var ds = document.getElementById('lr-deadline-save');
     if (ds) ds.addEventListener('click', function () { lrCall_('setLeaveRequestDeadline', { deadline: document.getElementById('lr-deadline').value }, ds, 'Deadline changed'); });
-    var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, progress: 0, approved: 0, declined: 0 };
+    var counts = { notsent: 0, sent: 0, opened: 0, failed: 0, nophone: 0, asked: 0, progress: 0, approved: 0, declined: 0, rechoose: 0 };
     // §114 department drop-down (Shane): the tiles and the list follow the chosen department
     var dSel = document.getElementById('lr-dept'), deptNames = {};
     d.people.forEach(function (x) { deptNames[x.department] = true; });
@@ -7247,7 +7248,7 @@
     var inDept = function (x) { return !lrState.dept || x.department === lrState.dept; };
     d.people.forEach(function (x) { if (inDept(x)) counts[lrKind_(x)]++; });
     var tiles = [['notsent', 'Not sent yet', 'var(--text-muted)'], ['sent', 'Sent, not opened', 'var(--warning)'], ['opened', 'Opened, nothing asked', 'var(--brand)'], ['asked', 'Asked: not started', 'var(--warning)'],
-      ['progress', 'In progress', 'var(--brand)'], ['approved', 'Finalized', 'var(--good)'], ['declined', 'Finalized: no leave', 'var(--text-muted)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
+      ['progress', 'In progress', 'var(--brand)'], ['rechoose', 'Choosing other days', 'var(--warning)'], ['approved', 'Finalized', 'var(--good)'], ['declined', 'Finalized: no leave', 'var(--text-muted)'], ['failed', 'Send failed', 'var(--critical)'], ['nophone', 'No cell number', 'var(--critical)']];
     var tEl = document.getElementById('lr-tiles');
     tEl.innerHTML = '<div class="kpi-grid casual-tiles" style="margin-bottom:12px;">' + tiles.map(function (t) {
       return '<button type="button" class="kpi-card" data-lr-tile="' + t[0] + '" style="--dot:' + t[2] + ';' + (lrState.filter === t[0] ? 'outline:2px solid var(--brand);' : '') + '"><div class="kpi-head"><span class="name">' + t[1] + '</span></div><div class="big">' + counts[t[0]] + '</div><div class="cap">' + (lrState.filter === t[0] ? 'Showing only these; click again for everyone' : 'Click to show them') + '</div></button>';
@@ -7259,6 +7260,8 @@
     var sendable = function (x) { return x.phoneOk && (rosterOn || !x.status); };
     var statusCell = function (x) {
       var k = lrKind_(x);
+      if (k === 'rechoose') return '<strong style="color:var(--warning);">Choosing other days</strong> <span style="font-size:12px;">up to ' + x.rechooseMax + ' by ' + esc(x.rechooseUntil) + '</span>' + (x.approvedDates.length ? '<div style="font-size:12px;">Given: ' + esc(lrShortDates_(x.approvedDates)) + '</div>' : '') + '<div style="font-size:12px; color:var(--text-muted);">Not given: ' + esc(lrShortDates_(x.refused)) + '</div>';
+      if (k === 'asked' && x.round > 1) return '<strong style="color:var(--warning);">Asked (other days)</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.submittedAt.slice(0, 16)) + '</span>' + (x.approvedDates.length ? '<div style="font-size:12px;">Already given: ' + esc(lrShortDates_(x.approvedDates)) + '</div>' : '');
       if (k === 'asked') return '<strong style="color:var(--warning);">Asked</strong> <span style="color:var(--text-muted); font-size:12px;">' + esc(x.submittedAt.slice(0, 16)) + '</span>';
       if (k === 'progress') return '<strong style="color:var(--brand);">In progress</strong> ' + esc(lrShortDates_(x.draftDates || [])) + ' <span style="color:var(--text-muted); font-size:12px;">' + esc(x.decidedBy) + ' ' + esc(x.decidedAt.slice(5, 16)) + '</span>';
       if (k === 'approved') {
@@ -7284,7 +7287,8 @@
           '<td style="text-align:left; font-size:12px; white-space:normal; min-width:120px;">' + (x.dates.length ? esc(lrShortDates_(x.dates)) : '') + '</td><td style="text-align:left; font-size:13px; white-space:normal; min-width:160px;">' + statusCell(x) + '</td>' +
           '<td style="white-space:normal; text-align:right;"><div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; max-width:260px; margin-left:auto;">' + (x.status === 'Requested' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Decide</button> ' : x.status === 'In progress' ? '<button class="btn small" type="button" data-lr-decide="' + esc(x.employeeId) + '">Continue</button> ' : !x.status ? '<button class="btn secondary small" type="button" data-lr-decide="' + esc(x.employeeId) + '" data-lr-manual="1" title="For staff who did not or could not use the link: pick their days here">Allocate leave</button> ' : '') +
           (/Approved|Declined/.test(x.status) ? '<button class="btn secondary small" type="button" data-lr-reopen="' + esc(x.employeeId) + '">Reopen</button> ' : '') +
-          (x.status ? '<button class="btn secondary small" type="button" data-lr-view="' + esc(x.employeeId) + '">View</button>' : '') + '</div></td></tr>';   // §151 View; WhatsApp / Copy link removed from the rows
+          (x.status ? '<button class="btn secondary small" type="button" data-lr-view="' + esc(x.employeeId) + '">View</button>' : '') +
+          (lrKind_(x) === 'rechoose' ? ' <button class="btn secondary small" type="button" data-lr-wa="' + esc(x.employeeId) + '">WhatsApp</button> <button class="btn secondary small" type="button" data-lr-copy="' + esc(x.employeeId) + '">Copy link</button>' : '') + '</div></td></tr>';   // §171 tell them to choose other days   // §151 View; WhatsApp / Copy link removed from the rows
       }).join('') : '<tr><td colspan="7" style="text-align:left;">Nobody here.</td></tr>') + '</tbody>';
     var tickedN = function () { return Object.keys(lrState.ticked).filter(function (k) { return lrState.ticked[k]; }).length; };
     var sb = document.getElementById('lr-send-btn');
@@ -7309,7 +7313,10 @@
         callApi('getLeaveRequestLink', { employeeId: id, year: d.year }).then(function (res) {
           b.disabled = false; b.textContent = label;
           if (!res || !res.ok) { flashStatus(document.getElementById('lr-status'), (res && res.error) || 'Could not make the link', 'save-status err', 8000); return; }
-          var msg = (lrState.data.finalState && lrState.data.finalState.allFinal)
+          var px = lrState.data.people.filter(function (p) { return p.employeeId === id; })[0] || {};
+          var msg = lrKind_(px) === 'rechoose'   // §171
+            ? 'Hi ' + res.firstName + ', not all the December leave days you asked for could be given. Please choose up to ' + px.rechooseMax + ' other day' + (px.rechooseMax === 1 ? '' : 's') + ' by ' + px.rechooseUntil + ' here: ' + res.url
+            : (lrState.data.finalState && lrState.data.finalState.allFinal)
             ? 'Hi ' + res.firstName + ', the December roster is final. See the days you work between 1 December and 8 January, with your shift times and approved leave, here: ' + res.url
             : 'Hi ' + res.firstName + ', we are planning December leave. You have ' + res.left + ' annual leave days left this year (unused leave is lost on 31 December). Leave taken in January is deducted from your ' + (d.year + 1) + ' leave. Choose the days you would like off between 1 December and 8 January here, by ' + res.deadline + ': ' + res.url;
           if (wa) {
@@ -13591,10 +13598,14 @@
         var y1 = String(d.year), y2 = String(d.nextYear), c = cost(picked()), decided = d.status === 'Approved' || d.status === 'Declined';
         var approved = {}; (d.approvedDates || []).forEach(function (x) { approved[x] = true; });
         var h = '<div style="font-size:12px; color:var(--text-muted);">' + esc(d.company) + '</div><h1>December leave — ' + esc(d.name) + '</h1>' +
-          '<div class="lp-sub">' + esc(d.department) + '. Choose the days you would like off between 1 December and 8 January. ' + (d.open ? 'You can change your choice until <strong>' + esc(d.deadlineLabel || d.deadline) + '</strong>.' : '') + '</div>' +
+          '<div class="lp-sub">' + esc(d.department) + '. Choose the days you would like off between 1 December and 8 January. ' + (d.open && !d.rechoose ? 'You can change your choice until <strong>' + esc(d.deadlineLabel || d.deadline) + '</strong>.' : '') + '</div>' +
           '<div class="lp-bal"><div><b>' + d.left + '</b>days left in ' + y1 + (d.firstYear ? ' (built up so far this year)' : '') + '<br>Unused leave is lost on 31 December.</div><div><b>' + d.leftNext + '</b>days for ' + y2 + '<br>For the days from 1 January.</div></div>';
         if (d.status === 'Approved') h += '<div class="wa-box" style="border-color:var(--good);"><strong>Approved:</strong> ' + d.approvedDates.length + ' day(s), marked green below.' + (d.decisionNote ? ' ' + esc(d.decisionNote) : '') + (d.approvedDates.join() !== d.requested.join() ? ' Your days were changed: green days are your leave (marked "added by HR" where you did not ask for them); crossed-out days were not approved.' : '') + '</div>';
         else if (d.status === 'Declined') h += '<div class="wa-box bad"><strong>Not approved:</strong> ' + esc(d.decisionNote) + '</div>';
+        // §171 choosing other days after some were not given
+        if (d.rechoose && d.status !== 'Requested') h += '<div class="wa-box warn"><strong>Choose other days:</strong> ' + d.rechoose.max + ' day' + (d.rechoose.max === 1 ? '' : 's') + ' could not be given (crossed out). You may choose up to <strong>' + d.rechoose.max + '</strong> other day' + (d.rechoose.max === 1 ? '' : 's') + ' by <strong>' + esc(d.rechoose.untilLabel) + '</strong>. Days marked "full" cannot be spared for your role. Send no days if you do not want other days.</div>';
+        else if (d.rechoose && d.status === 'Requested') h += '<div class="wa-box">Your other days are with HR. You can still change them until ' + esc(d.rechoose.untilLabel) + '.</div>';
+        else if (d.status === 'Approved' || d.status === 'Declined') {}
         else if (!d.open) h += '<div class="wa-box warn">Requests closed on ' + esc(d.deadline) + '. ' + (d.requested.length ? 'Your request is with HR.' : 'Speak to HR if you need leave.') + '</div>';
         else if (d.status === 'In progress') h += '<div class="wa-box warn">HR is busy with your request. You will hear when it is final; speak to HR if something must change.</div>';
         else if (d.status === 'Requested') h += '<div class="wa-box">Your request was received' + (d.submittedAt ? ' (' + esc(d.submittedAt.slice(0, 16)) + ')' : '') + '. HR will let you know. You can still change it until ' + esc(d.deadlineLabel || d.deadline) + '.</div>';
@@ -13612,18 +13623,18 @@
           var why = x.closed ? 'closed' : x.holiday ? 'holiday' : x.leave ? 'on leave' : !x.work ? 'off' : '';
           var num = Number(dt.slice(8)) + (dt.slice(8) === '01' ? ' ' + MON[Number(dt.slice(5, 7)) - 1].slice(0, 3) : '');
           var askedIt = (d.requested || []).indexOf(dt) !== -1;
-          if (approved[dt]) h += '<div class="lp-day ok">' + num + '<small>' + (askedIt ? 'approved' : 'added by HR') + '</small></div>';
-          else if (decided && askedIt) h += '<div class="lp-day no" style="text-decoration:line-through;">' + num + '<small>not approved</small></div>';
+          if (approved[dt]) h += '<div class="lp-day ok">' + num + '<small>' + (askedIt || d.rechoose ? 'approved' : 'added by HR') + '</small></div>';
+          else if (x.refused || (decided && askedIt && !d.rechoose)) h += '<div class="lp-day no" style="text-decoration:line-through;">' + num + '<small>not approved</small></div>';
           else if (x.can && d.open) h += '<button type="button" class="lp-day' + (st.pick[dt] ? ' on' : '') + '" data-lp="' + dt + '">' + num + '<small>' + (st.pick[dt] ? 'leave' : 'work') + '</small></button>';
-          else h += '<div class="lp-day' + (st.pick[dt] ? ' on' : ' no') + '">' + num + '<small>' + (st.pick[dt] ? 'asked' : why || 'work') + '</small></div>';
+          else h += '<div class="lp-day' + (st.pick[dt] ? ' on' : ' no') + '">' + num + '<small>' + (st.pick[dt] ? 'asked' : x.full ? 'full' : why || 'work') + '</small></div>';
         }
         h += '</div>';
         if (d.open) {
           h += '<div class="lp-bar"><div style="font-size:14px;">Chosen: <strong>' + (c[y1] || 0) + '</strong> of ' + d.left + ' days in ' + y1 + (c[y2] ? ', <strong>' + c[y2] + '</strong> of ' + d.leftNext + ' in ' + y2 : '') + '</div>' +
             (st.msg ? '<div class="lp-msg" style="color:' + (st.msgBad ? 'var(--critical)' : 'var(--good)') + ';">' + esc(st.msg) + '</div>' : '') +
-            '<div style="display:flex; gap:8px; margin-top:8px;"><button class="btn" type="button" id="lp-send" style="flex:1;"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Sending…' : (d.status === 'Requested' ? 'Send my changes' : 'Send my request')) + '</button>' +
+            '<div style="display:flex; gap:8px; margin-top:8px;"><button class="btn" type="button" id="lp-send" style="flex:1;"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Sending…' : d.rechoose ? (d.status === 'Requested' ? 'Send my changes' : 'Send my other days') : (d.status === 'Requested' ? 'Send my changes' : 'Send my request')) + '</button>' +
             (picked().length ? '<button class="btn secondary" type="button" id="lp-clear">Clear</button>' : '') + '</div>' +
-            '<div class="hint" style="font-size:11px; margin-top:6px;">Weekends between leave days and public holidays are not counted. Leave is only final once HR approves it.</div></div>';
+            '<div class="hint" style="font-size:11px; margin-top:6px;">Weekends between leave days and public holidays are not counted. Leave is only final once HR approves it.' + (d.days.some(function (z) { return z.full; }) ? ' "Full" days: nobody in your role can be spared that day.' : '') + '</div></div>';
         }
         h += '<p style="margin-top:16px; font-size:11px; color:var(--text-muted); text-align:center;">This is your private link — please don\'t share it.</p>';
         root.innerHTML = h;
@@ -13631,6 +13642,7 @@
           b.addEventListener('click', function () {
             var dd = b.getAttribute('data-lp');
             if (!st.pick[dd]) {
+              if (d.rechoose && picked().length >= d.rechoose.max) { st.msg = 'You can choose up to ' + d.rechoose.max + ' other day' + (d.rechoose.max === 1 ? '' : 's') + '.'; st.msgBad = true; render(); return; }   // §171
               var test = picked().concat([dd]), cc = cost(test), yy = dd.slice(0, 4), lim = yy === y1 ? d.left : d.leftNext;
               if ((cc[yy] || 0) > lim) { st.msg = 'You only have ' + lim + ' day' + (lim === 1 ? '' : 's') + ' for ' + yy + '.'; st.msgBad = true; render(); return; }
             }
@@ -13644,7 +13656,7 @@
           callApi('submitLeaveRequest', { lt: window.__leaveToken, dates: picked().join(',') }).then(function (res) {
             st.busy = false;
             if (!res || !res.ok) { st.msg = (res && res.error) || 'Could not send.'; st.msgBad = true; render(); return; }
-            st.data = res; st.pick = {}; res.requested.forEach(function (x) { st.pick[x] = true; });
+            st.data = res; st.pick = {}; if (!(res.rechoose && res.status !== 'Requested')) res.requested.forEach(function (x) { st.pick[x] = true; });
             st.msg = res.requested.length ? 'Sent. HR will let you know.' : 'Sent: you are not asking for any leave.'; st.msgBad = false; render();
           }).catch(function () { st.busy = false; st.msg = 'Network error — check your connection and try again.'; st.msgBad = true; render(); });
         });
@@ -13652,7 +13664,7 @@
       render();
       callApi('getLeaveRequestForm', { lt: window.__leaveToken }).then(function (res) {
         st.data = res || { ok: false, error: 'Could not load.' };
-        if (res && res.ok) res.requested.forEach(function (x) { st.pick[x] = true; });
+        if (res && res.ok && !(res.rechoose && res.status !== 'Requested')) res.requested.forEach(function (x) { st.pick[x] = true; });   // §171 choosing again starts empty
         render();
       }).catch(function () { st.data = { ok: false, error: 'Network error — check your connection and try again.' }; render(); });
     })();
